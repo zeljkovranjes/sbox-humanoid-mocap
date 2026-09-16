@@ -289,3 +289,21 @@ FOV without losing the current capture, and compiled 94-bone, 121-frame FBX play
 The reviewed frames still disagree with the source hand poses and show target-mesh
 deformation. Removing reach clamping is useful but does not establish acceptable final
 capture quality or justify changing the default lens assumption.
+
+The preview now reapplies the exported pose to final render bones after model evaluation.
+Human's stock constraints had changed 22 bones in a reviewed WildHands frame, including
+pinky rotations by up to 24.5° and an elbow helper by 41.7°. Omitting helper overrides
+did not remove that difference; the native constraints still ran. Direct final-transform
+application retained the baked pose. A native Human gate checked every matched bone at
+five clip positions: 470 comparisons after rendering, zero position difference and
+maximum quaternion-dot error 1.2e-7. Source-float skinning driven by those native bones
+also agreed with the solver within 0.000013 inches; this is not a GPU vertex readback.
+Citizen passed the same check on the 312-frame GVHMR tennis clip: 475 bone comparisons,
+zero position difference and maximum quaternion-dot error 1.2e-7. Its source-float
+skinning comparison stayed within 0.000008 inches. Both native gates passed FBX import
+and playback; synchronized video/preview frames and the skin overlays were inspected.
+
+This fixes preview/export disagreement, not reconstruction drift or intersections.
+The inspected FPS frames still have pose errors and occlusion gaps. The receiving
+ModelDoc model can apply its own constraints to imported animation; Human's CopyPinky
+must be disabled on a project-owned model to preserve independent captured pinkies.

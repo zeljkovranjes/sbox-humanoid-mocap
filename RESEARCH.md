@@ -77,3 +77,23 @@ Further adoption needs more representative foot-contact footage and reference ev
 
 See [drift reduction](DRIFT_REDUCTION.md) for implemented techniques and measured outcomes,
 and [hand backends](HAND_BACKENDS.md) for available models and their current limitations.
+
+## Recording-camera estimation candidate
+
+The recording-FOV sensitivity results make automatic lens estimation worth evaluating.
+[GeoCalib (ECCV 2024)](https://arxiv.org/abs/2409.06704) estimates intrinsics and gravity
+from image cues, with geometric optimization. The inspected
+[official implementation](https://github.com/cvg/GeoCalib/tree/97b8968e7798a66bf04fcf791fb535624241bda7)
+uses an MSCAN backbone, up/latitude decoders and a Levenberg–Marquardt optimizer; its
+inference wrapper resizes images and can optimize shared intrinsics across a batch.
+This could help estimate a constant recording lens from several frames, separately
+from the target rig and preview camera. It is a candidate, not an integrated feature.
+
+The official v1.0 pinhole checkpoint is 116,074,121 bytes, SHA-256
+`86d6aeacd8bbd974c59ce39f61854e00d36911c732ad89be471476fd708722ac`.
+The existing C# checkpoint reader successfully identified 889 tensors under its `model`
+component. No GeoCalib neural inference or accuracy/runtime benchmark has been run here.
+Weights remain local; the library does not download or load them. Adoption needs a C#
+implementation and checks against calibrated footage, plus synchronized hand-motion
+review. Estimated focal length or gravity must remain labeled model estimates; they
+do not establish measured scale, camera trajectory or correct 3D hand motion.

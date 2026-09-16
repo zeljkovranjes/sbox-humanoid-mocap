@@ -21,9 +21,10 @@ namespace HumanoidMocap.Editor;
 /// <see cref="ClipResult.SolvedFrames"/> - per frame the solved locals (target skeleton
 /// bone order, target units) are FK-composed to model-space transforms, converted to the
 /// engine's axis convention and units, and applied via
-/// <see cref="SceneModel.SetBoneOverride"/> (which takes transforms local to the
-/// SceneModel). Bones are matched to the engine model BY NAME, so helper bones missing
-/// from the rig JSON keep their bind pose.
+/// <see cref="SceneModel.SetBoneOverride"/> followed by
+/// <see cref="SceneModel.SetBoneWorldTransform"/> after model evaluation. The latter
+/// preserves the baked pose when model constraints would replace it (e.g. CopyPinky).
+/// Bones are matched to the engine model BY NAME; unrepresented bones remain model-owned.
 /// </summary>
 /// <remarks>
 /// <para><b>Axis conversion.</b> <see cref="TargetUpAxis.YUpCm"/> rigs (the s&amp;box source
@@ -53,6 +54,8 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 	bool _convertYUpToZUp;
 	int[] _rigToModelBone;
 	Transform[] _modelBindByRig;
+	Transform[] _renderPose;
+	int _renderPoseCount;
 	XForm[] _worldScratch;
 	XForm[] _interpolatedScratch;
 
@@ -290,6 +293,7 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 
 		_worldScratch = new XForm[rig.Skeleton.Count];
 		_interpolatedScratch = new XForm[rig.Skeleton.Count];
+		_renderPose = new Transform[rig.Skeleton.Count];
 
 		// Camera anchor bones: the MAPPED role bones only. Character FBX files routinely
 		// carry stray far-away nodes (Biped dummies, exporter helpers) - bounds taken over
@@ -331,6 +335,7 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 	public void SetClip( HumanoidMocap.ClipResult clip )
 	{
 		_clip = clip;
+		_renderPoseCount = 0;
 		_time = 0;
 		CurrentFrame = 0;
 		_ghostAlignedClip = null; // ghost anchor depends on this clip's frame 0 - recompute
@@ -502,6 +507,7 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 				// (cartoon exports) need it or the skin collapses around those bones.
 				var engineTransform = RigWorldToEngine( _worldScratch[i] );
 				engineTransform.Scale = _modelBindByRig[i].Scale;
+				_renderPose[i] = engineTransform;
 				_sceneModel.SetBoneOverride( modelBone, engineTransform );
 			}
 
@@ -511,9 +517,24 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 			// would read the previous pose. Verified empirically: before the flush the gate read
 			// the bind pose back; with it, the overridden pose.
 			_sceneModel.Update( 0f );
+			_renderPoseCount = count;
+			ApplyRenderPose();
 		}
 
 		UpdateSkeletonLines( count );
+	}
+
+	// Model constraints run after physics-style bone overrides. Pin the final render
+	// transforms to the same solved pose written into the armature-only FBX. Cache
+	// transforms independently of FK scratch, which source-ghost alignment also uses.
+	void ApplyRenderPose()
+	{
+		if ( !_sceneModel.IsValid() || _renderPose is null ) return;
+		for ( var i = 0; i < _renderPoseCount; i++ )
+		{
+			var bone = _rigToModelBone[i];
+			if ( bone >= 0 ) _sceneModel.SetBoneWorldTransform( bone, _sceneModel.Transform.ToWorld( _renderPose[i] ) );
+		}
 	}
 
 	/// <summary>Redraws the wireframe-skeleton view from the freshly FK'd pose: one
@@ -612,6 +633,7 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 		// deltas, which destabilizes procedural bones (citizen jiggle exploded into
 		// stretched geometry in a gate render).
 		Scene.EditorTick( RealTime.Now, 0.016f );
+		ApplyRenderPose();
 		UpdateCamera();
 
 		var bitmap = new Bitmap( size, size );
@@ -639,6 +661,7 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 			return null;
 
 		Scene.EditorTick( RealTime.Now, 0.016f ); // fixed tick - see CountRenderedPixels
+		ApplyRenderPose();
 		UpdateCamera();
 
 		var bitmap = new Bitmap( size, size );
@@ -729,11 +752,10 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 	{
 		if ( !Camera.IsValid() )
 			return null;
-		var bone = GetModelBoneTransform( boneName );
-		if ( bone is null )
-			return null;
-
 		Scene.EditorTick( RealTime.Now, 0.016f );
+		ApplyRenderPose();
+		var bone = GetModelBoneTransform( boneName );
+		if ( bone is null ) return null;
 
 		var center = bone.Value.Position;
 		var distance = MathX.SphereCameraDistance( radius, Camera.FieldOfView ) * 1.05f;

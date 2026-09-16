@@ -81,9 +81,8 @@ public sealed partial class PreviewWidget
     {
         if(_sceneModel.IsValid()&&!SkeletonOnly)
         {
-            // Model constraints can change the rendered pose after our overrides (the
-            // Human's ring-to-pinky constraints are one example). Draw the skin's actual
-            // skeleton, not the unconstrained reconstruction used to drive it.
+            // Read the final render transforms so overlay endpoints coincide with the
+            // skin, including model-space scale and any unrepresented native bones.
             var modelBone=_rigToModelBone[index];
             if(modelBone<0){position=default;return false;}
             position=_sceneModel.GetBoneWorldTransform(modelBone).Position;
