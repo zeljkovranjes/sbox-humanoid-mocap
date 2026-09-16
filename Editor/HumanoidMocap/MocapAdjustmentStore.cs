@@ -92,9 +92,12 @@ public static class MocapAdjustmentStore
             ||string.IsNullOrEmpty(state.RawPath)||state.Contacts.Any(c=>c is null||!Enum.IsDefined(typeof(ContactReview),c.Review)))
             throw new InvalidDataException("Unsupported saved adjustments.");
         foreach(var edit in state.Targets.Values)
+        {
             if(edit?.Corrections is null||!Enum.IsDefined(typeof(RootMotionMode),edit.RootMotion)
                 ||!float.IsFinite(edit.Fov)||!float.IsFinite(edit.ViewPitch)||!float.IsFinite(edit.NearClip))
                 throw new InvalidDataException("Invalid saved target adjustments.");
+            WristPositionOffsets.Validate(edit.Corrections.WristOffsets);
+        }
         if(state.Cleanup is { } c&&(!float.IsFinite(c.Root)||!float.IsFinite(c.Arms)||!float.IsFinite(c.Fingers)
             ||!float.IsFinite(c.PreserveAngularSpeed)||c.PreserveAngularSpeed<0))
             throw new InvalidDataException("Invalid saved cleanup settings.");

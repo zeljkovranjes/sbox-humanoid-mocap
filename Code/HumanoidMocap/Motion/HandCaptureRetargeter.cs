@@ -35,6 +35,16 @@ public static class HandCaptureRetargeter
             throw new ArgumentException("Capture camera placement must be finite.");
         var input=source.Clips[take];var evidence=source.CaptureEvidence!;
         if(evidence.Count!=input.Frames.Count)throw new ArgumentException("Hand evidence does not match the clip sample grid.");
+        WristPositionOffsets.Validate(settings.WristOffsets);
+        var clipStart=source.CaptureContacts?.StartTime??0;
+        var clipEnd=source.CaptureContacts?.EndTime??clipStart+(input.Frames.Count-1)/(double)input.Fps;
+        foreach(var edit in settings.WristOffsets)
+        {
+            if(edit.Start<clipStart||edit.End>clipEnd||!mapping.RoleToBone.TryGetValue(edit.Hand,out var bone))
+                throw new ArgumentException("Wrist correction must identify a captured hand and lie within this clip.");
+            if(edit.Enabled&&!Enumerable.Range(0,input.Frames.Count).Any(f=>clipStart+f/(double)input.Fps<=edit.Start&&evidence[f][bone]==JointEvidence.Reconstructed))
+                throw new ArgumentException("Wrist correction needs an earlier observed hand pose. It cannot create a never-tracked hand.");
+        }
         var targetMap=new MappingResult("Target hand anatomy",MappingSource.Authored);
         foreach(var bone in target.Skeleton.Bones)if(target.RoleOf(bone.Index) is { } role)targetMap.RoleToBone[role]=bone.Index;
         var sourceRest=source.Skeleton.RestWorld;var targetRest=target.Skeleton.RestWorld;
@@ -76,10 +86,12 @@ public static class HandCaptureRetargeter
             foreach(var (left,hand) in mappedHands)if(seen.Contains(left))
             {
                 var captured=new XForm(sourceWorld[hand.Source].Pos/100,sourceWorld[hand.Source].Rot);
+                var time=Math.Min(clipStart+f/(double)input.Fps,clipEnd);
+                captured.Pos+=WristPositionOffsets.Sample(settings.WristOffsets,left?BoneRole.HandL:BoneRole.HandR,time,clipStart,clipEnd);
                 if(source.CaptureContacts is { } contacts)
                 {
                     var corrected=contacts.ApplyWristPose(source.Skeleton[hand.Source].Name,captured,
-                        Math.Min(contacts.StartTime+f/(double)input.Fps,contacts.EndTime),contactSettings);
+                        time,contactSettings);
                     var delta=Quaternion.Normalize(placement*corrected.Rot*Quaternion.Inverse(captured.Rot)*Quaternion.Inverse(placement));
                     // Rotate the whole hand together: local finger articulation stays captured.
                     foreach(var plan in plans.Where(p=>p.Left==left))desired[plan.Target]=Quaternion.Normalize(delta*desired[plan.Target]);

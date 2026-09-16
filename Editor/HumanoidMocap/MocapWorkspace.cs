@@ -103,6 +103,7 @@ public sealed partial class RetargetWindow
         _timeline=tracks.Layout.Add(new FloatSlider(tracks));_timeline.Minimum=0;_timeline.Maximum=1;
         _timeline.OnValueEdited=()=>SeekPlaybackFraction(_timeline.Value);
         _contactTimeline=tracks.Layout.Add(new MocapContactTimeline(tracks){Seek=SeekPlaybackFraction,ChangeRange=(expected,index,start,end)=>_=ChangeContactRangeAsync(expected,index,start,end),
+            EditWrist=(expected,edit)=>{var index=_wristOffsets.IndexOf(edit);if(expected==_editedMotion&&index>=0)OpenWristOffsetEditor(index);},
             Edit=(expected,index)=>{if(expected==_editedMotion&&_processing is null)OpenContactEditor(expected.Contacts[index]);},
             Review=(expected,index,review)=>{if(expected==_editedMotion&&_processing is null)_=ReviewContactAsync(expected.Contacts[index],review);}});
         _clock=transport.Add(new Label("0.00 s",this){MinimumWidth=80});
@@ -161,6 +162,7 @@ public sealed partial class RetargetWindow
         tiltPresets.Add(new Button("Level","horizontal_rule"){Clicked=()=>_=SetCaptureTiltAsync(0),ToolTip="Place the capture as a level camera. Reuses reconstruction."});
         tiltPresets.Add(new Button("Looking down","south_east"){Clicked=()=>_=SetCaptureTiltAsync(-45),ToolTip="Assume a camera tilted 45 degrees down. Changes target arm placement and the exported animation; keeps captured hand detail. Adjust Capture pitch for your footage."});
         _firstOptions.ToolTip="Shoulders and hidden elbows are estimated. These controls apply to target arm correction when hand tracks are present.";
+        _wristOffsetRows=_firstOptions.Layout.AddColumn();_wristOffsetRows.Spacing=6;
 
         _thirdOptions=_advancedPanel.Layout.Add(new Group(this){Title="Third Person · ground and facing",Icon="directions_walk"});
         _thirdOptions.Layout=Layout.Column();_thirdOptions.Layout.Margin=new Sandbox.UI.Margin(14,30,14,12);_thirdOptions.Layout.Spacing=10;
@@ -364,6 +366,7 @@ public sealed partial class RetargetWindow
         _viewPitch.Text="0";_viewNear.Text="15";
         _rootMotion=HumanoidMocap.Cleanup.RootMotionMode.Off;_inPlaceControl.Value=false;
         _stabilizeFeetControl.Value=true;
+        _wristOffsets.Clear();++_wristEditRevision;
         var settings=TargetCorrectionSettings.ForRig(_target.Spec.Rig,_target.Spec.UpAxis);
         // These editable values also feed the solver; retain sub-millimetre rig
         // precision instead of shortening the shoulder span through display rounding.
@@ -372,6 +375,7 @@ public sealed partial class RetargetWindow
         _elbowL.Text=Coordinates(settings.LeftElbow);_elbowR.Text=Coordinates(settings.RightElbow);
         _capturePosition.Text=Coordinates(settings.CaptureCameraPosition);_captureYaw.Text="180";_capturePitch.Text="0";
         RestoreTargetAdjustments();
+        RefreshWristOffsetRows();
     }
 
     TargetCorrectionSettings CaptureTargetCorrections() => new()
@@ -381,6 +385,7 @@ public sealed partial class RetargetWindow
         LeftElbow=Vector(_elbowL),RightElbow=Vector(_elbowR),Reach=Number(_reach,.995f),
         GroundOffset=Number(_ground,0),FacingDegrees=Number(_facing,0),
         StabilizeFeet=_stabilizeFeetControl.Value,
+        WristOffsets=_wristOffsets.Select(e=>e.Copy()).ToList(),
         CaptureCameraPosition=Vector(_capturePosition),CaptureCameraYawDegrees=Number(_captureYaw,180),CaptureCameraPitchDegrees=Number(_capturePitch,0)
     };
     static System.Numerics.Vector3 Vector(LineEdit edit)
@@ -391,7 +396,8 @@ public sealed partial class RetargetWindow
     }
     void RefreshContacts()
     {
-        _contactTimeline?.SetMotion(_editedMotion);
+        RefreshWristOffsetRows();
+        _contactTimeline?.SetMotion(_editedMotion,_wristOffsets);
         _contactRows.Clear(true);
         var actions=_contactRows.AddRow();actions.Spacing=8;
         var supported=_firstPerson&&_editedMotion is not null&&HandCaptureRetargeter.Supports(_editedMotion)&&_editedMotion.Space==MotionSpace.CameraRelative;

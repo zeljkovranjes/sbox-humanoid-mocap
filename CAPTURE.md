@@ -81,6 +81,20 @@ capture tilt; **Level** restores zero tilt. Fine-tune **Capture pitch** if neede
 and export. It is a user correction, not recovered camera orientation. The separate
 preview camera toggle only changes how you view the result.
 
+For a misplaced tracked wrist or an intersecting interval, use **Advanced → First
+Person → Correct wrist…**. Choose the hand, video start/end times and a position
+offset in centimetres: X right, Y up, +Z toward the capture camera. The offset blends
+at the interval edges. It preserves captured wrist rotation and finger articulation;
+arm reach limits and confirmed prop contacts take priority. Review against the video:
+this is a manual edit, including when the tracker has lost the hand, not recovered
+depth or automatic collision correction. A never-observed hand cannot be created.
+
+Blue timeline bars mark manual wrist edits. Double-click a bar to edit it, or use the
+saved correction's visibility/delete buttons to disable or remove it. Corrections are
+saved for the selected target and workspace and included in target FBX export.
+The captured-skeleton export bypasses target corrections. Changing these edits reuses
+reconstruction and leaves original motion files and missing-data labels intact.
+
 Applied corrections are saved beside the opened `.hmotion` as `.hmotion.adjustments.json`.
 Capture placement, arm settings, ground/facing and viewmodel settings are remembered
 separately for each target rig and workspace. Cleanup and reviewed contacts belong to

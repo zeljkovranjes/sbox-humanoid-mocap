@@ -24,6 +24,21 @@ on an assumed depth plane; this cannot represent the correct depth ordering of c
 arms. Independently solved target elbows do not enforce skin clearance. Smoothing does
 not recover those missing observations or resolve the depth ambiguity.
 
+Manual wrist-position intervals provide a reversible correction path under
+**Advanced → First Person → Correct wrist…**. They offset a previously observed
+wrist in capture-camera space, blend at the interval edges and run before prop
+constraints and final target arm IK. Wrist rotation, finger articulation and limb
+lengths are preserved. The original capture and its missing-data labels are unchanged.
+Edits are stored per target/workspace, can be disabled or removed, and appear as blue
+timeline bars. They do not estimate the correct depth or guarantee skin clearance.
+
+The real 121-frame hand excerpt passed native editor correction, save/reopen,
+target-isolation, disable/remove and compiled FBX playback checks on Human and Citizen.
+Frames outside the edited interval were unchanged; wrist rotation and deforming-bone
+lengths stayed within floating-point tolerance. Citizen's reach limit reduced the
+requested displacement. Visual review still showed crossing arms: these checks verify
+editable correction and export, not automatic removal of intersections.
+
 A bounded, coupled elbow-swivel experiment preserved wrist poses, finger motion and
 bone lengths, but failed visual acceptance. Estimated capsule overlap remained in all
 41 originally overlapping Human frames and all 40 Citizen frames of the 121-frame

@@ -165,7 +165,7 @@ public sealed class MotionDocument
         var frames=new List<XForm[]>(count);var evidence=new List<JointEvidence[]>(count);var cursor=0;
         for (var i=0;i<count;i++)
         {
-            var time=Math.Min(Frames[0].Time+i/fps,Frames[^1].Time);
+            var time=Math.Min(Frames[0].Time+i/(double)fps,Frames[^1].Time);
             while(cursor+1<Frames.Count && Frames[cursor+1].Time<time)cursor++;
             var a=Frames[cursor];var b=Frames[Math.Min(cursor+1,Frames.Count-1)];
             var t=b.Time>a.Time?(float)((time-a.Time)/(b.Time-a.Time)):0;

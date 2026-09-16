@@ -776,6 +776,14 @@ public static class Retargeter
     {
         var requested = request.Solve ?? new SolveOptions();
         var handCapture = Motion.HandCaptureRetargeter.Supports(scene, map);
+        if(request.MocapCorrections is {} wristSettings)
+        {
+            Motion.WristPositionOffsets.Validate(wristSettings.WristOffsets);
+            if(!handCapture&&wristSettings.WristOffsets.Any(e=>e.Enabled))
+                throw new NotSupportedException("Manual wrist offsets currently require camera-relative hand capture.");
+            if(handCapture&&wristSettings.WristOffsets.Any(e=>e.Enabled))
+                AddNote(report,"Manual wrist position offsets are target edits, not reconstructed observations. Captured rotations and finger motion are retained; confirmed prop contacts and target reach limits take priority. Original missing-hand labels are preserved.");
+        }
         if(!handCapture&&scene.CaptureContacts?.Contacts.Any(c=>c.Review==Motion.ContactReview.Confirmed&&!string.IsNullOrEmpty(c.Object))==true)
             throw new NotSupportedException("Confirmed prop constraints currently require camera-relative hand capture. Disable those constraints to preview body motion; object tracks remain available in captured-skeleton export.");
         var captureClavicleDirections = !handCapture && scene.CaptureSpace is not null && requested.TransferModes is null;

@@ -22,6 +22,8 @@ public sealed class TargetCorrectionSettings
     public float GroundOffset { get; set; }
     public float FacingDegrees { get; set; }
     public bool StabilizeFeet { get; set; } = true;
+    /// <summary>Manual camera-space wrist position edits, applied before confirmed prop contacts and target IK.</summary>
+    public List<WristPositionOffset> WristOffsets { get; set; } = new();
     /// <summary>Editable placement of a camera-relative hand capture in the target's
     /// Y-up metre frame. This is a user assumption, not recovered camera tracking.</summary>
     public Vector3 CaptureCameraPosition { get; set; } = new(0,1.65f,0);

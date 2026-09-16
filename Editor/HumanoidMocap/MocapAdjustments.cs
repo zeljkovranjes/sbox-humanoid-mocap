@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using HumanoidMocap.Cleanup;
 using HumanoidMocap.Motion;
@@ -10,6 +11,7 @@ public sealed partial class RetargetWindow
 {
     MocapAdjustmentStore.Session _editSession;
     CleanupSettings _appliedCleanup;
+    string _adjustmentSaveError;
 
     void ResetAdjustmentFields()
     {
@@ -45,6 +47,7 @@ public sealed partial class RetargetWindow
         _capturePosition.Text=V(c.CaptureCameraPosition);_captureYaw.Text=F(c.CaptureCameraYawDegrees);_capturePitch.Text=F(c.CaptureCameraPitchDegrees);
         _reach.Text=F(c.Reach);_ground.Text=F(c.GroundOffset);_facing.Text=F(c.FacingDegrees);
         _stabilizeFeetControl.Value=c.StabilizeFeet;
+        _wristOffsets.Clear();_wristOffsets.AddRange(c.WristOffsets.Select(e=>e.Copy()));++_wristEditRevision;
         _rootMotion=edit.RootMotion;_inPlaceControl.Value=_rootMotion==RootMotionMode.InPlace;
         _fov.Text=F(edit.Fov);_viewPitch.Text=F(edit.ViewPitch);_viewNear.Text=F(edit.NearClip);
     }
@@ -54,7 +57,7 @@ public sealed partial class RetargetWindow
     {
         if(session is null||session!=_editSession)return;
         session.State.Cleanup=cleanup;session.State.Contacts=motion.Contacts;session.State.Targets[key]=edit;
-        try{MocapAdjustmentStore.Save(session);}
-        catch(Exception error){_captureStatus.Text="Preview ready, but adjustments could not be saved: "+error.Message;}
+        try{MocapAdjustmentStore.Save(session);_adjustmentSaveError=null;}
+        catch(Exception error){_captureStatus.Text=_adjustmentSaveError="Preview ready, but adjustments could not be saved: "+error.Message;}
     }
 }
