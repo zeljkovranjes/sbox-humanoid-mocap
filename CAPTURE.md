@@ -107,8 +107,8 @@ Footage, download tools and verification outputs are excluded from the distribut
 
 The downloaded examples were inspected and processed on a Ryzen 7 7800X3D with 32 GB RAM.
 MediaPipe processed the complete short hand clips: `video_0.mp4` (121 frames),
-`segment_018.mp4` (120 frames), and `segment_037.mp4` (120 frames). Fresh reconstruction
-took approximately 13, 13 and 20 seconds respectively in the Release C# worker
+`segment_018.mp4` (120 frames), and `segment_037.mp4` (120 frames). Earlier Release C# worker measurements
+took approximately 13, 13 and 20 seconds respectively
 after visible-aperture and orientation correction. Peak worker RAM reached 1.30 GB.
 These are observed CPU costs, not minimum requirements or a controlled speed comparison;
 editor verification overlapped part of the run.
@@ -135,9 +135,10 @@ smoothing is enabled automatically.
 
 With **Reduce foot drift** enabled, final target ankle/toe anchors now use the retained
 GVHMR stationary-joint predictions. On this tennis clip, average foot-joint movement
-during those same predicted intervals fell from 0.210 to 0.009 cm per frame on Human,
-and from 0.248 to 0.007 cm on Citizen. Largest steps fell from 0.90 to 0.61 cm and from
-1.24 to 0.50 cm respectively. This comparison uses the same stationary-camera motion
+during those same predicted intervals fell from 0.247 to 0.018 cm per frame on Human,
+and from 0.297 to 0.014 cm on Citizen. Largest steps fell from 0.94 to 0.83 cm and from
+0.93 to 0.51 cm respectively. This comparison uses the current automatic-crop reconstruction
+and the same stationary-camera motion
 before and after target anchoring, not the camera-relative default. Residual drift and
 inaccurate heights remain. The fast right forearm peak remained at frame 134 (about
 4.49 seconds). Final target correction keeps limb lengths fixed instead of stretching.
@@ -145,8 +146,8 @@ The complete refined clip passed native FBX compilation and animated playback on
 Human and Citizen; restoring the original and reopening the cached refinement also passed.
 See [drift reduction](DRIFT_REDUCTION.md) for FPS cleanup, comparison metrics and limits.
 
-Review these examples critically. After the correction, the plate-handling clip had
-77 left-hand and 78 right-hand observed frames out of 121. The cupboard clip had
+Review these examples critically. With the current detector and identity tracking, the plate-handling clip had
+78 left-hand and 79 right-hand observed frames out of 121, with both present in 68 frames. The cupboard clip had
 0 left-hand and 85 right-hand observed frames out of 120. The cooking clip had all
 120 right-hand frames but no left-hand detection; part of that hand lies outside the image.
 Correct image geometry has not established a capture-quality improvement;

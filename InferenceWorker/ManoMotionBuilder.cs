@@ -121,6 +121,7 @@ public static class ManoMotionBuilder
             "Native MANO wrist and finger rotations are retained. Shoulders and elbows are not observed and require target-rig IK.",
             "Camera-relative output; camera motion and world-space trajectories have not been recovered. Monocular metric scale remains model-derived.",
             "MediaPipe supplies hand crops and side labels, not this backend's finger articulation. Detector scores are stored separately; no per-joint 3D confidence is available.",
+            "Separated hand tracks may retain identity through weak classifier disagreement. Detector handedness is the model probability for the assigned side and can be below 0.5.",
             "Absent hands hold their prior pose and are labeled Unobserved. No automatic long-gap reconstruction is claimed.",
             "A mean predicted hand shape fixes bone lengths within this clip. Original per-frame shape predictions remain in the raw cache.",
             "These C# model ports remain experimental. Independent image-network reference parity and ground-truth accuracy are not established."

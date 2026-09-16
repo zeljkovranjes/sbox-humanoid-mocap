@@ -48,6 +48,7 @@ public sealed class HandMotionBuilder
             "Metacarpal rest transforms are authored template anatomy, not observed motion. They are labeled Authored while their hand is observed.",
             "Finger segment directions follow the landmarks. Axial twist is unmeasured and estimated by minimal swing relative to the parent segment; it is not captured finger torsion.",
             "Camera-relative wrist translation uses an assumed image plane, not measured depth or camera motion.",
+            "Separated hand tracks can retain left/right identity through weak classifier disagreement. Saved handedness probabilities below 0.5 record that disagreement; no missing hand is generated.",
             "The source contains no shoulders or elbows. Target arm IK is estimated after reconstruction.",
             "Unobserved hands hold their last pose and remain labeled unobserved. No per-joint confidence is supplied."});
     }

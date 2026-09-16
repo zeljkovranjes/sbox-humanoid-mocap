@@ -16,7 +16,7 @@ using Vector3 = System.Numerics.Vector3;
 /// Image landmarks are pixels. World landmarks are hand-relative metres, not world tracking.</summary>
 public sealed class ManagedHands
 {
-    public const string ImplementationVersion="managed-hands-v7-video-tracking";
+    public const string ImplementationVersion="managed-hands-v8-separated-identities";
     readonly LiteInterpreter palms,hands;
     readonly List<Vector2> anchors=new();
     public ManagedHands(byte[] task)
@@ -99,6 +99,7 @@ public sealed class ManagedHands
                 regions.Add(candidate);if(regions.Count==2)break;
             }
         var current=Observe(rgba,width,height,regions,token);
+        current=HandIdentity.PreserveSeparatedTracks(current,previous);
         return current.GroupBy(h=>h.Side).Select(g=>g.OrderByDescending(h=>h.Presence).First()).ToList();
     }
 

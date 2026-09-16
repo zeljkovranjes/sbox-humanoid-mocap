@@ -88,6 +88,29 @@ exactly for full-image detector inputs and within two color-byte values for rota
 crops. These focused checks do not establish complete graph parity. Full-clip detection
 coverage remains mixed, including fewer accepted hands in two samples; see [capture results](CAPTURE.md).
 
+The tracker now retains left/right identity through weak classification disagreements
+when both hands have fresh observations and remain close to their separate prior tracks.
+Previously, two detections labelled as the same hand could discard a valid hand and send
+the other hand's motion to its arm. Close crossings, large jumps, new palm detections,
+low presence and strong classification disagreements keep the fresh classifier result.
+This is a bounded tracking heuristic, not recovered occlusion or an extra motion filter.
+Identity assignment edits no landmark coordinates; retained tracks can change subsequent
+crop selection and its new neural predictions. Saved handedness is the model probability for the
+assigned side; values below 0.5 expose disagreement rather than invent confidence.
+The detector version changed, so processing again preserves older files and creates
+a new observation cache. Native hand models share this detector behavior.
+
+A local test used all 150 frames of HOT3D clip `001849`, with its per-frame Aria
+Fisheye624 calibration and a fixed, authored virtual pinhole view. Comparison against
+the [UmeTrack reference annotations](https://github.com/facebookresearch/hand_tracking_toolkit/tree/950d64f7e8d2ba1fd38cd2ceede6608a8fa7f5aa)
+found 234 → 236 same-side detections out of 300 fully in-view reference hands, and
+mean image-landmark disagreement changed from 6.20 → 4.74 pixels. The two erroneous
+identity frames retained both hands. Mean wrist-relative 3D disagreement remained
+about 84 mm, without rotation or scale alignment, and the prolonged detection loss
+remained. Landmark definitions differ between the models. This is one annotated clip,
+not dataset-wide accuracy or a calibrated wrist-depth result; HOT3D import/rectification
+is currently a local verification tool, not an advertised editor backend.
+
 All hand backends now keep a hand-and-wrist source skeleton. MediaPipe fits landmark
 rotations to fixed canonical finger lengths and assumes wrist depth on an image plane.
 Estimated shoulders and elbows are added on the selected target through IK. Captured-skeleton
