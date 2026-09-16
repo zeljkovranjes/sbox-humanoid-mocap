@@ -31,7 +31,7 @@ public sealed class HandMotionBuilder
             rig.RoleOf(b.Index) is { } role&&FingerSolver.IsFingerRole(role)).Select(b=>b.Index).ToArray();
         documentIndices=sourceBones.Select((source,index)=>(source,index)).ToDictionary(x=>x.source,x=>x.index);
         Document=new MotionDocument{Name=name,SourceVideo=video,SourceSha256=hash,SourceFps=fps,
-            Backend="MediaPipe hands / experimental managed C#",ModelVersion="hand_landmarker/float16/1; hand-forest-v2-parent-swing",
+            Backend="MediaPipe hands / experimental managed C#",ModelVersion="hand_landmarker/float16/1; hand-forest-v3-authored-metacarpals",
             Space=MotionSpace.CameraRelative,MetricScaleCalibrated=false};
         foreach(var source in sourceBones)
         {
@@ -45,6 +45,7 @@ public sealed class HandMotionBuilder
         }
         Document.Diagnostics.AddRange(new[]{"Experimental landmark reconstruction. Model-port parity has not been established.",
             "Hand-relative 3D landmarks are reconstructed; rotations are fitted to a fixed canonical hand skeleton.",
+            "Metacarpal rest transforms are authored template anatomy, not observed motion. They are labeled Authored while their hand is observed.",
             "Finger segment directions follow the landmarks. Axial twist is unmeasured and estimated by minimal swing relative to the parent segment; it is not captured finger torsion.",
             "Camera-relative wrist translation uses an assumed image plane, not measured depth or camera motion.",
             "The source contains no shoulders or elbows. Target arm IK is estimated after reconstruction.",
@@ -79,6 +80,13 @@ public sealed class HandMotionBuilder
                 (.5f-wrist.Y/height)*WristPlaneWidth*height/width,-WristPlaneDepth));
             desired[handIndex]=Quaternion.Normalize(orientation*Quaternion.Inverse(reference)*rest[hand].Rot);
             frame.Evidence[handIndex]=JointEvidence.Reconstructed;
+            foreach(var finger in new[]{"Thumb","Index","Middle","Ring","Pinky"})
+                if(rig.BoneForRole(Role(finger+"Meta")) is int meta&&documentIndices.TryGetValue(meta,out var metaIndex))
+                {
+                    frame.Positions[metaIndex]=Document.Bones[metaIndex].RestPosition.ToArray();
+                    frame.Rotations[metaIndex]=Document.Bones[metaIndex].RestRotation.ToArray();
+                    frame.Evidence[metaIndex]=JointEvidence.Authored;
+                }
             foreach(var (finger,start) in new[]{("Thumb",1),("Index",5),("Middle",9),("Ring",13),("Pinky",17)})
             {
                 var parentDelta=Quaternion.Normalize(desired[handIndex]*Quaternion.Inverse(rest[hand].Rot));

@@ -53,8 +53,12 @@ Rigid skin bind conversion uses the transform relationship documented in Autodes
 [FBX SDK example](https://help.autodesk.com/cloudhelp/2020/ENU/FBX-API-Reference/cpp_ref/_view_scene_2_draw_scene_8cxx-example.html),
 with geometric transforms and fixed uniform bind scale included.
 
-Suggestions require an observed wrist and at least three observed finger chains. The
-solver tests palm-center proximity to actual triangles, geometric finger bend, relative
+Suggestions require an observed wrist and at least three observed finger chains.
+Fixed template metacarpals may connect those observations, but remain labeled `Authored`;
+they cannot count as observed fingers. Older MediaPipe captures with incorrect missing
+metacarpal labels require **Advanced → Process again**, which reuses cached observations
+and preserves the old motion file. Then reopen/import the aligned prop track as needed.
+The solver tests palm-center proximity to actual triangles, geometric finger bend, relative
 motion, persistence and release hysteresis. Missing observations and gaps over 0.1 s break
 intervals. Near-equal distances to different objects/parts are left unconstrained and
 reported as ambiguous. Existing intervals, including disabled ones, are preserved.
@@ -151,12 +155,23 @@ remained byte-for-byte unchanged. Both import/contact dialogs were visually revi
 
 Surface suggestions were tested on controlled moving-object fixtures for positive grips,
 finger opening, missing observations, competing objects and preserved wrist offsets.
-The real 121-frame MediaPipe capture was also checked against the manually authored box:
-it produced zero suggestions because its palms were outside the surface distance limit.
-That search took about 0.021 s on the tested Ryzen 7 7800X3D. The native Citizen editor
-imported all 12 box triangles, ran the search and compiled/played the final 99-bone export.
-These checks establish the import/search/review path; they do not establish automatic
-grip accuracy on real object capture or provide a penetration benchmark.
+An earlier check of the real 121-frame MediaPipe capture against an authored box produced
+zero suggestions. The original explanation attributed this to surface distance, but
+incorrect missing metacarpal labels actually prevented finger evaluation. That result
+does not establish a distance-based rejection. The native Citizen editor did verify
+import of all 12 triangles and compilation/playback of the combined 99-bone export.
+
+After correcting those labels, all three real hand captures were replayed from cached
+observations. Every position, rotation and timestamp stayed exact. An explicitly authored
+plane following the reconstructed right palm produced one reviewable interval in each
+of `segment_037` and `segment_018`, and none in `video_0`. The previous labels produced
+no usable contact samples in these same fixtures. This checks observation availability
+and suggestion behavior; the plane is controlled test geometry, not the filmed object.
+These checks do not establish automatic grip accuracy or provide a penetration benchmark.
+The corrected `segment_037` fixture also passed suggestion, confirmation, Human preview
+and 120-frame, 95-bone FBX compilation/playback in the native editor. Synchronized source
+and target images were inspected. The original motion file remained byte-for-byte unchanged;
+source reconstruction still misses the left hand and does not accurately recover every pose.
 
 Orientation anchoring was checked with the real 121-frame MediaPipe sample and the
 explicitly authored prop track on both Human and Citizen. The setting survived editing,

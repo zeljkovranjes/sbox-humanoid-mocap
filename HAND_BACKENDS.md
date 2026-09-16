@@ -103,4 +103,12 @@ and observation labels. Rotation steps above 90 degrees changed from 106 to 55 i
 `video_0`, from 30 to 28 in `segment_018`, and remained zero in `segment_037`.
 Some individual joints worsened and large prediction jumps remain. These are fitting
 checks, not 3D accuracy measurements. Reprocessing reuses cached neural observations
-and writes `raw-hands-v5.hmotion`, preserving the previous fitted motion file.
+and writes `raw-hands-v6.hmotion`, preserving previous fitted motion files.
+
+Canonical metacarpals use fixed template anatomy, labeled `Authored` while their hand
+is observed. They are neither measured joints nor inferred motion. Missing hands retain
+`Unobserved` labels. This lets contact search evaluate observed fingers through the
+template hierarchy without treating template bones as observations. For older captures,
+use **Advanced → Process again**; cached neural observations are reused. Applying
+adjustments alone does not replace the old source labels. Across all 361 frames of the
+three samples, this label correction left every position, rotation and timestamp exact.

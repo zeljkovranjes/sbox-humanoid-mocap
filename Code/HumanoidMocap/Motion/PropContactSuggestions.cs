@@ -21,6 +21,8 @@ public static class PropContactSuggestions
         motion.Validate();
         if(!HandCaptureRetargeter.Supports(motion)||motion.Space!=MotionSpace.CameraRelative)
             throw new ArgumentException("Contact suggestions currently require camera-relative hand capture.");
+        if(motion.ModelVersion.Contains("hand-forest-v2-parent-swing",StringComparison.Ordinal))
+            throw new InvalidOperationException("Reprocess this older MediaPipe capture before suggesting contacts. The worker reuses cached observations and preserves the existing motion file.");
         var surfaces=motion.Objects.SelectMany(p=>p.Surfaces.GroupBy(s=>s.Bone).Select(g=>{
             var v=new List<float[]>();var t=new List<int>();foreach(var s in g){var offset=v.Count;v.AddRange(s.Vertices);t.AddRange(s.Triangles.Select(i=>i+offset));}
             return new Surface(p.Id,g.Key,p.Bones.FindIndex(b=>b.Name==g.Key),new(new(){Vertices=v.ToArray(),Triangles=t.ToArray()}));
@@ -42,12 +44,15 @@ public static class PropContactSuggestions
                 if(frame.Evidence[hand]!=JointEvidence.Reconstructed)continue;
                 for(var b=0;b<world.Length;b++)
                 {var parent=motion.Bones[b].Parent;var local=new XForm(MotionDocument.V(frame.Positions[b]),MotionDocument.Q(frame.Rotations[b]));world[b]=parent<0?local:XForm.Compose(world[parent],local);
-                    valid[b]=frame.Evidence[b]==JointEvidence.Reconstructed&&(parent<0||valid[parent]);}
+                    // A canonical metacarpal can bridge the observed wrist and finger.
+                    // This is authored anatomy, never evidence of an observed finger.
+                    var authoredMeta=frame.Evidence[b]==JointEvidence.Authored&&motion.Bones[b].Role is {} role&&role.ToString().Contains("Meta",StringComparison.Ordinal);
+                    valid[b]=(frame.Evidence[b]==JointEvidence.Reconstructed||authoredMeta)&&(parent<0||valid[parent]);}
                 if(!valid[hand])continue;
                 var knuckles=Vector3.Zero;float curl=0;int observed=0;
                 foreach(var finger in fingers)
                 {
-                    if(finger.Any(b=>!valid[b]))continue;
+                    if(finger.Any(b=>!valid[b]||frame.Evidence[b]!=JointEvidence.Reconstructed))continue;
                     var a=world[finger[1]].Pos-world[finger[0]].Pos;var b=world[finger[2]].Pos-world[finger[1]].Pos;
                     if(a.LengthSquared()<1e-10f||b.LengthSquared()<1e-10f)continue;
                     curl+=(1-Math.Clamp(Vector3.Dot(Vector3.Normalize(a),Vector3.Normalize(b)),-1,1))*.5f;

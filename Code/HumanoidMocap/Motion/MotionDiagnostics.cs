@@ -9,7 +9,7 @@ using Vector3=System.Numerics.Vector3;
 
 public sealed record MissingObservationInterval(double Start,double End);
 public sealed record JointTrackDiagnostics(string Bone,BoneRole? Role,int Reconstructed,int Inferred,int GeneratedIk,int Unobserved,
-    double LongestMissingSeconds,IReadOnlyList<MissingObservationInterval> MissingIntervals);
+    double LongestMissingSeconds,IReadOnlyList<MissingObservationInterval> MissingIntervals,int Authored=0);
 public sealed record MotionDiagnosticsReport(int Frames,double Start,double End,double MinimumFrameInterval,double MaximumFrameInterval,
     float MaximumObservedBoneLengthRangeMetres,float MaximumObservedRotationStepDegrees,double MaximumObservedRootSpeedMetresPerSecond,
     IReadOnlyList<JointTrackDiagnostics> Tracks)
@@ -31,7 +31,7 @@ public static class MotionDiagnostics
         var intervals=frames.Zip(frames.Skip(1),(a,b)=>b.Time-a.Time).ToArray();
         for(var bone=0;bone<motion.Bones.Count;bone++)
         {
-            int reconstructed=0,inferred=0,ik=0,unobserved=0;double? missingStart=null;
+            int reconstructed=0,inferred=0,ik=0,unobserved=0,authored=0;double? missingStart=null;
             var missing=new List<MissingObservationInterval>();
             float shortest=float.PositiveInfinity,longest=0;
             for(var i=0;i<frames.Count;i++)
@@ -44,6 +44,7 @@ public static class MotionDiagnostics
                     if(evidence==JointEvidence.Reconstructed)reconstructed++;
                     else if(evidence==JointEvidence.InferredGap)inferred++;
                     else if(evidence==JointEvidence.GeneratedIk)ik++;
+                    else if(evidence==JointEvidence.Authored)authored++;
                 }
                 if(evidence!=JointEvidence.Reconstructed)continue;
                 if(motion.Bones[bone].Parent>=0)
@@ -61,7 +62,7 @@ public static class MotionDiagnostics
             if(missingStart is double finalStart)missing.Add(new(finalStart,frames[^1].Time+1/motion.SourceFps));
             if(float.IsFinite(shortest))lengthRange=Math.Max(lengthRange,longest-shortest);
             tracks.Add(new(motion.Bones[bone].Name,motion.Bones[bone].Role,reconstructed,inferred,ik,unobserved,
-                missing.Count==0?0:missing.Max(m=>m.End-m.Start),missing));
+                missing.Count==0?0:missing.Max(m=>m.End-m.Start),missing,authored));
         }
         return new(frames.Count,frames[0].Time,frames[^1].Time,intervals.Length==0?0:intervals.Min(),intervals.Length==0?0:intervals.Max(),
             lengthRange,rotationStep,rootSpeed,tracks);

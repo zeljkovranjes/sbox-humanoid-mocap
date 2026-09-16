@@ -161,6 +161,13 @@ Old cache directories remain intact. Target/correction changes and completed-cac
 replays do not load the neural models. Palm reprojection disagreement is reported as
 a derived diagnostic, separately from detector presence and any confidence fields.
 
+MediaPipe fitting writes `raw-hands-v6.hmotion` (or `raw-hands-v6-swapped.hmotion`).
+It labels the canonical metacarpals as authored rest anatomy when their hand is observed,
+so they no longer block contact search through otherwise observed fingers. Existing v5
+motion files remain intact. **Advanced → Process again** rebuilds these labels using
+cached observations without loading the neural models; **Apply adjustments** retains
+the currently selected source file.
+
 Fresh runs with the corrected video decoder recorded the following on the Ryzen 7
 7800X3D, 32 GB RAM, using four CPU inference threads and no GPU:
 

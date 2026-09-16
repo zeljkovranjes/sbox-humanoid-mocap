@@ -81,7 +81,7 @@ public static class LandmarkCapture
             builder.Document.ModelVersion+="; "+ManagedHands.ImplementationVersion+"; "+WindowsVideoDecoder.ImplementationVersion;
             foreach(var frame in raw){token.ThrowIfCancellationRequested();builder.Add(frame.Time,frame.Width,frame.Height,frame.Hands.Select(h=>h.ToObservation()).ToArray());}
             builder.Document.Validate();token.ThrowIfCancellationRequested();
-            var path=Path.Combine(directory,request.SwapHands?"raw-hands-v5-swapped.hmotion":"raw-hands-v5.hmotion");
+            var path=Path.Combine(directory,request.SwapHands?"raw-hands-v6-swapped.hmotion":"raw-hands-v6.hmotion");
             Atomic(path,builder.Document.ToJson());Save("complete");return path;
         }
         catch(OperationCanceledException){Save("cancelled_resumable");throw;}

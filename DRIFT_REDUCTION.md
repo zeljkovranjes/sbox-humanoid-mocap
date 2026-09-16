@@ -17,6 +17,12 @@ recover world motion from camera-relative hands. MediaPipe still uses an assumed
 plane; native MANO backends still infer monocular depth. Confirmed contacts with explicit
 object tracks provide stronger anchors; see [prop tracks](PROP_TRACKS.md).
 
+Contact search now recognizes authored template metacarpals between observed wrists
+and fingers. Incorrect missing labels previously blocked these suggestions on the default
+MediaPipe skeleton. This repairs access to contact anchoring; it does not itself change
+captured motion or reduce drift. Use **Advanced → Process again** for an older MediaPipe
+capture to reuse cached observations with corrected labels, then review any new suggestions.
+
 Reviewed rigid grips can also anchor wrist orientation relative to a moving prop bone.
 This constrains rotational slip using an explicitly aligned object track, with the same
 smooth activation/release as position contacts. The whole hand rotates together before
