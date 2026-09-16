@@ -32,7 +32,7 @@ Example `body-job.json` (use your own absolute paths and person crop):
 }
 ```
 
-Range boundaries are seconds in the original video; the end is exclusive. Crop coordinates are pixels in the original video. `Size` describes a square around the person. Keep the person inside it throughout the selected range. The crop is currently manual and constant, not automatically tracked. MP4/MOV metadata and the installed Windows video decoder must support the input.
+Range boundaries are seconds in the original video; the end is exclusive. Crop coordinates are pixels in the visible, oriented video image, after coded padding is removed. `Size` describes a square around the person. Keep the person inside it throughout the selected range. The crop is currently manual and constant, not automatically tracked. MP4/MOV metadata and the installed Windows video decoder must support the input.
 
 The command prints `HM_RESULT ` followed by the resulting `raw-body.hmotion` path. The editor opens it automatically; manual worker results can be opened through **Advanced → Open motion…**. Raw observations, image features and network predictions remain beside it. Ctrl+C or an input line containing `cancel` cancels between inference operations; rerunning the same request resumes completed frames. The editor allows eight queued uploads and one active job. Each job allows up to 1,800 selected frames and uses four CPU inference threads. The body worker loads its two vision models sequentially.
 
@@ -65,14 +65,22 @@ Example `landmark-job.json`:
 
 `Template` is the library's canonical source skeleton, independent of the eventual
 target character. `End: null` processes the remaining range, within the same 1,800-frame
-limit. The editor supplies these paths automatically and retains its existing project
-observation cache. Previous `observations.json` files are compatible and do not require
-fresh inference. A per-job file lock prevents simultaneous writers. Completed observations
+limit. The editor supplies these paths automatically. Observation JSON remains readable,
+but decoder/model changes create a new cache key and require fresh inference. Earlier
+jobs and raw motion remain on disk. A per-job file lock prevents simultaneous writers. Completed observations
 are saved every ten frames and on cancellation; abrupt process termination can require
 recomputing up to nine frames. `worker-job.json` records process ID, cumulative processing
 costs, current-session times and peak worker RAM. Old editor receipts are preserved.
 MediaPipe does not invoke the native hand/body networks. No model is loaded during
 a completed-cache replay; source skeleton fitting still runs from the stored observations.
+
+Preview and inference share the same decoder: it removes Media Foundation's display
+padding and applies quarter-turn orientation metadata before reconstruction. Camera
+intrinsics and manual crop coordinates use these displayed dimensions. Decoder version
+`wmf-visible-oriented-v2` is included in every backend's cache key and motion provenance.
+Standard MP4 track rotations are supported; fractional aperture offsets, perspective,
+mirrored or scaled track transforms require conversion to a standard video first.
+Pixel-aspect correction for anamorphic video is not implemented; use square pixels.
 
 For MobileHand, WildHands or WiLoR:
 

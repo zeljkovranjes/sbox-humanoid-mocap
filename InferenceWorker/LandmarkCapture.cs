@@ -12,7 +12,7 @@ namespace HumanoidMocap.Worker;
 public sealed record LandmarkCaptureRequest(string Video,string Model,string Output,string Template,double Start,double? End,bool SwapHands=false);
 
 /// <summary>Managed MediaPipe inference in the companion process. The observation
-/// key and JSON remain compatible with earlier in-editor reconstruction caches.</summary>
+/// JSON remains readable from earlier captures. Decoder changes invalidate observations.</summary>
 public static class LandmarkCapture
 {
     sealed class PriorMetrics
@@ -31,7 +31,7 @@ public static class LandmarkCapture
         var canonical=TargetRig.SboxDefault(File.ReadAllText(request.Template));
         string Hash(string path){using var stream=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();}
         token.ThrowIfCancellationRequested();var sourceHash=Hash(request.Video);var modelHash=Hash(request.Model);
-        var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(FormattableString.Invariant($"{ManagedHands.ImplementationVersion}|{sourceHash}|{modelHash}|{request.Start:R}|{request.End:R}")))).ToLowerInvariant();
+        var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(FormattableString.Invariant($"{WindowsVideoDecoder.ImplementationVersion}|{ManagedHands.ImplementationVersion}|{sourceHash}|{modelHash}|{request.Start:R}|{request.End:R}")))).ToLowerInvariant();
         var directory=Path.Combine(Path.GetFullPath(request.Output),key);Directory.CreateDirectory(directory);
         using var jobLock=new FileStream(Path.Combine(directory,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         var rawPath=Path.Combine(directory,"observations.json");
@@ -52,7 +52,7 @@ public static class LandmarkCapture
                 detectorImplementation=ManagedHands.ImplementationVersion,frames=raw.Count,total=times.Length,elapsedSeconds=prior.ElapsedSeconds+clock.Elapsed.TotalSeconds,
                 inferenceSeconds,sessionElapsedSeconds=clock.Elapsed.TotalSeconds,sessionInferenceSeconds=inferenceSeconds-prior.InferenceSeconds,
                 cacheHit,workerPid=Environment.ProcessId,peakWorkerRamBytes=Math.Max(prior.PeakWorkerRamBytes,Process.GetCurrentProcess().PeakWorkingSet64),
-                device="CPU",inferenceGpuUsed=false,decoder="Windows Media Foundation sequential samples; native presentation timestamps"},MotionDocument.JsonOptions));
+                device="CPU",inferenceGpuUsed=false,decoder=WindowsVideoDecoder.ImplementationVersion},MotionDocument.JsonOptions));
         }
         try
         {
@@ -78,7 +78,7 @@ public static class LandmarkCapture
             else progress?.Invoke("Reusing cached hand observations");
             if(!raw.Any(r=>r.Hands.Count>0))throw new InvalidDataException("No hands detected. Raw observations retained; no captured animation was generated.");
             var builder=new HandMotionBuilder(canonical,Path.GetFileNameWithoutExtension(request.Video),request.Video,sourceHash,metadata.FrameRate){SwapHands=request.SwapHands};
-            builder.Document.ModelVersion+="; "+ManagedHands.ImplementationVersion;
+            builder.Document.ModelVersion+="; "+ManagedHands.ImplementationVersion+"; "+WindowsVideoDecoder.ImplementationVersion;
             foreach(var frame in raw){token.ThrowIfCancellationRequested();builder.Add(frame.Time,frame.Width,frame.Height,frame.Hands.Select(h=>h.ToObservation()).ToArray());}
             builder.Document.Validate();token.ThrowIfCancellationRequested();
             var path=Path.Combine(directory,request.SwapHands?"raw-hands-v5-swapped.hmotion":"raw-hands-v5.hmotion");

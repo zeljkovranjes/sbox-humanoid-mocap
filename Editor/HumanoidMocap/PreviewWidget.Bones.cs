@@ -19,17 +19,22 @@ public sealed partial class PreviewWidget
         UpdateGizmoInputs(false);
         using(Gizmo.Scope("HumanoidMocap.TargetBones"))
         {
+            // Endpoints below are already world-space. Never inherit another gizmo's transform.
+            Gizmo.Transform=Transform.Zero;
             Gizmo.Draw.IgnoreDepth=true;
             Gizmo.Draw.LineThickness=1.2f;
             foreach(var bone in _rig.Skeleton.Bones)
             {
                 if(_rig.RoleOf(bone.Index) is not { } role)continue;
                 if(FirstPerson&&!IsArmOrFinger(role))continue;
+                // The clavicle's parenting offset starts at the chest bone, well below
+                // the collarbone. It is a hierarchy link, not a solid anatomical bone.
+                // The actual clavicle is drawn by the clavicle -> upper-arm edge below.
+                if(role is BoneRole.ClavicleL or BoneRole.ClavicleR)continue;
                 var parent=bone.ParentIndex;
                 while(parent>=0&&_rig.RoleOf(parent) is null)parent=_rig.Skeleton[parent].ParentIndex;
                 if(parent<0||FirstPerson&&_rig.RoleOf(parent) is { } parentRole&&!IsArmOrFinger(parentRole))continue;
-                var head=RigWorldToEngine(_worldScratch[parent]).Position;
-                var tail=RigWorldToEngine(_worldScratch[bone.Index]).Position;
+                if(!TryTargetBonePosition(parent,out var head)||!TryTargetBonePosition(bone.Index,out var tail))continue;
                 var delta=tail-head;var length=delta.Length;
                 if(length<.02f)continue;
                 var direction=delta/length;
@@ -57,6 +62,22 @@ public sealed partial class PreviewWidget
                 TargetBoneOverlayCount++;
             }
         }
+    }
+
+    bool TryTargetBonePosition(int index,out Vector3 position)
+    {
+        if(_sceneModel.IsValid()&&!SkeletonOnly)
+        {
+            // Model constraints can change the rendered pose after our overrides (the
+            // Human's ring-to-pinky constraints are one example). Draw the skin's actual
+            // skeleton, not the unconstrained reconstruction used to drive it.
+            var modelBone=_rigToModelBone[index];
+            if(modelBone<0){position=default;return false;}
+            position=_sceneModel.GetBoneWorldTransform(modelBone).Position;
+            return true;
+        }
+        position=RigWorldToEngine(_worldScratch[index]).Position;
+        return true;
     }
 
     static bool IsArmOrFinger(BoneRole role)=>role is BoneRole.UpperArmL or BoneRole.UpperArmR or

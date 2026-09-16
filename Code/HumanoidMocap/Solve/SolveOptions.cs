@@ -23,6 +23,8 @@ public enum RoleTransferMode
     /// <c>ΔC(f) = C_s⁻¹·ΔR(f)·C_s</c>). The target keeps its own rest carriage (shoulder
     /// line height, neck-base angle) and moves with the source. Identical to
     /// <see cref="AbsoluteDirection"/> when source and target rigs coincide.
+    /// Clavicles use the delta relative to a shared mapped chest ancestor, then
+    /// inherit the solved target chest motion, so body turns do not become shrugs.
     /// </summary>
     DeltaFromRest,
 
@@ -75,6 +77,8 @@ public sealed class SolveOptions
     /// absolutely instead of replaying deltas from a posed reference (see the
     /// <see cref="GeometricSolver"/> remarks for both). Everything else (limbs, spine,
     /// toes, fingers) stays absolute: there the worldspace direction IS the pose.
+    /// Full-body motion captures override the clavicle default with observed absolute
+    /// directions: a body model's zero pose is not necessarily neutral shoulder carriage.
     /// </summary>
     public static IReadOnlyDictionary<BoneRole, RoleTransferMode> DefaultTransferModes { get; } =
         new Dictionary<BoneRole, RoleTransferMode>
@@ -100,6 +104,10 @@ public sealed class SolveOptions
     /// opt out of all heuristics.
     /// </summary>
     public IReadOnlyDictionary<BoneRole, RoleTransferMode>? TransferModes { get; init; }
+
+    // The motion-document path supplies reconstructed collarbone directions. Keep
+    // other per-role default heuristics active, and honor explicit transfer modes.
+    internal bool CaptureClavicleDirections { get; init; }
 
     /// <summary>
     /// Scale applied to the pelvis translation components perpendicular to the character up

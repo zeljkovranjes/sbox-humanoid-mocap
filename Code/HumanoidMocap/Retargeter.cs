@@ -776,6 +776,15 @@ public static class Retargeter
     {
         var requested = request.Solve ?? new SolveOptions();
         var handCapture = Motion.HandCaptureRetargeter.Supports(scene, map);
+        var captureClavicleDirections = !handCapture && scene.CaptureSpace is not null && requested.TransferModes is null;
+        if (captureClavicleDirections)
+        {
+            // Body-model collar joints are not the target's anatomical rest carriage.
+            // SMPL's zero-pose collar->shoulder slopes upward; its reconstructed neutral
+            // pose rotates that line down to level. Replaying the same delta onto the
+            // Human's already-level collar line lowers its shoulders a second time.
+            AddNote(report, "Full-body capture transfers observed clavicle directions while retaining target bone lengths and attachment positions.");
+        }
         var solved = handCapture
             ? Motion.HandCaptureRetargeter.Solve(scene, map, target.Rig, target.UpAxis,
                 request.MocapCorrections ?? Motion.TargetCorrectionSettings.ForRig(target.Rig,target.UpAxis), take, clipName, requested.TransferFingers)
@@ -786,6 +795,7 @@ public static class Retargeter
             HipScaleVertical = requested.HipScaleVertical,
             TransferFingers = requested.TransferFingers,
             TransferModes = requested.TransferModes,
+            CaptureClavicleDirections = captureClavicleDirections,
             ClipIndex = take,
             ClipName = clipName,
         });

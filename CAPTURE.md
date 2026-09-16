@@ -8,6 +8,10 @@ Record in good light with a short exposure when possible. Keep the subject sharp
 avoid motion blur, digital zoom changes and sudden camera movement. Keep the original
 video; trimming or conversion should create a new file. MP4 with H.264 is a practical
 input for the installed Windows decoder. MOV/phone codec support depends on Windows.
+Preview and reconstruction honor standard quarter-turn video orientation metadata
+and exclude coded padding. Use square pixels; unusual crop or display transforms may
+require exporting a standard copy. This image rotation is separate from the estimated
+camera placement used to position reconstructed hands in the scene.
 
 For hands, keep both wrists and fingers visible when the motion needs both hands.
 Include an open hand and a relaxed closed hand at the beginning so handedness and
@@ -65,6 +69,14 @@ Export saves an FBX armature and animated bones. It does not export a mesh, skin
 or a newly rigged character. Keep the raw `.hmotion` and video for later corrections;
 baked FBX playback does not require the C# worker or neural model downloads.
 
+Third Person capture transfers the reconstructed collarbone directions while retaining
+the target's bone lengths and attachment positions. This avoids lowering the Human's
+shoulders by replaying SMPL's raised zero-pose collarbone offset onto an already flatter
+target rig. Body turns also stay separate from shoulder-relative motion. The preview's
+bone overlay follows the rendered model's joints and omits the chest-to-clavicle parenting
+links, which previously looked like collarbones starting too low. Reopen the raw capture
+to rebuild an existing result with this correction; reconstruction is not required again.
+
 The inspected upstream samples are HaWoR's [video_0.mp4](https://raw.githubusercontent.com/ThunderVVV/HaWoR/main/example/video_0.mp4),
 [segment_018.mp4](https://raw.githubusercontent.com/ThunderVVV/HaWoR/main/example/segment_018.mp4),
 [segment_037.mp4](https://raw.githubusercontent.com/ThunderVVV/HaWoR/main/example/segment_037.mp4),
@@ -75,20 +87,20 @@ Footage, download tools and verification outputs are excluded from the distribut
 The downloaded examples were inspected and processed on a Ryzen 7 7800X3D with 32 GB RAM.
 MediaPipe processed the complete short hand clips: `video_0.mp4` (121 frames),
 `segment_018.mp4` (120 frames), and `segment_037.mp4` (120 frames). Fresh reconstruction
-took approximately 16, 17 and 18 seconds respectively with the Release C# verifier
-after CPU crop and video-tracking corrections. Peak process RAM across this run was
-1.31 GB. These are observed CPU costs, not minimum requirements or a controlled
-speed comparison with previous Debug runs.
+took approximately 13, 13 and 20 seconds respectively in the Release C# worker
+after visible-aperture and orientation correction. Peak worker RAM reached 1.30 GB.
+These are observed CPU costs, not minimum requirements or a controlled speed comparison;
+editor verification overlapped part of the run.
 The GVHMR example used the first second of `tennis.mp4`; full-length tennis accuracy
 has not been validated. Preview/export checks include native FBX compilation and
 animated playback in s&box.
 
 Review these examples critically. After the correction, the plate-handling clip had
-77 left-hand and 75 right-hand observed frames out of 121. The cupboard clip had only
-2 left-hand and 84 right-hand observed frames out of 120. The cooking clip had all
+77 left-hand and 78 right-hand observed frames out of 121. The cupboard clip had
+0 left-hand and 85 right-hand observed frames out of 120. The cooking clip had all
 120 right-hand frames but no left-hand detection; part of that hand lies outside the image.
-Acceptance decreased in the first two clips compared with the earlier pipeline;
-matching the reference preprocessing has not established a capture-quality improvement.
+Correct image geometry has not established a capture-quality improvement;
+model acceptance remains mixed and some previously accepted hands are now missed.
 These counts describe model acceptance, not verified accuracy. Abrupt rotation changes
 also remain in some predictions. No model
 here has been verified to match ACE's accuracy. Contact with plates, containers or
@@ -97,7 +109,14 @@ synchronization and successful export do not establish correct 3D motion.
 
 MobileHand is another lightweight option under **Advanced → Hand models…**. All three
 hand samples completed its C# inference, cleanup, target preview, armature-only export
-and native s&box playback checks. It shares MediaPipe's crop detector, so the missing-hand
-counts above also apply. Its small checkpoint does not solve those detection failures.
+and native s&box playback checks with the preceding decoder. The corrected decoder also
+completed a fresh 30-frame cooking clip. It shares MediaPipe's crop detector and its
+missing-hand limitations. Its small checkpoint does not solve those detection failures.
 The sampled overlays showed finger misalignment, and measured pose/depth jumps remain
 large. Use it as an experimental alternative and inspect the result before exporting.
+
+All four complete videos passed visible-dimension and timestamp checks against an
+independent decoder. Metadata-only copies of the cooking clip exercised 0°, 90°, 180°
+and 270° display rotation without changing compressed footage. A portrait copy also
+passed automatic reconstruction, synchronized preview and native FBX playback in s&box.
+These are orientation fixtures, not a physical iPhone/Android recording or connection test.

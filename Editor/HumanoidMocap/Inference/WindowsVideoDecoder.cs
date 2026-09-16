@@ -12,14 +12,17 @@ public sealed record DecodedVideoFrame(byte[] Rgba,int Width,int Height,double T
 /// ABI slots and GUIDs are from Windows SDK 10.0.26100 mfobjects.h / mfreadwrite.h.</summary>
 public sealed class WindowsVideoDecoder : IDisposable
 {
+    public const string ImplementationVersion="wmf-visible-oriented-v2";
     const int VideoStream=unchecked((int)0xfffffffc);
     IntPtr reader;
     bool started;
-    int width,height,stride;
+    int stride;
+    VideoFrameLayout layout=null!;
     static readonly Guid Major=new("48eba18e-f8c9-4687-bf11-0a74c9f96a8f"),Subtype=new("f7e34c9a-42e8-4714-b74b-cb29d72c35e5"),
         Video=new("73646976-0000-0010-8000-00aa00389b71"),Rgb32=new("00000016-0000-0010-8000-00aa00389b71"),
         Processing=new("fb394f3d-ccf1-42ee-bbb3-f9b845d5681d"),Size=new("1652c33d-d6b2-4012-b834-72030849a37d"),
-        Stride=new("644b4e48-1e02-4516-b0eb-c01ca9d49ac6");
+        Stride=new("644b4e48-1e02-4516-b0eb-c01ca9d49ac6"),Rotation=new("c380465d-2271-428c-9b83-ecea3b4a85c1"),
+        MinimumAperture=new("d7388766-18fe-48c6-a177-ee894867c8c4"),GeometricAperture=new("66758743-7e5f-400d-980a-aa8596c85696");
     public WindowsVideoDecoder(string path)
     {
         if(!File.Exists(path))throw new FileNotFoundException("Video not found.",path);
@@ -43,12 +46,25 @@ public sealed class WindowsVideoDecoder : IDisposable
         Check(Method<GetMediaType>(reader,6)(reader,VideoStream,out var type));
         try
         {
-            Check(Method<GetLong>(type,8)(type,Size,out var dimensions));width=(int)(dimensions>>32);height=(int)(dimensions&uint.MaxValue);
+            Check(Method<GetLong>(type,8)(type,Size,out var dimensions));var width=(int)(dimensions>>32);var height=(int)(dimensions&uint.MaxValue);
             if(width<=0||height<=0||(long)width*height>33_177_600)throw new InvalidDataException("Video exceeds the 8K decode limit.");
             var hr=Method<GetInt>(type,7)(type,Stride,out stride);if(hr<0)stride=checked(width*4);
             if(Math.Abs((long)stride)<width*4L)throw new InvalidDataException("Invalid video stride.");
+            var aperture=ReadAperture(type,MinimumAperture)??ReadAperture(type,GeometricAperture);
+            var rotation=0;hr=Method<GetInt>(type,7)(type,Rotation,out var value);
+            if(hr>=0)rotation=value;else if(hr!=unchecked((int)0xc00d36e6))Check(hr);
+            layout=new(width,height,aperture?.X??0,aperture?.Y??0,aperture?.Width??width,aperture?.Height??height,rotation);
         }
         finally{Release(ref type);}
+    }
+    static (int X,int Y,int Width,int Height)? ReadAperture(IntPtr type,Guid key)
+    {
+        var bytes=new byte[16];var hr=Method<GetBlob>(type,15)(type,key,bytes,bytes.Length,out var size);
+        if(hr==unchecked((int)0xc00d36e6))return null;Check(hr);
+        if(size!=16)throw new InvalidDataException("Invalid video display aperture metadata.");
+        if(BitConverter.ToUInt16(bytes,0)!=0||BitConverter.ToUInt16(bytes,4)!=0)
+            throw new InvalidDataException("Fractional video aperture offsets are not supported. Export the video with square pixels and an integer crop.");
+        return (BitConverter.ToInt16(bytes,2),BitConverter.ToInt16(bytes,6),BitConverter.ToInt32(bytes,8),BitConverter.ToInt32(bytes,12));
     }
     /// <summary>Seek to the preceding keyframe. Read forward to the requested presentation timestamp.</summary>
     public void Seek(double seconds)
@@ -75,15 +91,7 @@ public sealed class WindowsVideoDecoder : IDisposable
                 Check(Method<LockBuffer>(buffer,3)(buffer,out var data,out _,out var length));
                 try
                 {
-                    var pitch=(int)Math.Abs((long)stride);if((long)pitch*height>length)throw new InvalidDataException("Decoded buffer is shorter than its frame dimensions.");
-                    var bytes=new byte[checked(width*height*4)];
-                    for(var y=0;y<height;y++)
-                    {
-                        token.ThrowIfCancellationRequested();var sourceRow=stride<0?height-1-y:y;
-                        Marshal.Copy(IntPtr.Add(data,checked(sourceRow*pitch)),bytes,y*width*4,width*4);
-                    }
-                    for(var i=0;i<bytes.Length;i+=4){(bytes[i],bytes[i+2])=(bytes[i+2],bytes[i]);bytes[i+3]=255;}
-                    return new(bytes,width,height,timestamp/10_000_000d);
+                    return new(layout.CopyRgba(data,length,stride,token),layout.Width,layout.Height,timestamp/10_000_000d);
                 }
                 finally{Check(Method<NoArgs>(buffer,4)(buffer));}
             }
@@ -106,6 +114,7 @@ public sealed class WindowsVideoDecoder : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int SetGuid(IntPtr self,in Guid key,in Guid value);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetLong(IntPtr self,in Guid key,out ulong value);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetInt(IntPtr self,in Guid key,out int value);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBlob(IntPtr self,in Guid key,[Out] byte[] bytes,int capacity,out int size);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int SelectStream(IntPtr self,int stream,int selected);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int SetType(IntPtr self,int stream,IntPtr reserved,IntPtr type);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetMediaType(IntPtr self,int stream,out IntPtr type);

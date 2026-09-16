@@ -10,6 +10,7 @@ namespace HumanoidMocap.Editor;
 internal sealed record Mp4Metadata(double Duration,int Width,int Height,double FrameRate)
 {
     public double[] Times { get; init; } = Array.Empty<double>();
+    public int RotationDegrees { get; init; }
     record Box(string Type,long Start,long End);
     static uint U32(BinaryReader r)=>BinaryPrimitives.ReverseEndianness(r.ReadUInt32());
     static ulong U64(BinaryReader r)=>BinaryPrimitives.ReverseEndianness(r.ReadUInt64());
@@ -38,6 +39,18 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
             var handler=media.Single(b=>b.Type=="hdlr");stream.Position=handler.Start+8;
             if(Encoding.ASCII.GetString(r.ReadBytes(4))!="vide")continue;
             var header=children.Single(b=>b.Type=="tkhd");stream.Position=header.End-8;var width=(int)(U32(r)>>16);var height=(int)(U32(r)>>16);
+            // tkhd dimensions precede the display transform. Media Foundation applies
+            // this orientation in WindowsVideoDecoder; crops and camera intrinsics must agree.
+            if(header.End-header.Start<84)throw new FormatException("Truncated video track header.");
+            stream.Position=header.End-44;var matrix=new int[9];for(var i=0;i<9;i++)matrix[i]=unchecked((int)U32(r));
+            var rotation=(matrix[0],matrix[1],matrix[3],matrix[4]) switch
+            {
+                (65536,0,0,65536)=>0,(0,65536,-65536,0)=>90,
+                (-65536,0,0,-65536)=>180,(0,-65536,65536,0)=>270,
+                _=>throw new FormatException("Unsupported video display transform. Export the video with a standard 0, 90, 180 or 270 degree orientation.")
+            };
+            if(matrix[2]!=0||matrix[5]!=0||matrix[8]!=1<<30)throw new FormatException("Unsupported perspective video display transform.");
+            if(rotation is 90 or 270)(width,height)=(height,width);
             var mdhd=media.Single(b=>b.Type=="mdhd");stream.Position=mdhd.Start;var version=r.ReadByte();stream.Position=mdhd.Start+(version==1?20:12);
             var scale=U32(r);var duration=version==1?U64(r):U32(r);
             var minf=media.Single(b=>b.Type=="minf");var stbl=Boxes(r,minf.Start,minf.End).Single(b=>b.Type=="stbl");
@@ -64,7 +77,7 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
                 }
             }
             Array.Sort(times);var first=times[0];for(var i=0;i<times.Length;i++)times[i]-=first;
-            var seconds=(double)duration/scale;return new(seconds,width,height,count/seconds){Times=times};
+            var seconds=(double)duration/scale;return new(seconds,width,height,count/seconds){Times=times,RotationDegrees=rotation};
         }
         throw new FormatException("No video track.");
     }

@@ -211,6 +211,12 @@ public sealed class GeometricSolver : IRetargetSolver
             /// transport bone's carried-yaw lateral axis — see <see cref="TryAddDirect"/>.
             /// Identity when <see cref="HeadingSlot"/> is null.</summary>
             public Quaternion Div { get; init; }
+
+            // Clavicle deltas are measured relative to the carried chest. Applying
+            // its world turn inside the source/target clavicle basis change otherwise
+            // turns a heading change into a shoulder shrug (or a lowered shoulder).
+            public int? ParentSlot { get; init; }
+            public int TargetParentBone { get; init; }
         }
 
         private readonly struct SpineEntry
@@ -243,6 +249,7 @@ public sealed class GeometricSolver : IRetargetSolver
         /// map: the map is then exact and every fallback heuristic (the virtual-foot delta
         /// fallback below) is disabled — see <see cref="SolveOptions.TransferModes"/>.</summary>
         private readonly bool _explicitModes;
+        private readonly bool _captureClavicleDirections;
         private readonly bool _groundedLegDirections;
 
         public Plan(SourceScene source, Clip clip, MappingResult srcMap, TargetRig rig, SolveOptions options)
@@ -251,6 +258,7 @@ public sealed class GeometricSolver : IRetargetSolver
             _src = src;
             _tgt = rig.Skeleton;
             _explicitModes = options.TransferModes is not null;
+            _captureClavicleDirections = options.CaptureClavicleDirections;
             _groundedLegDirections = options.GroundedLegDirections;
             _modes = options.TransferModes ?? SolveOptions.DefaultTransferModes;
 
@@ -430,6 +438,8 @@ public sealed class GeometricSolver : IRetargetSolver
             var ct = _tgtCanon.WorldFrameOf(role);
             if (!_modes.TryGetValue(role, out var mode))
                 mode = RoleTransferMode.AbsoluteDirection;
+            if (!_explicitModes && _captureClavicleDirections && role is BoneRole.ClavicleL or BoneRole.ClavicleR)
+                mode = RoleTransferMode.AbsoluteDirection;
 
             // Feet whose SOURCE direction is a virtual character-forward extension (no mapped
             // toe) while the target's is real anatomy fall back to canonical delta transfer:
@@ -563,6 +573,26 @@ public sealed class GeometricSolver : IRetargetSolver
                 div = Quaternion.CreateFromAxisAngle(lateral, divergence);
             }
 
+            int? parentSlot = null;
+            var targetParentBone = -1;
+            if (mode == RoleTransferMode.DeltaFromRest && role is BoneRole.ClavicleL or BoneRole.ClavicleR)
+            {
+                for (var parent = _src[srcBone].ParentIndex; parent >= 0 && parentSlot is null; parent = _src[parent].ParentIndex)
+                {
+                    foreach (var spineRole in new[] { BoneRole.Spine3, BoneRole.Spine2, BoneRole.Spine1, BoneRole.Spine0 })
+                    {
+                        if (!srcMap.RoleToBone.TryGetValue(spineRole, out var sourceSpine) || sourceSpine != parent
+                            || rig.BoneForRole(spineRole) is not int targetSpine) continue;
+                        for (var ancestor = _tgt[tgtBone].ParentIndex; ancestor >= 0; ancestor = _tgt[ancestor].ParentIndex)
+                        {
+                            if (ancestor != targetSpine) continue;
+                            parentSlot = RegisterSlot(parent); targetParentBone = targetSpine; break;
+                        }
+                        if (parentSlot is not null) break;
+                    }
+                }
+            }
+
             _direct.Add(new DirectEntry
             {
                 Slot = RegisterSlot(srcBone),
@@ -592,6 +622,8 @@ public sealed class GeometricSolver : IRetargetSolver
                     : MathQ.Normalize(cs * Quaternion.Conjugate(ct) * _tgtNormRest[tgtBone].Rot),
                 HeadingSlot = headingSlot,
                 Div = div,
+                ParentSlot = parentSlot,
+                TargetParentBone = targetParentBone,
             });
         }
 
@@ -792,6 +824,17 @@ public sealed class GeometricSolver : IRetargetSolver
                     : Quaternion.Slerp(aLo, MathQ.Normalize(_chrSrcInv * _deltas[s.HiSlot] * s.CsHi), s.T);
                 _rot[s.TgtBone] = MathQ.Normalize(_chrTgt * dc * s.CtInvRest);
                 _solved[s.TgtBone] = true;
+            }
+
+            // Spine interpolation must finish first so its actual target chest motion
+            // carries the shoulder girdle. Only the clavicle's relative motion enters
+            // the canonical basis change; target rest proportions remain unchanged.
+            foreach (var d in _direct)
+            {
+                if (d.ParentSlot is not int parentSlot || !_solved[d.TargetParentBone]) continue;
+                var chestDelta = _rot[d.TargetParentBone] * Quaternion.Conjugate(_tgtNormRest[d.TargetParentBone].Rot);
+                var relativeDelta = Quaternion.Conjugate(_deltas[parentSlot]) * _deltas[d.Slot];
+                _rot[d.TgtBone] = MathQ.Normalize(chestDelta * d.Pre * relativeDelta * d.B);
             }
 
             _fingers?.Apply(_deltas, _solved, _rot);

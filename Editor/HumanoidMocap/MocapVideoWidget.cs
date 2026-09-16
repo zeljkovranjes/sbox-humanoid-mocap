@@ -22,7 +22,6 @@ sealed class MocapVideoWidget : Widget
     DecodedVideoFrame pending;
     string failure;
     double duration;
-    int visibleHeight;
     Pixmap frame;
 
     public MocapVideoWidget(Widget parent,string path):base(parent)
@@ -38,14 +37,14 @@ sealed class MocapVideoWidget : Widget
         try
         {
             var metadata=Mp4Metadata.Read(path);
-            lock(sync){duration=metadata.Duration;visibleHeight=metadata.Height;}
+            lock(sync)duration=metadata.Duration;
             using var decoder=new WindowsVideoDecoder(path);
             var cache=new Dictionary<long,DecodedVideoFrame>();var order=new Queue<long>();
             static long Key(double time)=>(long)Math.Round(time*10000);
             DecodedVideoFrame Read()
             {
                 var decoded=decoder.Read(stop.Token);if(decoded is null)return null;
-                var visible=Math.Min(metadata.Height,decoded.Height);
+                var visible=decoded.Height;
                 var scale=Math.Min(1,Math.Min(960d/decoded.Width,540d/visible));
                 var width=Math.Max(1,(int)(decoded.Width*scale));var height=Math.Max(1,(int)(visible*scale));
                 var rgba=new byte[checked(width*height*4)];
@@ -103,16 +102,14 @@ sealed class MocapVideoWidget : Widget
     }
     public void Present()
     {
-        DecodedVideoFrame decoded;int height;var previousError=Error;
-        lock(sync){decoded=pending;pending=null;Duration=duration;Error=failure;height=visibleHeight;}
+        DecodedVideoFrame decoded;var previousError=Error;
+        lock(sync){decoded=pending;pending=null;Duration=duration;Error=failure;}
         if(Error!=previousError)Update();
         if(decoded is null||FrameTime==decoded.Time)return;
-        // Media Foundation can return a 1088-row surface for a 1080-row video.
-        // Exclude coded padding from both presentation and the aspect ratio.
-        height=height>0?Math.Min(height,decoded.Height):decoded.Height;
-        var size=new Vector2(decoded.Width,height);
+        // The decoder supplies the same visible, oriented image used by inference.
+        var size=new Vector2(decoded.Width,decoded.Height);
         if(frame is null||frame.Size!=size)frame=new Pixmap(size);
-        frame.UpdateFromPixels(decoded.Rgba.AsSpan(0,checked(decoded.Width*height*4)),size,ImageFormat.RGBA8888);
+        frame.UpdateFromPixels(decoded.Rgba,size,ImageFormat.RGBA8888);
         FrameTime=decoded.Time;Update();
     }
     internal byte[] FramePng()=>frame?.GetPng();
