@@ -2,7 +2,7 @@
 
 Experimental local body and hand reconstruction. The worker is C# and calls native LibTorch and OpenCV directly. It does not run Python. Baked animations do not depend on the worker.
 
-The editor starts this worker automatically for Third Person, or for the optional MobileHand, WildHands and WiLoR hand models. Select a workspace, upload a video, and inspect the result. **Advanced → Hand models…** changes the model used for subsequent FPS uploads. MediaPipe remains the lightweight default and runs directly in C# in the editor. ACE is not downloaded or executed.
+The editor starts this worker automatically for both workspaces and every available hand model. Select a workspace, upload a video, and inspect the result. **Advanced → Hand models…** changes the model used for subsequent FPS uploads. MediaPipe remains the lightweight default; its managed C# inference now runs in the separate worker too. ACE is not downloaded or executed.
 
 First-time native worker setup requires .NET 10 SDK and the complete repository checkout. The editor publishes the included worker into `%LOCALAPPDATA%/sbox-humanoid-mocap/worker/<source fingerprint>`. Changes to its C# sources or pinned dependencies automatically select a new build; an interrupted build is retried. To use a prebuilt worker, set `HUMANOID_MOCAP_WORKER` to its executable. Explicitly configured builds are maintained by their owner. `HUMANOID_MOCAP_MODELS` optionally selects a shared model folder. Models are downloaded only for the selected backend and verified against pinned hashes.
 
@@ -15,13 +15,9 @@ dotnet run --project InferenceWorker -- body-capture body-job.json
 
 The first command downloads and verifies 5,530,829,656 bytes of pinned body checkpoints/model data. NuGet also restores the pinned native CPU dependencies. These files stay local and are reused.
 
-To download the four upstream example videos without running any reconstruction model:
-
-```powershell
-dotnet run --project InferenceWorker -- download-samples samples
-```
-
-This command checks pinned sizes and SHA-256 hashes, parses video metadata and decodes every frame. `samples/download-receipts.json` records each source URL, checksum, duration, dimensions, frame rate and decoded frame count. HTML responses and Git LFS pointers fail validation. Existing valid files are reused; originals are never replaced on a checksum failure. Open the downloaded footage in the editor and select the appropriate workspace. These are example inputs, not labeled ground-truth motion.
+Example footage and measured limitations are linked in the [capture guide](../CAPTURE.md).
+Test-video download tools, fixtures and verification reports are kept outside the
+distributed library. They are not needed to process your own videos.
 
 Example `body-job.json` (use your own absolute paths and person crop):
 
@@ -46,7 +42,39 @@ Tested on Ryzen 7 7800X3D with 32 GB RAM: 29 real tennis-video frames took about
 
 The exported slice was imported, retargeted, previewed, compiled and played in s&box. It remains raw reconstruction requiring review and correction. See the repository's third-party notices and `Editor/HumanoidMocap/Inference/Gvhmr.LICENSE`.
 
-For native hand capture, download only the selected model:
+For hand capture, download only the selected model. For the default MediaPipe path:
+
+```powershell
+dotnet run --project InferenceWorker -- download-hand-models models mediapipe
+dotnet run --project InferenceWorker -- landmark-capture landmark-job.json
+```
+
+Example `landmark-job.json`:
+
+```json
+{
+  "Video": "D:/Videos/hands.mp4",
+  "Model": "D:/Mocap/models/hand_landmarker.task",
+  "Output": "D:/Mocap/jobs",
+  "Template": "D:/Mocap/Assets/humanoid_mocap/target_rig_sbox.json",
+  "Start": 0,
+  "End": 1,
+  "SwapHands": false
+}
+```
+
+`Template` is the library's canonical source skeleton, independent of the eventual
+target character. `End: null` processes the remaining range, within the same 1,800-frame
+limit. The editor supplies these paths automatically and retains its existing project
+observation cache. Previous `observations.json` files are compatible and do not require
+fresh inference. A per-job file lock prevents simultaneous writers. Completed observations
+are saved every ten frames and on cancellation; abrupt process termination can require
+recomputing up to nine frames. `worker-job.json` records process ID, cumulative processing
+costs, current-session times and peak worker RAM. Old editor receipts are preserved.
+MediaPipe does not invoke the native hand/body networks. No model is loaded during
+a completed-cache replay; source skeleton fitting still runs from the stored observations.
+
+For MobileHand, WildHands or WiLoR:
 
 ```powershell
 dotnet run --project InferenceWorker -- download-hand-models models wildhands

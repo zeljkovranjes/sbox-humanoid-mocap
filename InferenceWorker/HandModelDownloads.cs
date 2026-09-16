@@ -22,9 +22,9 @@ public static class HandModelDownloads
 
     public static async Task Ensure(string folder,string backend,CancellationToken token)
     {
-        var model=backend switch{"mobilehand"=>MobileHand,"wildhands"=>WildHands,"wilor"=>Wilor,_=>throw new NotSupportedException("Select MobileHand, WildHands or WiLoR. ACE is not downloaded or loaded by this worker.")};
+        var assets=backend switch{"mediapipe"=>new[]{Detector},"mobilehand"=>new[]{Detector,MobileHand},"wildhands"=>new[]{Detector,WildHands},"wilor"=>new[]{Detector,Wilor},_=>throw new NotSupportedException("Select MediaPipe, MobileHand, WildHands or WiLoR. ACE is not downloaded or loaded by this worker.")};
         using var http=new HttpClient{Timeout=TimeSpan.FromHours(1)};
-        foreach(var asset in new[]{Detector,model})
+        foreach(var asset in assets)
         {
             var path=Path.Combine(folder,asset.Path);Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             if(!File.Exists(path))
@@ -53,7 +53,7 @@ public static class HandModelDownloads
             else await Verify(path,asset,token);
             Console.WriteLine("Verified "+Path.GetFileName(path));
         }
-        File.WriteAllText(Path.Combine(folder,backend+"-models.json"),JsonSerializer.Serialize(new{backend,assets=new[]{Detector,model},verifiedUtc=DateTime.UtcNow},new JsonSerializerOptions{WriteIndented=true}));
+        File.WriteAllText(Path.Combine(folder,backend+"-models.json"),JsonSerializer.Serialize(new{backend,assets,verifiedUtc=DateTime.UtcNow},new JsonSerializerOptions{WriteIndented=true}));
     }
     static async Task Verify(string path,Asset asset,CancellationToken token)
     {

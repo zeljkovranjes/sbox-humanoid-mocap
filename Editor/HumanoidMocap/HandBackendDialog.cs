@@ -15,7 +15,7 @@ public sealed partial class RetargetWindow
         sealed record Backend(string Id,string Name,string Weight,Color Color,string Status,string Download,string Output,string Requirements,string Limit);
         readonly Backend[] _backends =
         {
-            new("mediapipe","MediaPipe","Light",Theme.Green,"Available · experimental C#","7.8 MB","Hand landmarks and finger motion","Model prepared automatically","Wrist depth and hidden arm joints are estimated."),
+            new("mediapipe","MediaPipe","Light",Theme.Green,"Available · experimental C#","7.8 MB","Hand landmarks and finger motion","C# worker prepared on first use","Wrist depth and hidden arm joints are estimated."),
             new("mobilehand","MobileHand","Light*",Theme.Green,"Experimental C# / native CPU","15.2 MB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Small image model. Tests show pose jumps and unstable depth. Occluded hands depend on the crop detector. Review carefully before export."),
             new("wildhands","WildHands","Medium*",Color.Lerp(Theme.Blue,Theme.Text,.4f),"Experimental C# / native CPU","855 MB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Designed for egocentric footage. Estimated intrinsics can shift the reconstructed hand."),
             new("wilor","WiLoR","Heavy*",Theme.Yellow,"Experimental C# / native CPU","2.56 GB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Large transformer model. Depth remains dependent on camera assumptions."),

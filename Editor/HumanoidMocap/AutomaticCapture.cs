@@ -72,7 +72,7 @@ public sealed partial class RetargetWindow
                     await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
                 }
                 motionPath = await HandCaptureJob.RunAsync(video, _handModelPath, _target.Spec.Rig, start, end, _swapHands,
-                    (done, total, message) => { if (this.IsValid()) _captureStatus.Text = $"{message} · {done}/{total}"; }, token);
+                    (done, total, message) => { if (this.IsValid()) _captureStatus.Text = message; }, token);
             }
             else if(firstPerson)
             {

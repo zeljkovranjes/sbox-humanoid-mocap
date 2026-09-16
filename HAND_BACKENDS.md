@@ -59,6 +59,8 @@ See also the official [ACE repository](https://github.com/ggxxii/ACE-Ego-Hand) a
 [WiLoR repository](https://github.com/rolpotamias/WiLoR).
 
 These integrations use C# and native inference libraries without a Python bridge.
+All available models reconstruct in a separate local C# worker. MediaPipe uses its
+managed interpreter there and retains compatibility with earlier observation caches.
 MediaPipe, WildHands and WiLoR have produced real reconstructed motion, target-rig
 previews and moving FBX animations imported by s&box. The native hand models share the
 7.8 MB MediaPipe crop detector. Missing detections stay explicit; the models do not

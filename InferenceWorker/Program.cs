@@ -17,12 +17,15 @@ if(Console.IsInputRedirected)
 }
 try
 {
-    if(args.Length==2&&args[0]=="download-samples")
-        await SampleDownloads.Ensure(Path.GetFullPath(args[1]),cancellation.Token);
-    else if(args.Length==2&&args[0]=="download-body-models")
+    if(args.Length==2&&args[0]=="download-body-models")
         await BodyModelDownloads.Ensure(Path.GetFullPath(args[1]),cancellation.Token);
     else if(args.Length==3&&args[0]=="download-hand-models")
         await HandModelDownloads.Ensure(Path.GetFullPath(args[1]),args[2],cancellation.Token);
+    else if(args.Length==2&&args[0]=="landmark-capture")
+    {
+        var request=JsonSerializer.Deserialize<LandmarkCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid landmark job request.");
+        Console.WriteLine("HM_RESULT "+LandmarkCapture.Run(request,cancellation.Token,Console.WriteLine));
+    }
     else if(args.Length==2&&args[0]=="body-capture")
     {
         torch.set_num_threads(4);
@@ -35,7 +38,7 @@ try
         var request=JsonSerializer.Deserialize<HandCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid hand job request.");
         Console.WriteLine("HM_RESULT "+HandCapture.Run(request,cancellation.Token,Console.WriteLine));
     }
-    else throw new ArgumentException("Usage: download-samples <video-folder> | download-body-models <model-folder> | download-hand-models <model-folder> <mobilehand|wildhands|wilor> | body-capture <job.json> | hand-capture <job.json>");
+    else throw new ArgumentException("Usage: download-body-models <model-folder> | download-hand-models <model-folder> <mediapipe|mobilehand|wildhands|wilor> | body-capture <job.json> | hand-capture <job.json> | landmark-capture <job.json>");
 }
 catch(OperationCanceledException){Console.Error.WriteLine("Cancelled. Cached reconstruction can be resumed.");Environment.ExitCode=2;}
 catch(Exception e){Console.Error.WriteLine(e.Message);Environment.ExitCode=1;}

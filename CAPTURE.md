@@ -65,9 +65,12 @@ Export saves an FBX armature and animated bones. It does not export a mesh, skin
 or a newly rigged character. Keep the raw `.hmotion` and video for later corrections;
 baked FBX playback does not require the C# worker or neural model downloads.
 
-For the four upstream example videos, run `dotnet run --project InferenceWorker -- download-samples samples`
-from the repository root. This downloads and fully decodes the footage, records its source and metadata,
-and does not execute a reconstruction model. See the [worker guide](InferenceWorker/README.md) for details.
+The inspected upstream samples are HaWoR's [video_0.mp4](https://raw.githubusercontent.com/ThunderVVV/HaWoR/main/example/video_0.mp4),
+[segment_018.mp4](https://raw.githubusercontent.com/ThunderVVV/HaWoR/main/example/segment_018.mp4),
+[segment_037.mp4](https://raw.githubusercontent.com/ThunderVVV/HaWoR/main/example/segment_037.mp4),
+and GVHMR's [tennis.mp4](https://raw.githubusercontent.com/zju3dv/GVHMR/main/docs/example_video/tennis.mp4).
+The local verification pipeline downloaded, checksummed and fully decoded them.
+Footage, download tools and verification outputs are excluded from the distributed library.
 
 The downloaded examples were inspected and processed on a Ryzen 7 7800X3D with 32 GB RAM.
 MediaPipe processed the complete short hand clips: `video_0.mp4` (121 frames),

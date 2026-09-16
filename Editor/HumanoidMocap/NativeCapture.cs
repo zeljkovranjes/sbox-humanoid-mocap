@@ -90,9 +90,17 @@ internal static class NativeCapture
         return await Job(worker,"hand",jobs=>new { Video=video,Models=models,Output=jobs,Backend=backend,Start=start,End=end,Camera=camera },progress,token);
     }
 
-    static async Task<string> Job(string worker,string kind,Func<string,object> createRequest,Action<string> progress,CancellationToken token)
+    public static async Task<string> LandmarksAsync(string video,string model,string output,double start,double? end,bool swapHands,Action<string> progress,CancellationToken token)
     {
-        var jobs=Path.Combine(CacheRoot,"jobs",kind);Directory.CreateDirectory(jobs);
+        var template=EditorPipeline.FindLibraryAssetFile(EditorPipeline.TargetRigJsonRelative)
+            ??throw new FileNotFoundException("The canonical hand skeleton is missing from this library.");
+        var (worker,_)=await Prepare(progress,token);
+        return await Job(worker,"landmark",jobs=>new{Video=video,Model=model,Output=jobs,Template=template,Start=start,End=end,SwapHands=swapHands},progress,token,output);
+    }
+
+    static async Task<string> Job(string worker,string kind,Func<string,object> createRequest,Action<string> progress,CancellationToken token,string output=null)
+    {
+        var jobs=output??Path.Combine(CacheRoot,"jobs",kind);Directory.CreateDirectory(jobs);
         var request=Path.Combine(jobs,Guid.NewGuid().ToString("N")+".request.json");
         File.WriteAllText(request,JsonSerializer.Serialize(createRequest(jobs)));
         var result = await RunProcess(worker, new[] { kind+"-capture", request }, progress, token);
