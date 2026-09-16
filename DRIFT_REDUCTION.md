@@ -50,6 +50,23 @@ Original observations and exports remain available; no missing motion is present
 recovered capture. See [hand backend comparisons](HAND_BACKENDS.md) for measured depth
 and pose limitations of the alternatives.
 
+A second experiment allowed paired wrist-depth corrections during the shared tracking
+loss at frames 53–81 (1.77–2.70 seconds), with 0.2-second fades. It searched 81 depth
+pairs per target, bounded to 20 cm per wrist, through the existing target IK. Estimated
+arm-capsule overlaps fell from 41 to 20 frames on Human and 40 to 19 on Citizen over
+the 121-frame clip. Maximum proxy penetration did not improve: 4.82 cm and 3.62 cm,
+respectively. The search selected opposite depth orderings on the two rigs.
+
+Actual wrist displacement reached 18.72 cm on Human and 18.48 cm on Citizen; the
+correction alone introduced up to 1.44 m/s of wrist motion. Observed frames were
+unchanged, and deforming-bone lengths and wrist orientation were preserved. Both
+targets passed native preview, armature-only FBX export and compiled playback.
+Synchronized visual inspection still showed intersections at the fade boundaries,
+and Citizen's near-camera hand became much larger in the view. These results reject
+automatic adoption: fewer capsule overlaps do not establish better captured motion
+or clear skin surfaces. The search remains a local experiment. Existing manual
+corrections remain available; no automatic depth displacement is enabled.
+
 Contact search now recognizes authored template metacarpals between observed wrists
 and fingers. Incorrect missing labels previously blocked these suggestions on the default
 MediaPipe skeleton. This repairs access to contact anchoring; it does not itself change

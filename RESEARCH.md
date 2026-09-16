@@ -10,12 +10,23 @@ decision calls for it. Published results do not establish performance on our cli
 | [FootMR, 3DV 2026](https://arxiv.org/abs/2603.09681) | Predicts residual ankle rotations from foot observations and knee/ankle motion. | C# trial completed on the 312-frame tennis clip, including the retrained body network from the [pinned source](https://github.com/twehrbein/FootMR/tree/9c5b4123b344d74926822c20f182b2af4494dc41). Results below do not justify changing the default backend. |
 | [MoPO, 2026](https://arxiv.org/abs/2605.09856) | Combines temporal occlusion detection with learned motion completion and pose refinement. | Relevant to incorrect observations during occlusion. Its learned predictor and fusion cannot be replaced by ordinary interpolation and called equivalent. A usable checkpoint and reproducible C# inference path have not been verified. |
 | [EgoHandICL, ICLR 2026](https://arxiv.org/abs/2601.19850) | Uses retrieved context for egocentric hand reconstruction. | Research candidate. The [released instructions](https://github.com/Nicous20/EgoHandICL/tree/16e5690224fa718c1ddc40fc2972f6551b584f8b) expect prepared dataset assets and baseline MANO predictions. It is not yet an arbitrary-video replacement for our hand backends. |
+| [A2P, CVPR 2026](https://arxiv.org/abs/2503.17788v3) | Combines image-prior alignment with collision-guided diffusion for interacting hands under occlusion. | Relevant to the observed hand intersections. The [official project page](https://gaogehan.github.io/A2P/) currently links the paper and supplementary material, but no inference repository or checkpoints. No C# inference path, video-temporal behavior or performance on our clips has been verified. It is not integrated. |
+| [Contact-Aware Retargeting of Skinned Motion, ICCV 2021](https://arxiv.org/abs/2109.07431v1) | Uses skeleton and character geometry to preserve self-contact and reduce interpenetration. | Supports evaluating actual target surfaces alongside skeleton constraints. Our arm-capsule experiments are not an implementation of its geometry-conditioned network or optimization, and do not establish skin clearance. |
 
 Candidate changes must be checked against actual reconstruction, target-rig playback and
 export. Checks cover tracking loss, fast motion, contact transitions, bone lengths, timing,
 resource use and repeatable setup. Lower jitter alone does not justify adoption. Camera
 assumptions, inferred motion and backend observations remain distinct. Production inference
 stays in C#, with native libraries where needed.
+
+The latest intersection experiment searched paired camera-depth wrist offsets only
+during a shared tracking gap. Native Human and Citizen playback confirmed that reducing
+an arm-capsule overlap score can still leave visible intersections and alter apparent
+hand size substantially. It is not enabled. The measured results and limits are recorded
+in [drift reduction](DRIFT_REDUCTION.md). Further collision work needs target hand and
+skin geometry, contact preservation and temporal checks, rather than another arm-only
+overlap score. Neither a plausible collision-free pose nor a learned prior proves that
+unobserved motion was recovered correctly.
 
 A recent body experiment retried six tennis frames at three crop scales. The two incorrectly
 placed left wrists remained wrong across the alternative scales. Their averaged heatmaps
