@@ -118,7 +118,7 @@ public sealed partial class RetargetWindow
             if (this.IsValid())
             {
                 SetCaptureBusy(false);
-                if (_queuedVideos.TryDequeue(out var queued)) { SetWorkspace(queued.FirstPerson); ImportVideoAndProcess(queued.Path,queued.Start,queued.End); }
+                StartNextQueuedVideo();
             }
         }
     }
@@ -127,6 +127,12 @@ public sealed partial class RetargetWindow
     {
         _uploadVideoButton.Enabled = !busy; _workspacePicker.Enabled = !busy;
         _cancelCaptureButton.Visible = busy; _advancedPanel.Enabled = !busy;
+        _previewTargetPicker.Enabled=!busy;
         UpdateExportAvailability();
+    }
+    void StartNextQueuedVideo()
+    {
+        if(_queuedVideos.TryDequeue(out var queued))
+        {SetWorkspace(queued.FirstPerson);ImportVideoAndProcess(queued.Path,queued.Start,queued.End);}
     }
 }

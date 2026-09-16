@@ -90,6 +90,13 @@ internal static class NativeCapture
         return await Job(worker,"hand",jobs=>new { Video=video,Models=models,Output=jobs,Backend=backend,Start=start,End=end,Camera=camera },progress,token);
     }
 
+    public static async Task<string> RefineBodyAsync(string motion,Action<string> progress,CancellationToken token)
+    {
+        var (worker,models)=await Prepare(progress,token);
+        return await Job(worker,"body-refinement",jobs=>new {Motion=motion,Models=models,Output=jobs,AssumeStationaryCamera=true},
+            progress,token,command:"body-refine");
+    }
+
     public static async Task<string> LandmarksAsync(string video,string model,string output,double start,double? end,bool swapHands,Action<string> progress,CancellationToken token)
     {
         var template=EditorPipeline.FindLibraryAssetFile(EditorPipeline.TargetRigJsonRelative)
@@ -98,12 +105,12 @@ internal static class NativeCapture
         return await Job(worker,"landmark",jobs=>new{Video=video,Model=model,Output=jobs,Template=template,Start=start,End=end,SwapHands=swapHands},progress,token,output);
     }
 
-    static async Task<string> Job(string worker,string kind,Func<string,object> createRequest,Action<string> progress,CancellationToken token,string output=null)
+    static async Task<string> Job(string worker,string kind,Func<string,object> createRequest,Action<string> progress,CancellationToken token,string output=null,string command=null)
     {
         var jobs=output??Path.Combine(CacheRoot,"jobs",kind);Directory.CreateDirectory(jobs);
         var request=Path.Combine(jobs,Guid.NewGuid().ToString("N")+".request.json");
         File.WriteAllText(request,JsonSerializer.Serialize(createRequest(jobs)));
-        var result = await RunProcess(worker, new[] { kind+"-capture", request }, progress, token);
+        var result = await RunProcess(worker, new[] { command??kind+"-capture", request }, progress, token);
         if (string.IsNullOrWhiteSpace(result) || !File.Exists(result) || !Path.GetFullPath(result).StartsWith(Path.GetFullPath(jobs) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The inference worker finished without a valid motion file.");
         return result;

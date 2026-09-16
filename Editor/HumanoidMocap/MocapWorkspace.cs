@@ -83,8 +83,14 @@ public sealed partial class RetargetWindow
         _viewPicker.AddOption("First person","videocam");_viewPicker.AddOption("Third person","3d_rotation");
         _viewPicker.ToolTip="Preview camera only. Switching views does not change the capture or animation.";
         _viewPicker.OnSelectedChanged=_=>SetPreviewView(_viewPicker.SelectedIndex==0);
-        var resetView=viewBar.Add(new Button("","center_focus_strong"){FixedWidth=28,ToolTip="Reset preview camera",Clicked=()=>_mocapPreview?.ResetView()});
-        resetView.SetStyles("min-width: 20px; padding: 3px;");
+        // Native IconButton centers its glyph. Button reserves a trailing text gap
+        // even with an empty label, shifting this icon two pixels to the left.
+        viewBar.Add(new IconButton("center_focus_strong",()=>_mocapPreview?.ResetView(),animationPanel)
+            {FixedSize=28,IconSize=16,ToolTip="Reset preview camera"});
+        _previewTargetPicker=viewBar.Add(new ComboBox(animationPanel){FixedWidth=104,ToolTip="Preview and export character. Citizen is Terry (citizen.vmdl). Changing character reuses the captured motion."});
+        _previewTargetPicker.AddItem("Human",onSelected:()=>SelectBuiltinPreviewTarget(false),selected:true);
+        _previewTargetPicker.AddItem("Citizen",onSelected:()=>SelectBuiltinPreviewTarget(true),description:"Terry · models/citizen/citizen.vmdl");
+        _previewTargetPicker.AddItem("Custom",enabled:false);
         _targetHost=animationPanel.Layout.Add(new Widget(animationPanel),1);_targetHost.Layout=Layout.Column();
         _targetHost.Layout.Add(new Label("Preparing animation…",_targetHost){Alignment=TextFlag.Center},1);
 
@@ -108,11 +114,11 @@ public sealed partial class RetargetWindow
         var models=advancedTop.Add(new Button("Hand models…","memory"));
         models.Clicked=()=>new HandBackendDialog(this,SelectHandModel,_handBackend).Show();
         advancedTop.Add(new Label("Target:",this));
-        var target=advancedTop.Add(new ComboBox(this));
-        target.AddItem("s&box Human","person",()=>{TrySelectSboxTarget();_=RefreshMocapPreviewAsync();},selected:true);
-        target.AddItem("s&box Citizen","person",()=>{TrySelectSboxCitizenTarget();_=RefreshMocapPreviewAsync();});
-        target.AddItem("Custom VMDL…","folder_open",PickCustomModelTarget);
-        target.AddItem("Custom FBX / GLB…","folder_open",PickCustomFbxTarget);
+        var target=_advancedTargetPicker=advancedTop.Add(new ComboBox(this));
+        target.AddItem("s&box Human","person",()=>SelectBuiltinPreviewTarget(false),selected:true);
+        target.AddItem("s&box Citizen","person",()=>SelectBuiltinPreviewTarget(true));
+        target.AddItem("Custom VMDL…","folder_open",()=>{if(!_updatingTargetPickers){PickCustomModelTarget();RefreshTargetPickers();}});
+        target.AddItem("Custom FBX / GLB…","folder_open",()=>{if(!_updatingTargetPickers){PickCustomFbxTarget();RefreshTargetPickers();}});
         var captured=advancedTop.Add(new Checkbox("Export captured skeleton"));
         captured.ToolTip="Skip target retargeting when exporting. Captured hands do not include estimated arms.";
         captured.Clicked=()=>{_exportCaptured=captured.Value;UpdateExportAvailability();};
@@ -157,6 +163,12 @@ public sealed partial class RetargetWindow
         var inPlace=_inPlaceControl=_thirdOptions.Layout.Add(new Checkbox("In place"));
         inPlace.ToolTip="Remove horizontal travel from the baked animation. Camera-relative capture remains camera-relative.";
         inPlace.Clicked=()=>{_rootMotion=inPlace.Value?HumanoidMocap.Cleanup.RootMotionMode.InPlace:HumanoidMocap.Cleanup.RootMotionMode.Off;_=RefreshMocapPreviewAsync();};
+        _bodyRefinementButton=_thirdOptions.Layout.Add(new Button("Refine · stationary camera","auto_fix_high")
+        {
+            Enabled=false,
+            ToolTip="Use only when the recording camera stayed still. Reuse saved GVHMR predictions to refine root and limb contacts. Keeps the original motion and opens a separate result; review before exporting.",
+            Clicked=()=>_=RefineStationaryBodyAsync()
+        });
         _thirdOptions.Visible=false;
 
 
@@ -228,6 +240,7 @@ public sealed partial class RetargetWindow
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_motionLoadRevision)return;
             InvalidateMocapPreview();
             _editSession=loaded.session;_rawMotion=loaded.session.Raw;_editedMotion=doc;_motionPath=path;
+            RefreshBodyRefinementButton();
             _appliedCleanup=loaded.session.State.Cleanup;ResetAdjustmentFields();
             if(File.Exists(doc.SourceVideo))LoadVideo(doc.SourceVideo);
             else
@@ -238,7 +251,7 @@ public sealed partial class RetargetWindow
             }
             RefreshContacts();
             var missingHands=loaded.quality.Tracks.Where(t=>t.Role is HumanoidMocap.Mapping.BoneRole.HandL or HumanoidMocap.Mapping.BoneRole.HandR)
-                .Where(t=>t.Reconstructed<doc.Frames.Count/2d)
+                .Where(t=>HandCaptureRetargeter.Supports(doc)&&t.Reconstructed<doc.Frames.Count/2d)
                 .Select(t=>$"{(t.Role==HumanoidMocap.Mapping.BoneRole.HandL?"Left":"Right")} hand {(t.Reconstructed==0?"not detected":"mostly untracked")}").ToArray();
             _captureStatus.Text=missingHands.Length==0?$"Ready · {doc.Frames.Count} frames. Review the animation, then export."
                 :$"Review needed · {string.Join("; ",missingHands)}. See Advanced for tracking coverage.";

@@ -25,6 +25,7 @@ public sealed class MotionDocument
     public string ModelVersion { get; set; } = "";
     public string SourceSha256 { get; set; } = "";
     public string SourceVideo { get; set; } = "";
+    public MotionOrigin? OriginalReconstruction { get; set; }
     public double SourceFps { get; set; }
     public MotionSpace Space { get; set; }
     public string Axes { get; set; } = "right-handed-x-right-y-up";
@@ -57,6 +58,8 @@ public sealed class MotionDocument
     {
         if (Schema != 1 || Units != "metres" || Axes != "right-handed-x-right-y-up")
             throw new FormatException("Unsupported motion schema, units or coordinate convention.");
+        if(OriginalReconstruction is {} origin&&(string.IsNullOrWhiteSpace(origin.Path)||origin.Sha256 is not {Length:64}||origin.Sha256.Any(c=>!Uri.IsHexDigit(c))))
+            throw new FormatException("Invalid original reconstruction reference.");
         if (!double.IsFinite(SourceFps) || SourceFps <= 0 || SourceFps > 1000)
             throw new FormatException("Invalid source frame rate.");
         if (Bones.Count is < 1 or > 1024 || Frames.Count is < 1 or > 108000)
@@ -151,6 +154,12 @@ public sealed class MotionDocument
             RestPlacementAuthored=Space==MotionSpace.WorldRelative
         };
     }
+}
+
+public sealed class MotionOrigin
+{
+    public string Path { get; set; } = "";
+    public string Sha256 { get; set; } = "";
 }
 
 public sealed class MotionBone

@@ -86,7 +86,7 @@ public sealed partial class RetargetWindow : Widget
 			_target = null;
 			_targetError = e.Message;
 		}
-		RefreshStatus();
+		RefreshTargetPickers();RefreshStatus();
 	}
 
 	void TrySelectSboxCitizenTarget()
@@ -102,7 +102,7 @@ public sealed partial class RetargetWindow : Widget
 			_target = null;
 			_targetError = e.Message;
 		}
-		RefreshStatus();
+		RefreshTargetPickers();RefreshStatus();
 	}
 
 	void PickCustomModelTarget()
@@ -150,6 +150,7 @@ public sealed partial class RetargetWindow : Widget
 		}
 
 		_target = resolved;
+		RefreshTargetPickers();
 		FitMocapPlacementToTarget();
 		_targetError = null;
 		if ( resolved.Warning is not null )

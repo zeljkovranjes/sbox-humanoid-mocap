@@ -36,7 +36,38 @@ Range boundaries are seconds in the original video; the end is exclusive. Crop c
 
 The command prints `HM_RESULT ` followed by the resulting `raw-body.hmotion` path. The editor opens it automatically; manual worker results can be opened through **Advanced → Open motion…**. Raw observations, image features and network predictions remain beside it. Ctrl+C or an input line containing `cancel` cancels between inference operations; rerunning the same request resumes completed frames. The editor allows eight queued uploads and one active job. Each job allows up to 1,800 selected frames and uses four CPU inference threads. The body worker loads its two vision models sequentially.
 
-This body path is camera-relative and uses an explicit identity camera-rotation conditioning assumption. Camera intrinsics are estimated from the image dimensions. Automatic editor jobs use a full-frame crop for a single visible person; the CLI permits a fixed custom crop. Camera recovery, moving person crops and the upstream final source contact/limb IK are not included in this integration. Target foot correction is applied during retargeting. It does not reconstruct detailed fingers or object tracks. No calibrated metric scale or world-root-motion accuracy is claimed.
+The default body path is camera-relative and uses an explicit identity camera-rotation conditioning assumption. Camera intrinsics are estimated from the image dimensions. Automatic editor jobs use a full-frame crop for a single visible person; the CLI permits a fixed custom crop. Camera recovery and moving person crops are not included. Target foot correction is applied during retargeting. It does not reconstruct detailed fingers or object tracks. No calibrated metric scale or world-root-motion accuracy is claimed.
+
+For footage recorded with a stationary camera, **Advanced → Third Person → Refine · stationary camera**
+applies the pinned upstream root/contact processing and two-iteration source-limb CCD.
+It produces estimated world-relative motion under that explicit assumption. The button
+then restores the original capture. Moving-camera footage requires a different camera
+recovery path and must not use this option.
+
+The equivalent command is `dotnet run --project InferenceWorker -- body-refine refinement-job.json`:
+
+```json
+{
+  "Motion": "D:/Mocap/jobs/<capture-key>/raw-body.hmotion",
+  "Models": "D:/Mocap/models",
+  "Output": "D:/Mocap/refinements",
+  "AssumeStationaryCamera": true
+}
+```
+
+Keep `raw-predictions.json` beside the original motion. A new result requires the same
+verified `smplx/SMPLX_NEUTRAL.npz` used by capture. No neural network is loaded, footage
+is not reprocessed, and the original files are never rewritten. Results are cached by
+input hashes, original location, model and refinement version. The output folder holds
+the raw gravity/velocity rollout, refined `contact-body.hmotion` and a checksum receipt.
+Cancellation leaves the original intact; rerunning finishes this inexpensive stage.
+Missing or changed originals and changed cached results produce an error. Preserve
+these files when moving a project; the restore reference currently uses an absolute path.
+
+On the tested Ryzen 7 system, refining the full 312-frame tennis capture took 0.65 seconds
+and peaked at 240 MB worker RAM, excluding editor preview/export. This is one measured
+CPU run, not a minimum requirement. Affected joints are labeled as IK-generated;
+static probabilities do not become per-joint confidence or observed object contacts.
 
 Tested on Ryzen 7 7800X3D with 32 GB RAM: all 312 tennis-video frames took approximately 20 minutes with the corrected video decoder and peaked at 5.82 GB worker RAM. Pose inference took 781.4 seconds, image features 411.3 seconds, and temporal inference/decoding 2.7 seconds. Editor verification overlapped this run, so it is not a controlled speed benchmark. The native image models ran on CPU; GPU inference and VRAM usage have not been validated. An earlier 29-frame cached rerun completed in under three seconds. These measurements are not minimum hardware requirements.
 

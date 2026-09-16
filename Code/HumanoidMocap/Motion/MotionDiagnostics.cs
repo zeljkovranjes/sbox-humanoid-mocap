@@ -16,7 +16,9 @@ public sealed record MotionDiagnosticsReport(int Frames,double Start,double End,
 {
     public string Interpretation=>"Derived motion checks, not backend confidence or ground-truth accuracy. Large motion changes can be intentional.";
     public string HandSummary=>string.Join(" ",Tracks.Where(t=>t.Role is BoneRole.HandL or BoneRole.HandR)
-        .Select(t=>$"{(t.Role==BoneRole.HandL?"Left":"Right")} hand: observed {t.Reconstructed}/{Frames} frames; longest unresolved gap {t.LongestMissingSeconds:F2}s."));
+        .Select(t=>t.GeneratedIk>0
+            ?$"{(t.Role==BoneRole.HandL?"Left":"Right")} hand: reconstructed {t.Reconstructed}/{Frames}, generated IK {t.GeneratedIk}/{Frames}; longest unresolved gap {t.LongestMissingSeconds:F2}s."
+            :$"{(t.Role==BoneRole.HandL?"Left":"Right")} hand: observed {t.Reconstructed}/{Frames} frames; longest unresolved gap {t.LongestMissingSeconds:F2}s."));
 }
 
 /// <summary>Measures available observations and transform consistency without assigning confidence.</summary>

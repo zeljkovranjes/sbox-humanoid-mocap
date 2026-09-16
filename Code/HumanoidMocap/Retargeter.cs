@@ -813,15 +813,19 @@ public static class Retargeter
                 // Grounded stance alignment first: levels planted soles against the ground
                 // (removes the stance offset a non-stance source rest leaves in the solver's
                 // rest-relative foot transfer). Plants are detected on the SOURCE clip —
-                // ground truth; hip-height rescaling can push the solved target trajectories
+                // source-space candidates; hip-height rescaling can push the solved target trajectories
                 // outside the cm-tuned Kovar thresholds. Composes with the position pinning
                 // below (this rotates feet about their own joints; the pinning preserves
                 // foot world rotations).
                 GroundAlignFeet(frames, scene, map, target.Rig.Skeleton, feet, up, solved.Fps, take);
 
+                var plantOptions=ScaledPlantOptions(target);
+                // Reconstructed contacts can be unreachable on different proportions.
+                // Keep captured target limb lengths fixed instead of stretching to a guess.
+                if(scene.CaptureSpace is not null)plantOptions.MaxStretch=0f;
                 FootPlant.Apply(
                     frames, target.Rig.Skeleton, feet.Left, feet.Right, up, solved.Fps,
-                    ScaledPlantOptions(target));
+                    plantOptions);
 
                 // Support ground alignment: one constant vertical offset per clip that
                 // restores the SOURCE-authored foot-to-ground relationship (southpaw

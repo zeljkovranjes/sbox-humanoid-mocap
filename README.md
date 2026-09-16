@@ -17,12 +17,14 @@ Keep only one copy of the library installed. Humanoid Retargeter can remain inst
 2. Click **Upload video…**, drag in a video, or choose **Upload from phone**.
 3. Let local reconstruction finish; processing starts automatically.
 4. Play the source video beside the animation and review the captured movement.
-5. Use **Advanced** if you need another target, model or correction.
+5. Switch **Human / Citizen** at the preview's top right. Use **Advanced** for custom targets, models or corrections.
 6. Click **Export…** and use the FBX as an animation source in s&box ModelDoc.
 
 **Upload from phone** opens a local receiver. Connect your iPhone or Android device to the same network, scan the QR code and choose a video from Photos or Gallery. Keep the phone page and receiver open for more uploads during the one-hour pairing. Choose **New one-hour pairing** after expiry. Closing the receiver or choosing **Disconnect phones** ends access immediately. Files stay on your PC; uploads are limited to 2 GiB and preserve previous files.
 
 **First person / Third person** above the preview changes only the viewing camera. Drag to look around or orbit, and use reset-camera to restore framing. Capture viewpoint is separate from output workspace: externally recorded movement can also produce an FPS animation. Hand-only reconstruction does not determine whether the recording camera was level or looking down; use **Advanced → First Person → Capture pitch** when placement needs correction.
+
+The character selector shows **Human** or **Citizen**. Citizen uses Terry's classic `models/citizen/citizen.vmdl` and its own proportions. Switching rebuilds the preview and target export from the same capture; it does not rerun reconstruction. Each target retains its saved adjustments.
 
 The default export uses the preview rig and applied corrections. **Advanced → Export captured skeleton** keeps the reconstruction's skeleton and sample timing. Both export bone positions and rotations. Keep the original video, `.hmotion` and `.hmotion.adjustments.json` files for reversible edits; confidence, observation labels and contact-review data are not FBX animation channels. Applied adjustments are remembered per target and workspace, and changes reuse cached reconstruction.
 
@@ -39,8 +41,10 @@ are estimated. Tracking loss, incorrect finger poses and motion jumps remain. Th
 main status flags missing or mostly untracked hands; Advanced shows coverage and gaps.
 
 Third Person uses camera-relative GVHMR reconstruction, without detailed finger capture.
-Target foot correction is applied during retargeting; upstream final source contact
-correction is not integrated. **In place** removes horizontal travel. Calibrated world
+For recordings made with a stationary camera, **Advanced → Third Person → Refine · stationary camera**
+reuses saved predictions for root and limb-contact correction. It opens a separate result;
+the same button restores the original capture. Review the result before export.
+Target foot correction is applied during retargeting. **In place** removes horizontal travel. Calibrated world
 recovery, automatic prop tracking and multi-camera fusion are not supported.
 See [third-party notices](THIRD_PARTY_NOTICES.md).
 

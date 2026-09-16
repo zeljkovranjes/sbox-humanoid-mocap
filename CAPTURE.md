@@ -3,6 +3,9 @@
 Choose **First Person** for arms and hands, or **Third Person** for a body animation.
 This selects the output workflow. It does not require the camera to have been worn
 by the performer. The preview's camera toggle does not change reconstruction.
+Choose **Human** or **Citizen** at the preview's top right to change the character.
+Citizen is Terry's `models/citizen/citizen.vmdl`. Both use their own skeleton and
+proportions; switching reuses the captured motion and updates the target FBX export.
 
 Record in good light with a short exposure when possible. Keep the subject sharp and
 avoid motion blur, digital zoom changes and sudden camera movement. Keep the original
@@ -32,6 +35,15 @@ editor grid shows that fixed floor reference. This assumes the clip reaches grou
 at some point; a clip that is entirely airborne needs a manual **Ground** adjustment.
 Movement within the clip is retained, and the original camera-relative motion stays
 unchanged. World-relative imported motion retains its authored placement.
+
+If the recording camera stayed still, use **Advanced → Third Person → Refine · stationary camera**.
+This applies GVHMR's source root/contact processing and limb IK to saved predictions,
+then rebuilds the target preview. It does not repeat neural inference. The result is
+estimated world-relative motion under your stationary-camera assumption; neither
+camera motion nor metric scale has been measured. Do not apply it to moving-camera footage.
+The button becomes **Restore original capture**. Raw camera-relative reconstruction
+and predictions remain unchanged; adjustments are saved separately for each opened
+motion file. Keep the original file at its recorded location for restoration.
 
 Use short takes. A job currently allows at most 1,800 selected frames. Longer footage
 can be processed in explicit ranges under Advanced; frames are not silently discarded.
@@ -110,6 +122,22 @@ exceeds 0.8, Human foot joints still moved up to 6.23 cm per frame in the retarg
 camera-relative output. This is a diagnostic of remaining motion, not a calibrated
 world-space slip measurement. The current geometric foot detector finds too few
 stable intervals in this clip to resolve those contacts automatically.
+
+The optional stationary-camera refinement is intended to reduce that residual motion.
+Its output labels limb transforms affected by IK separately from reconstruction, and
+still requires review against the video. Contact probabilities are predictions of
+stationary joints, not observed grips or proof of correct world-space motion. Target
+proportions can change contacts after source refinement. No additional generic body
+smoothing is enabled automatically.
+
+On this tennis clip, the refined Human output's largest foot-joint step during those
+same model-predicted static intervals was 0.90 cm; Citizen's was 1.24 cm. This compares
+the camera-relative default with the stationary-camera refinement, not two calibrated
+world reconstructions. Residual drift and inaccurate heights remain. The fast right
+forearm peak remained at frame 134 (about 4.49 seconds). Final target contact correction
+keeps limb lengths fixed instead of stretching toward unreachable inferred contacts.
+The complete refined clip passed native FBX compilation and animated playback on both
+Human and Citizen; restoring the original and reopening the cached refinement also passed.
 
 Review these examples critically. After the correction, the plate-handling clip had
 77 left-hand and 78 right-hand observed frames out of 121. The cupboard clip had

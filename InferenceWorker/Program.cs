@@ -32,13 +32,18 @@ try
         var request=JsonSerializer.Deserialize<BodyCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid body job request.");
         Console.WriteLine("HM_RESULT "+BodyCapture.Run(request,cancellation.Token,Console.WriteLine));
     }
+    else if(args.Length==2&&args[0]=="body-refine")
+    {
+        var request=JsonSerializer.Deserialize<BodyRefinementRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid body refinement request.");
+        Console.WriteLine("HM_RESULT "+BodyRefinement.Run(request,cancellation.Token,Console.WriteLine));
+    }
     else if(args.Length==2&&args[0]=="hand-capture")
     {
         torch.set_num_threads(4);
         var request=JsonSerializer.Deserialize<HandCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid hand job request.");
         Console.WriteLine("HM_RESULT "+HandCapture.Run(request,cancellation.Token,Console.WriteLine));
     }
-    else throw new ArgumentException("Usage: download-body-models <model-folder> | download-hand-models <model-folder> <mediapipe|mobilehand|wildhands|wilor> | body-capture <job.json> | hand-capture <job.json> | landmark-capture <job.json>");
+    else throw new ArgumentException("Usage: download-body-models <model-folder> | download-hand-models <model-folder> <mediapipe|mobilehand|wildhands|wilor> | body-capture <job.json> | body-refine <job.json> | hand-capture <job.json> | landmark-capture <job.json>");
 }
 catch(OperationCanceledException){Console.Error.WriteLine("Cancelled. Cached reconstruction can be resumed.");Environment.ExitCode=2;}
 catch(Exception e){Console.Error.WriteLine(e.Message);Environment.ExitCode=1;}
