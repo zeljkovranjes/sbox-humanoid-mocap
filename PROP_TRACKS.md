@@ -92,9 +92,15 @@ Mixed weights, nontriangular faces, additive skin, blend shapes and animated, mi
 are omitted rather than approximated. The import diagnostics report skipped faces.
 Contact geometry is limited to 100,000 vertices and 100,000 triangles across the capture.
 It is used for proximity tests; preview and exported FBX still contain prop armatures.
-Rigid skin bind conversion uses the transform relationship documented in Autodesk's
-[FBX SDK example](https://help.autodesk.com/cloudhelp/2020/ENU/FBX-API-Reference/cpp_ref/_view_scene_2_draw_scene_8cxx-example.html),
-with geometric transforms and fixed uniform bind scale included.
+Rigid skin bind conversion reads the serialized cluster `Transform` as mesh-node-to-bone,
+as written by the [Blender FBX exporter](https://github.com/blender/blender-addons/blob/main/io_scene_fbx/export_fbx_bin.py#L1699).
+This differs from the SDK's mesh-world `GetTransformMatrix()` result. Geometric transforms
+and fixed uniform bind scale are included; the inverse bone bind must not be applied twice.
+Unused clusters without weight arrays are ignored; incomplete weight arrays are rejected.
+
+If you imported a skinned prop before this correction, reimport its original FBX into a
+copy of the original capture and review the new contact suggestions. Existing saved surfaces
+and contact edits are preserved, so they are not automatically repaired.
 
 Suggestions require an observed wrist and at least three observed finger chains.
 Fixed template metacarpals may connect those observations, but remain labeled `Authored`;

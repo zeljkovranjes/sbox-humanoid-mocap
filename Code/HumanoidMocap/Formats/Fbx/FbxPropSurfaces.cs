@@ -62,14 +62,18 @@ public static class FbxPropSurfaces
                 var bone=Children(cluster.Id).SingleOrDefault(o=>o.NodeType=="Model");
                 var mode=cluster.Node.Child("Mode");
                 var indices=cluster.Node.Child("Indexes")?.AsIntArray(0);var weights=cluster.Node.Child("Weights")?.AsDoubleArray(0);
+                // Exporters may retain clusters for unused bones without either array.
+                if(indices is null&&weights is null)continue;
                 if(indices is null||weights is null||indices.Length!=weights.Length)throw new FormatException("Invalid prop skin weights.");
                 var supported=bone is not null&&imported.Skeleton.IndexOf(bone.Name)>=0&&!AnimatedScale(bone)&&(mode is null||mode.Prop<string>(0) is "Normalize" or "TotalOne");
-                var bind=ReadMatrix(cluster.Node.Child("Transform"));var link=ReadMatrix(cluster.Node.Child("TransformLink"));
-                if(!Matrix4x4.Invert(link,out var inverse))throw new FormatException("Singular prop skin bind matrix.");
-                // Autodesk's non-additive bind formula, in row-vector convention:
-                // geometric mesh transform → mesh bind world → inverse bone bind.
+                var meshToBone=ReadMatrix(cluster.Node.Child("Transform"));var link=ReadMatrix(cluster.Node.Child("TransformLink"));
+                if(!Matrix4x4.Invert(link,out _))throw new FormatException("Singular prop skin bind matrix.");
+                // Serialized FBX Transform already maps mesh-node space into bind-bone
+                // space. The SDK's GetTransformMatrix() instead returns mesh bind world.
+                // Applying inverse TransformLink again double-transforms the surface.
+                // Prepend geometry placement; absorb uniform scale omitted by rigid XForms.
                 if(!Matrix4x4.Decompose(link,out var bindScale,out _,out _)||!Uniform(bindScale))supported=false;
-                var local=geometric*bind*inverse*Matrix4x4.CreateScale(bindScale);
+                var local=geometric*meshToBone*Matrix4x4.CreateScale(bindScale);
                 for(var i=0;i<indices.Length;i++)
                 {
                     var v=indices[i];var w=weights[i];if(v<0||v>=count||!double.IsFinite(w)||w<0)throw new FormatException("Invalid prop vertex weight.");

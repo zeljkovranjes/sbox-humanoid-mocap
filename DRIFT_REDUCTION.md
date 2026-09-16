@@ -67,6 +67,26 @@ automatic adoption: fewer capsule overlaps do not establish better captured moti
 or clear skin surfaces. The search remains a local experiment. Existing manual
 corrections remain available; no automatic depth displacement is enabled.
 
+A skin-level inspection also confirmed the crossing in Human's rendered pose at 2 seconds.
+The check used 2,372 vertices and 4,636 triangles from the installed source arm/hand meshes,
+weighted by the native editor's posed bone transforms. Their reconstructed bind positions
+matched compiled model vertices within 0.00055 inches. It found 425 opposite-arm triangle
+crossing pairs. This is a surface-crossing count, not penetration depth, a complete
+self-collision test, or direct GPU skin readback; source floating-point weights differ
+slightly from the engine's quantized weights.
+
+Citizen's corresponding check used 1,802 vertices and 3,504 triangles, matched bind
+positions within 0.00059 inches, and found 1,152 crossing pairs. Visual inspection of
+both native skin/wire overlays confirmed intersections. Counts depend on mesh topology
+and must not be compared between rigs as a severity score.
+
+The same inspection found that Human's model constraints alter forearm helper rotations
+after pose overrides. Skin calculated from the library's unconstrained solved bones differed
+from skin calculated from native bone transforms by up to 2.02 inches in that frame
+(1.49 inches on Citizen).
+Bone-position agreement alone therefore does not verify skin or rotation agreement.
+Automatic collision correction remains unverified; the diagnostic does not change poses.
+
 Contact search now recognizes authored template metacarpals between observed wrists
 and fingers. Incorrect missing labels previously blocked these suggestions on the default
 MediaPipe skeleton. This repairs access to contact anchoring; it does not itself change
