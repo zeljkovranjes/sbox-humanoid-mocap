@@ -14,7 +14,7 @@ The C# QR generator in `Editor/HumanoidMocap/PhoneQr` comes from [manuelbl/QrCod
 
 The experimental hand model is downloaded separately from Google's official MediaPipe model storage. Its URL, SHA-256 and byte count are pinned in the model preparation code. It is not ACE-Ego-Hand, and the managed interpreter is not an official MediaPipe implementation.
 
-The MediaPipe tracked-hand crop rotation and landmark projection follow the upstream hand-landmarker graph conventions. The Apache 2.0 license is retained in `Editor/HumanoidMocap/Inference/MediaPipe.LICENSE`.
+The MediaPipe tracked-hand crop rotation, landmark projection, image sampling and video association follow the upstream hand-landmarker graph and CPU image converter conventions. The palm-box/keypoint merge in `PalmDetectionFilter.cs` is adapted from MediaPipe's weighted `NonMaxSuppressionCalculator` and hand-detector graph at `e053c10c0e6c0b30486f43cb349d6daa0ff57d60`. The Apache 2.0 license is retained in `Editor/HumanoidMocap/Inference/MediaPipe.LICENSE`.
 
 The C# WildHands network, input crops and camera-conditioned hand heads follow [ap229997/hands](https://github.com/ap229997/hands) at `f99dfea0d1fce970aed2d31d1018eda280e05f47`. The pinned demo checkout did not contain a top-level license file. Its checkpoint is downloaded separately from the upstream download script's URL; it is not bundled.
 

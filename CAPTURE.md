@@ -72,18 +72,20 @@ and does not execute a reconstruction model. See the [worker guide](InferenceWor
 The downloaded examples were inspected and processed on a Ryzen 7 7800X3D with 32 GB RAM.
 MediaPipe processed the complete short hand clips: `video_0.mp4` (121 frames),
 `segment_018.mp4` (120 frames), and `segment_037.mp4` (120 frames). Fresh reconstruction
-took approximately 89, 70 and 73 seconds respectively in the standalone C# verifier
-after the palm-detector resize correction. Peak process RAM across this run was 1.96 GB.
-Other verification work ran concurrently, so these are observed CPU costs, not a
-controlled performance benchmark or minimum requirements.
+took approximately 16, 17 and 18 seconds respectively with the Release C# verifier
+after CPU crop and video-tracking corrections. Peak process RAM across this run was
+1.31 GB. These are observed CPU costs, not minimum requirements or a controlled
+speed comparison with previous Debug runs.
 The GVHMR example used the first second of `tennis.mp4`; full-length tennis accuracy
 has not been validated. Preview/export checks include native FBX compilation and
 animated playback in s&box.
 
 Review these examples critically. After the correction, the plate-handling clip had
-89 left-hand and 81 right-hand observed frames out of 121. The cupboard clip had only
-3 left-hand and 86 right-hand observed frames out of 120. The cooking clip had all
+77 left-hand and 75 right-hand observed frames out of 121. The cupboard clip had only
+2 left-hand and 84 right-hand observed frames out of 120. The cooking clip had all
 120 right-hand frames but no left-hand detection; part of that hand lies outside the image.
+Acceptance decreased in the first two clips compared with the earlier pipeline;
+matching the reference preprocessing has not established a capture-quality improvement.
 These counts describe model acceptance, not verified accuracy. Abrupt rotation changes
 also remain in some predictions. No model
 here has been verified to match ACE's accuracy. Contact with plates, containers or

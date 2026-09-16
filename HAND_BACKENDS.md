@@ -61,6 +61,14 @@ resize option error in the palm detector. Reconstruction caches now include the 
 implementation version, including the crops used by WildHands and WiLoR. Kernel agreement
 does not establish parity for the complete MediaPipe tracking pipeline or fix every missed hand.
 
+The CPU image crop now follows MediaPipe's integer-pixel sampling and border rules;
+hand regions use repeated edge pixels, while palm detection uses black padding.
+Weighted palm-box/keypoint merging and prior-landmark crop priority follow the upstream
+video graph. Nine crops from the downloaded footage matched the OpenCV reference
+exactly for full-image detector inputs and within two color-byte values for rotated
+crops. These focused checks do not establish complete graph parity. Full-clip detection
+coverage remains mixed, including fewer accepted hands in two samples; see [capture results](CAPTURE.md).
+
 All hand backends now keep a hand-and-wrist source skeleton. MediaPipe fits landmark
 rotations to fixed canonical finger lengths and assumes wrist depth on an image plane.
 Estimated shoulders and elbows are added on the selected target through IK. Captured-skeleton
