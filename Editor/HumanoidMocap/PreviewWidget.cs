@@ -38,7 +38,7 @@ namespace HumanoidMocap.Editor;
 /// <para>This was chosen over building an in-memory <c>Model.Builder</c> model with
 /// <c>AddAnimation</c>/<c>AddFrame</c>: a builder model carries bones but no mesh, so a
 /// sequence playing on it renders nothing visible - driving the real skinned model shows
-/// the actual character. Camera: fixed 3/4 framing from the model bounds with left-drag
+/// the actual character. Camera: front framing from the model bounds with left-drag
 /// yaw orbit (same idiom as the editor's other preview widgets).</para>
 /// </remarks>
 public sealed partial class PreviewWidget : SceneRenderingWidget
@@ -347,7 +347,9 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 		{
 			var origin=RigWorldToEngine(XForm.Identity).Position;
 			var direction=RigWorldToEngine(new XForm(facing,System.Numerics.Quaternion.Identity)).Position-origin;
-			_yaw=MathF.Atan2(direction.y,direction.x)*180/MathF.PI+25;
+			// Inspect proportions straight-on by default. An oblique view shortens
+			// the apparent clavicle span, even when every joint is at rig-rest width.
+			_yaw=MathF.Atan2(direction.y,direction.x)*180/MathF.PI;
 		}
 		var scratch = new XForm[skeleton.Count];
 		var hands = FramingHands.Select(_rig.BoneForRole).Where(i=>i.HasValue).Select(i=>i.Value).ToArray();
@@ -1117,7 +1119,7 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 		var distance = MathX.SphereCameraDistance( radius, Camera.FieldOfView ) * 1.05f;
 
 		var yawRad = MathX.DegreeToRadian( _yaw );
-		var dir = new Vector3( MathF.Cos( yawRad ), MathF.Sin( yawRad ), 0.35f ).Normal;
+		var dir = new Vector3( MathF.Cos( yawRad ), MathF.Sin( yawRad ), 0 );
 		Camera.WorldPosition = center + dir * distance;
 		Camera.WorldRotation = Rotation.LookAt( -dir, Vector3.Up );
 	}
