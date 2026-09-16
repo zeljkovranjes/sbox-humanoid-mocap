@@ -15,6 +15,18 @@ public sealed partial class PreviewWidget
     void DrawTargetBones()
     {
         TargetBoneOverlayCount=0;
+        if(_clip is not null&&!FirstPerson)
+        {
+            UpdateGizmoInputs(false);
+            using(Gizmo.Scope("HumanoidMocap.Ground"))
+            {
+                Gizmo.Transform=Transform.Zero;
+                Gizmo.Draw.IgnoreDepth=false;
+                // s&box's editor grid: a fixed floor reference, independent of the
+                // character's travel and bone-overlay visibility. Half-metre cells.
+                Gizmo.Draw.Grid(Gizmo.GridAxis.XY,19.68504f,.3f);
+            }
+        }
         if(!ShowTargetBones||_worldScratch is null||_clip is null)return;
         UpdateGizmoInputs(false);
         using(Gizmo.Scope("HumanoidMocap.TargetBones"))

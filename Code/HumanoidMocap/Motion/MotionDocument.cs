@@ -140,9 +140,16 @@ public sealed class MotionDocument
         }
         var notes=new List<string>(Diagnostics) { $"{Backend}: {Space}; metric scale calibrated={MetricScaleCalibrated}.",
             "Mapping confidence describes explicit bone-role assignments, not reconstruction accuracy." };
-        if (Space==MotionSpace.CameraRelative) notes.Add("Camera-relative motion: no world root-motion claim.");
+        if (Space==MotionSpace.CameraRelative) notes.Add("Camera-relative motion: no world root-motion claim. Body retargeting removes absolute camera placement and assumes the clip's lowest reconstructed joint reaches the ground; within-clip travel remains estimated.");
         return new SourceScene(skeleton,new[]{new Clip(Name,fps,false,frames,(float)SourceFps)},100,notes:notes)
-        { AuthoredMapping=mapping, CaptureSpace=Space, CaptureEvidence=evidence };
+        {
+            AuthoredMapping=mapping, CaptureSpace=Space, CaptureEvidence=evidence,
+            // A camera-space translation is not an authored offset from the model's
+            // rest ground. Keeping it as one makes the target hover and start metres
+            // away from the preview origin. The existing placement-free solve removes
+            // one clip-wide offset, preserving motion and leaving raw capture untouched.
+            RestPlacementAuthored=Space==MotionSpace.WorldRelative
+        };
     }
 }
 

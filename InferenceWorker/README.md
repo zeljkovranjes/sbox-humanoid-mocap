@@ -38,9 +38,9 @@ The command prints `HM_RESULT ` followed by the resulting `raw-body.hmotion` pat
 
 This body path is camera-relative and uses an explicit identity camera-rotation conditioning assumption. Camera intrinsics are estimated from the image dimensions. Automatic editor jobs use a full-frame crop for a single visible person; the CLI permits a fixed custom crop. Camera recovery, moving person crops and the upstream final source contact/limb IK are not included in this integration. Target foot correction is applied during retargeting. It does not reconstruct detailed fingers or object tracks. No calibrated metric scale or world-root-motion accuracy is claimed.
 
-Tested on Ryzen 7 7800X3D with 32 GB RAM: 29 real tennis-video frames took about 124 seconds, including checkpoint loading, and peaked at 6.4 GB worker RAM. The native image models ran on CPU; GPU inference and VRAM usage have not been validated. A cached rerun completed in under three seconds. These measurements are not minimum hardware requirements.
+Tested on Ryzen 7 7800X3D with 32 GB RAM: all 312 tennis-video frames took approximately 20 minutes with the corrected video decoder and peaked at 5.82 GB worker RAM. Pose inference took 781.4 seconds, image features 411.3 seconds, and temporal inference/decoding 2.7 seconds. Editor verification overlapped this run, so it is not a controlled speed benchmark. The native image models ran on CPU; GPU inference and VRAM usage have not been validated. An earlier 29-frame cached rerun completed in under three seconds. These measurements are not minimum hardware requirements.
 
-The exported slice was imported, retargeted, previewed, compiled and played in s&box. It remains raw reconstruction requiring review and correction. See the repository's third-party notices and `Editor/HumanoidMocap/Inference/Gvhmr.LICENSE`.
+The complete Human animation and a short Citizen slice were retargeted, previewed, compiled and played in s&box. Foot drift remains; these functional checks do not establish 3D accuracy or solved contacts. See the repository's third-party notices and `Editor/HumanoidMocap/Inference/Gvhmr.LICENSE`.
 
 For hand capture, download only the selected model. For the default MediaPipe path:
 

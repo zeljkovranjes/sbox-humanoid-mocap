@@ -7,7 +7,7 @@ A video-to-animation tool for the [s&box](https://sbox.game) editor.
 - Experimental local hand, finger and body reconstruction in C#.
 - s&box Human, classic Citizen and custom VMDL, FBX, GLB or glTF targets.
 - Estimated arm IK, optional corrections and root-motion controls.
-- Synchronized video and animation preview with a target-bone overlay.
+- Synchronized video and animation preview with a target-bone overlay and ground grid.
 - FBX export containing the armature and animated bones, without meshes or skin weights.
 
 Add the library to your s&box project and open **View → Humanoid Mocap**.

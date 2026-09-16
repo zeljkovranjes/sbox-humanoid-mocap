@@ -26,6 +26,13 @@ Automatic GVHMR jobs currently use a full-frame crop and do not track a person m
 out of that crop. They output camera-relative motion. Camera motion, calibrated world
 scale and reliable world root motion are not recovered by this integration.
 
+The Third Person target preview removes the capture's constant camera offset and
+places its lowest reconstructed joint at the target's rest ground. The half-metre
+editor grid shows that fixed floor reference. This assumes the clip reaches ground
+at some point; a clip that is entirely airborne needs a manual **Ground** adjustment.
+Movement within the clip is retained, and the original camera-relative motion stays
+unchanged. World-relative imported motion retains its authored placement.
+
 Use short takes. A job currently allows at most 1,800 selected frames. Longer footage
 can be processed in explicit ranges under Advanced; frames are not silently discarded.
 On an iPhone or Android device, connect to the same network, choose **Upload from phone**,
@@ -91,9 +98,18 @@ took approximately 13, 13 and 20 seconds respectively in the Release C# worker
 after visible-aperture and orientation correction. Peak worker RAM reached 1.30 GB.
 These are observed CPU costs, not minimum requirements or a controlled speed comparison;
 editor verification overlapped part of the run.
-The GVHMR example used the first second of `tennis.mp4`; full-length tennis accuracy
-has not been validated. Preview/export checks include native FBX compilation and
-animated playback in s&box.
+GVHMR also processed all 312 frames of `tennis.mp4` (10.41 seconds between its first
+and last sample). CPU reconstruction took about 20 minutes and peaked at 5.82 GB
+worker RAM. The complete motion was checked on Human and Citizen proportions; the
+full Human animation and the first-second Citizen slice passed native FBX compilation
+and animated playback in s&box. Synchronized source/target frames were visually reviewed.
+These checks do not establish full-length 3D accuracy.
+
+Foot drift remains. During consecutive frames where GVHMR's static-joint probability
+exceeds 0.8, Human foot joints still moved up to 6.23 cm per frame in the retargeted
+camera-relative output. This is a diagnostic of remaining motion, not a calibrated
+world-space slip measurement. The current geometric foot detector finds too few
+stable intervals in this clip to resolve those contacts automatically.
 
 Review these examples critically. After the correction, the plate-handling clip had
 77 left-hand and 78 right-hand observed frames out of 121. The cupboard clip had
