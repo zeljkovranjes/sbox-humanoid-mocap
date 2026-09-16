@@ -30,6 +30,9 @@ Edits under Advanced affect export after they have been applied to the preview.
 **Advanced → Export captured skeleton** keeps the reconstruction's skeleton and sample timing. Both contain bone
 positions and rotations. Keep the `.hmotion` document for confidence, visibility,
 contact review and reversible edits; those details are not animation channels in FBX.
+Applied adjustments save beside the motion as `.hmotion.adjustments.json`, with
+separate settings per target rig and workspace. Keep that file and the original
+reconstruction so reopening can rebuild cleanup without filtering it twice.
 The exported FBX can be added as an animation source in s&box ModelDoc.
 
 Keep the phone's upload page and the editor receiver open to send more videos without

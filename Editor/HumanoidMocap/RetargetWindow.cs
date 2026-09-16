@@ -186,7 +186,12 @@ public sealed partial class RetargetWindow : Widget
 		if ( !ReferenceEquals( _target, resolved ) )
 			return; // user picked something else meanwhile
 		if ( ok )
+		{
+			// Compilation can rebuild the rig in engine coordinates. Restore settings
+			// against that final skeleton, rather than the pre-import fingerprint.
+			FitMocapPlacementToTarget();
 			RefreshStatus();
+		}
 		else
 			SetStatus( $"Target: {resolved.Description}   ·   preview model could not be compiled - "
 				+ "the preview will show the wireframe skeleton instead.", Theme.Yellow );

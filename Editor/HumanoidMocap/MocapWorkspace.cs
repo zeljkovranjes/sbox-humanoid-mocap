@@ -187,7 +187,7 @@ public sealed partial class RetargetWindow
         _firstPerson=firstPerson;_firstOptions.Visible=firstPerson;_thirdOptions.Visible=!firstPerson;
         _swapHandsControl.Enabled=firstPerson&&_handBackend=="mediapipe";
         if(_workspacePicker.SelectedIndex!=(firstPerson?0:1))_workspacePicker.SelectedIndex=firstPerson?0:1;
-        if(changed){SetPreviewView(firstPerson);_=RefreshMocapPreviewAsync();}
+        if(changed){FitMocapPlacementToTarget();SetPreviewView(firstPerson);_=RefreshMocapPreviewAsync();}
     }
     public void SetPreviewView(bool firstPerson)
     {
@@ -218,17 +218,17 @@ public sealed partial class RetargetWindow
         ResetPlayback();
         _captureStatus.Text="Inspect source visibility and lens distortion. No camera calibration is assumed.";
     }
-    public async Task LoadMotionAsync(string path)
+    public async Task LoadMotionAsync(string path,string originalPath=null,CleanupSettings initialCleanup=null)
     {
         var revision=++_motionLoadRevision;
         try
         {
-            var loaded=await Task.Run(()=>{var document=MotionDocument.Parse(File.ReadAllBytes(path));return(document,quality:MotionDiagnostics.Analyze(document));});
-            var doc=loaded.document;
+            var loaded=await Task.Run(()=>{var session=MocapAdjustmentStore.Load(path,originalPath,initialCleanup);return(session,quality:MotionDiagnostics.Analyze(session.Raw));});
+            var doc=loaded.session.Edited;
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_motionLoadRevision)return;
             InvalidateMocapPreview();
-            _rawMotion=doc;_editedMotion=doc.Copy();_motionPath=path;
-            _viewPitch.Text="0";
+            _editSession=loaded.session;_rawMotion=loaded.session.Raw;_editedMotion=doc;_motionPath=path;
+            _appliedCleanup=loaded.session.State.Cleanup;ResetAdjustmentFields();
             if(File.Exists(doc.SourceVideo))LoadVideo(doc.SourceVideo);
             else
             {
@@ -243,6 +243,7 @@ public sealed partial class RetargetWindow
             _captureStatus.Text=missingHands.Length==0?$"Ready · {doc.Frames.Count} frames. Review the animation, then export."
                 :$"Review needed · {string.Join("; ",missingHands)}. See Advanced for tracking coverage.";
             _motionDetails.Text=$"{doc.Backend} · {doc.Space}. "+loaded.quality.HandSummary+" "+string.Join(" ",doc.Diagnostics);
+            if(loaded.session.Notice is { } notice)_captureStatus.Text+=" "+notice;
             await RefreshMocapPreviewAsync();
         }
         catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid()&&revision==_motionLoadRevision)_captureStatus.Text=e.Message;}
@@ -257,13 +258,16 @@ public sealed partial class RetargetWindow
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_previewRevision)return;
             var target=_target;var spec=target.Spec;var motion=_editedMotion;
             var bytes=Encoding.UTF8.GetBytes(motion.ToJson());var corrections=CaptureTargetCorrections();var rootMotion=_rootMotion;
+            var session=_editSession;var cleanup=_appliedCleanup;var targetKey=MocapAdjustmentStore.TargetKey(spec,_firstPerson);
+            var edit=new MocapAdjustmentStore.TargetEdit{Corrections=corrections,RootMotion=rootMotion,
+                Fov=Number(_fov,75),ViewPitch=Number(_viewPitch,0),NearClip=Number(_viewNear,15)};
             var result=await Task.Run(()=>Retargeter.Convert(new RetargetRequest{SourceData=bytes,SourceFileName="capture.hmotion",FootPlantCleanup=!corrections.FirstPerson,ArmEffectorIk=false,MocapCorrections=corrections,RootMotion=rootMotion},spec));
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_previewRevision)return;
             var clip=result.Clips.FirstOrDefault(c=>c.Success);
             if(clip is null)throw new InvalidOperationException("No convertible motion. Check the bone mapping.");
             _targetHost.Layout.Clear(true);
             _mocapPreview=_targetHost.Layout.Add(new PreviewWidget(_targetHost,spec.Rig,target.PreviewModelPath,target.PreviewPositionScale,spec.UpAxis),1);
-            _mocapPreview.Playing=false;_mocapPreview.FirstPerson=_previewFirstPerson;_mocapPreview.ViewmodelFov=Number(_fov,75);_mocapPreview.ViewmodelPitch=Number(_viewPitch,35);
+            _mocapPreview.Playing=false;_mocapPreview.FirstPerson=_previewFirstPerson;_mocapPreview.ViewmodelFov=edit.Fov;_mocapPreview.ViewmodelPitch=edit.ViewPitch;
             _mocapPreview.ShowTargetBones=_showTargetBones;
             var handCoverage=motion.Bones.Select((b,i)=>(b,i))
                 .Where(x=>x.b.Role is HumanoidMocap.Mapping.BoneRole.HandL or HumanoidMocap.Mapping.BoneRole.HandR)
@@ -272,13 +276,14 @@ public sealed partial class RetargetWindow
             // A briefly detected hand spends most of the clip held or at rest.
             // It must not pull the FPS camera away from the consistently tracked hand.
             _mocapPreview.FramingHands=handCoverage.Where(x=>x.Count>0&&x.Count>=strongest*.5f).Select(x=>x.Role).ToArray();
-            _mocapPreview.ViewmodelNearClipCm=Number(_viewNear,15);
+            _mocapPreview.ViewmodelNearClipCm=edit.NearClip;
             if(HandCaptureRetargeter.Supports(motion))_mocapPreview.CaptureView=corrections;
             _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
             Update();
             _previewFps=clip.Fps;_mocapPreview.SetClip(clip);_mocapPreview.ResetView();SynchronizePreview();
             _mocapPreview.Show();_targetHost.Update();
             _bakedPreview=new BakedPreview(clip,spec,motion.Space.ToString(),revision,corrections.FirstPerson);
+            SaveAppliedAdjustments(session,targetKey,edit,cleanup,motion);
         }
         catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid()&&revision==_previewRevision)_captureStatus.Text=e.Message;}
         finally
@@ -295,13 +300,12 @@ public sealed partial class RetargetWindow
         try
         {
             var settings=new CleanupSettings{Root=Number(_rootSmooth,.1f),Arms=Number(_armSmooth,.1f),Fingers=Number(_fingerSmooth,.025f)};
-            var raw=_rawMotion;var contacts=_editedMotion.Contacts;
+            var raw=_rawMotion;var contacts=_editedMotion.Copy().Contacts;var session=_editSession;
             var doc=await Task.Run(()=>{token.ThrowIfCancellationRequested();var copy=raw.Copy();copy.Contacts=contacts;var edited=MotionCleanup.Apply(copy,settings);token.ThrowIfCancellationRequested();return edited;},token);
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid())return;token.ThrowIfCancellationRequested();
-            _editedMotion=doc;
-            var destination=Path.Combine(Path.GetDirectoryName(_motionPath),Path.GetFileNameWithoutExtension(_motionPath)+".edited.hmotion");
-            File.WriteAllText(destination,doc.ToJson());
-            _captureStatus.Text="Cleanup saved as a separate motion document. Original observations are preserved.";
+            if(session!=_editSession)return;
+            _editedMotion=doc;_appliedCleanup=settings;
+            _captureStatus.Text="Adjustments applied. Original observations are preserved.";
             await RefreshMocapPreviewAsync();
         }
         catch(OperationCanceledException){await EditorPipeline.SwitchToMainThread();if(this.IsValid())_captureStatus.Text="Cancelled. Original motion preserved.";}
@@ -325,6 +329,9 @@ public sealed partial class RetargetWindow
     void FitMocapPlacementToTarget()
     {
         if(_target is null||_shoulderL is null)return;
+        _ground.Text="0";_facing.Text="0";_reach.Text="0.995";
+        _fov.Text="75";_viewPitch.Text="0";_viewNear.Text="15";
+        _rootMotion=HumanoidMocap.Cleanup.RootMotionMode.Off;_inPlaceControl.Value=false;
         var settings=TargetCorrectionSettings.ForRig(_target.Spec.Rig,_target.Spec.UpAxis);
         // These editable values also feed the solver; retain sub-millimetre rig
         // precision instead of shortening the shoulder span through display rounding.
@@ -332,6 +339,7 @@ public sealed partial class RetargetWindow
         _shoulderL.Text=Coordinates(settings.LeftShoulder);_shoulderR.Text=Coordinates(settings.RightShoulder);
         _elbowL.Text=Coordinates(settings.LeftElbow);_elbowR.Text=Coordinates(settings.RightElbow);
         _capturePosition.Text=Coordinates(settings.CaptureCameraPosition);_captureYaw.Text="180";_capturePitch.Text="0";
+        RestoreTargetAdjustments();
     }
 
     TargetCorrectionSettings CaptureTargetCorrections() => new()
@@ -359,8 +367,8 @@ public sealed partial class RetargetWindow
             var row=_contactRows.AddRow();row.Spacing=8;
             var label=row.Add(new Label($"{contact.Start:F2}–{contact.End:F2}s · {contact.Bone} → {contact.Object} · {contact.Review}",this),1);
             label.SetStyles($"color: {(contact.Review==ContactReview.Suggested?Theme.Yellow:Theme.TextLight).Hex};");
-            var confirm=row.Add(new Button("Confirm","check"));confirm.Clicked=()=>{contact.Review=ContactReview.Confirmed;RefreshContacts();};
-            var disable=row.Add(new Button("Disable","block"));disable.Clicked=()=>{contact.Review=ContactReview.Disabled;RefreshContacts();};
+            var confirm=row.Add(new Button("Confirm","check"));confirm.Clicked=()=>_=ReviewContactAsync(contact,ContactReview.Confirmed);
+            var disable=row.Add(new Button("Disable","block"));disable.Clicked=()=>_=ReviewContactAsync(contact,ContactReview.Disabled);
         }
     }
     [EditorEvent.Frame]

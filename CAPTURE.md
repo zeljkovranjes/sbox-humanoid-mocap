@@ -50,6 +50,17 @@ capture tilt; **Level** restores zero tilt. Fine-tune **Capture pitch** if neede
 and export. It is a user correction, not recovered camera orientation. The separate
 preview camera toggle only changes how you view the result.
 
+Applied corrections are saved beside the opened `.hmotion` as `.hmotion.adjustments.json`.
+Capture placement, arm settings, ground/facing and viewmodel settings are remembered
+separately for each target rig and workspace. Cleanup and reviewed contacts belong to
+the clip. Reopening rebuilds from the original reconstruction; changing cleanup does
+not repeatedly filter the previous result. Automatic captures retain a reference to
+their raw output. Manually opened legacy motion files without adjustment metadata
+use that file as their starting point, even if it was already cleaned elsewhere.
+The adjustment file currently references the original by absolute path: keep the raw
+file in place. Missing or changed originals produce an error instead of silently
+using already-cleaned motion. Unapplied field edits are not saved.
+
 Export saves an FBX armature and animated bones. It does not export a mesh, skin weights
 or a newly rigged character. Keep the raw `.hmotion` and video for later corrections;
 baked FBX playback does not require the C# worker or neural model downloads.

@@ -50,6 +50,7 @@ public sealed partial class RetargetWindow
         _processing = new CancellationTokenSource(); var token = _processing.Token;
         SetCaptureBusy(true); _retryCaptureButton.Visible = false;
         _exportMotionButton.Enabled = false; _rawMotion = null; _editedMotion = null; _motionPath = null;
+        _editSession=null;_appliedCleanup=null;
         ++_motionLoadRevision;InvalidateMocapPreview();
         _targetHost.Layout.Clear(true);_mocapPreview=null;
         _targetHost.Layout.Add(new global::Editor.Label("Preparing animation…",_targetHost){Alignment=TextFlag.Center},1);
@@ -97,9 +98,7 @@ public sealed partial class RetargetWindow
                 var destination = Path.Combine(Path.GetDirectoryName(motionPath), "automatic.edited.hmotion");
                 File.WriteAllText(destination, cleaned.ToJson()); return destination;
             }, token);
-            await LoadMotionAsync(cleanedPath);
-            // Keep cleanup based on raw observations when the user later adjusts it.
-            _rawMotion = await Task.Run(() => MotionDocument.Parse(File.ReadAllBytes(motionPath)), token);
+            await LoadMotionAsync(cleanedPath,motionPath,firstPerson?cleanup:null);
         }
         catch (OperationCanceledException)
         {
