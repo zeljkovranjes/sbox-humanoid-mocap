@@ -19,6 +19,14 @@ Use **Add contact…** to choose a wrist, prop bone, video interval and object-l
 it refuses missing wrist or object observations. Save, seek to the interval, and confirm
 only after reviewing the result. The pencil button edits an existing interval/anchor and
 returns it to Suggested. These edits are saved in the motion's adjustment sidecar.
+Contact intervals also appear below the main playback slider, in separate left/right
+hand lanes: yellow with `?` means Suggested, green with `✓` means Confirmed, and gray
+with `×` means Disabled. Click to seek, double-click a single interval to edit it, or
+right-click for editing, confirmation, disabling and **Start/End at playhead**. Overlapping
+intervals each get their own entries in the menu. Timing edits return the contact to
+Suggested and rebuild from preserved observations; review again before confirming.
+The strip is hidden when no contacts exist. Timing edits cannot remove existing sliding
+target keys; the editor reports that conflict rather than discarding the keys.
 Sliding contacts retain their authored keys; changing those keys still requires a prepared
 motion file. An edited interval must contain all existing sliding keys.
 
@@ -159,3 +167,9 @@ export consistency, not whether the authored grip matches the filmed object. Num
 checks also cover activation/release, missing prop observations, equivalent quaternion
 signs, overlapping contacts, two hands sharing a prop, fixed bone lengths and preserved
 local finger motion at different target proportions.
+
+The contact timeline was checked in the native Citizen editor with the same real capture
+and authored prop. Seeking and timing/review callbacks, save/reopen behavior and unchanged
+raw capture passed; the 99-bone animation compiled and played after the edit. Yellow,
+gray and green timeline states were visually inspected. Physical mouse gestures were
+not automated by this gate.

@@ -99,8 +99,12 @@ public sealed partial class RetargetWindow
         var transport=_transportBar.Layout;transport.Spacing=8;
         var play=_playButton=transport.Add(new Button("","play_arrow"){FixedWidth=28,ToolTip="Play / pause",Clicked=TogglePlayback});
         play.SetStyles("min-width: 20px; padding: 3px;");
-        _timeline=transport.Add(new FloatSlider(this),1);_timeline.Minimum=0;_timeline.Maximum=1;
+        var tracks=transport.Add(new Widget(this),1);tracks.Layout=Layout.Column();tracks.Layout.Spacing=2;
+        _timeline=tracks.Layout.Add(new FloatSlider(tracks));_timeline.Minimum=0;_timeline.Maximum=1;
         _timeline.OnValueEdited=()=>SeekPlaybackFraction(_timeline.Value);
+        _contactTimeline=tracks.Layout.Add(new MocapContactTimeline(tracks){Seek=SeekPlaybackFraction,ChangeRange=(expected,index,start,end)=>_=ChangeContactRangeAsync(expected,index,start,end),
+            Edit=(expected,index)=>{if(expected==_editedMotion&&_processing is null)OpenContactEditor(expected.Contacts[index]);},
+            Review=(expected,index,review)=>{if(expected==_editedMotion&&_processing is null)_=ReviewContactAsync(expected.Contacts[index],review);}});
         _clock=transport.Add(new Label("0.00 s",this){MinimumWidth=80});
         var bones=transport.Add(new Checkbox("Bones"){Value=true});
         bones.Clicked=()=>{_showTargetBones=bones.Value;if(_mocapPreview.IsValid())_mocapPreview.ShowTargetBones=bones.Value;};
@@ -384,6 +388,7 @@ public sealed partial class RetargetWindow
     }
     void RefreshContacts()
     {
+        _contactTimeline?.SetMotion(_editedMotion);
         _contactRows.Clear(true);
         var actions=_contactRows.AddRow();actions.Spacing=8;
         var supported=_firstPerson&&_editedMotion is not null&&HandCaptureRetargeter.Supports(_editedMotion)&&_editedMotion.Space==MotionSpace.CameraRelative;

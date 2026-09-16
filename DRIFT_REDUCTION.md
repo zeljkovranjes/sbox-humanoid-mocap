@@ -105,3 +105,12 @@ Fresh MobileHand runs on all three clips, short WildHands/WiLoR runs, cancellati
 and completed-cache reuse were checked. The MobileHand result passed native editor
 preview, armature-only FBX export and compiled playback; synchronized visual review still
 showed incorrect hand poses. These functional checks do not resolve that quality limitation.
+
+A translation-only palm fit was also evaluated on the saved MediaPipe observations.
+With estimated pinhole intrinsics, it accepted only 69 of 155 observed hands in `video_0`,
+47 of 120 in `segment_037`, and 19 of 85 in `segment_018`. Maximum estimated wrist speeds
+between consecutive accepted frames reached 11.38, 6.45 and 11.24 m/s respectively.
+Those results do not justify replacing the default assumed wrist plane. The experiment
+remains outside the library; no additional filtering or depth correction was enabled.
+The [MediaPipe output definition](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/python#handle_and_display_results)
+describes hand-centered 3D landmarks; it does not supply calibrated camera translation.

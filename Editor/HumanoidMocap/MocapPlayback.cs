@@ -58,6 +58,7 @@ public sealed partial class RetargetWindow
         var range=PlaybackRange;
         _clock.Text=$"{_playhead:F2} s";
         _timeline.Value=range.Last>range.Start?(float)Math.Clamp((_playhead-range.Start)/(range.Last-range.Start),0,1):0;
+        _contactTimeline?.SetPlayhead(_playhead);
         _playButton.Icon=_playing?"pause":"play_arrow";
     }
     void SynchronizePreview()
