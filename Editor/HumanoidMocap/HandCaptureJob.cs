@@ -48,7 +48,7 @@ public static class HandCaptureJob
             if(times.Length==0||times.Length>1800)throw new ArgumentException("Choose a nonempty range of at most 1800 frames.");
             string Hash(string path){using var stream=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();}
             var sourceHash=Hash(video);var modelHash=Hash(modelPath);
-            var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(FormattableString.Invariant($"managed-hands-v3-mf-tracked|{sourceHash}|{modelHash}|{start:R}|{end:R}")))).ToLowerInvariant();
+            var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(FormattableString.Invariant($"{ManagedHands.ImplementationVersion}|{sourceHash}|{modelHash}|{start:R}|{end:R}")))).ToLowerInvariant();
             var fs=global::Editor.FileSystem.ProjectTemporary;var relative="humanoid_mocap/jobs/"+key;fs.CreateDirectory(relative);
             var directory=fs.GetFullPath(relative);var rawPath=Path.Combine(directory,"observations.json");
             var raw=File.Exists(rawPath)?JsonSerializer.Deserialize<List<RawHandSample>>(File.ReadAllText(rawPath),MotionDocument.JsonOptions):new List<RawHandSample>();
@@ -57,7 +57,7 @@ public static class HandCaptureJob
             void Save(string state)
             {
                 var temp=rawPath+".tmp";File.WriteAllText(temp,JsonSerializer.Serialize(raw,MotionDocument.JsonOptions));File.Move(temp,rawPath,true);
-                File.WriteAllText(Path.Combine(directory,"job.json"),JsonSerializer.Serialize(new{state,sourceHash,modelHash,frames=raw.Count,total=times.Length,
+                File.WriteAllText(Path.Combine(directory,"job.json"),JsonSerializer.Serialize(new{state,sourceHash,modelHash,detectorImplementation=ManagedHands.ImplementationVersion,frames=raw.Count,total=times.Length,
                     elapsedSeconds=watch.Elapsed.TotalSeconds,cacheHit,peakEditorProcessRamBytes=peak,device="CPU",inferenceGpuUsed=false,editorVramMeasured=false,
                     decoder="Windows Media Foundation sequential samples; native presentation timestamps"},MotionDocument.JsonOptions));
             }
@@ -98,6 +98,7 @@ public static class HandCaptureJob
             // A canonical source skeleton keeps target proportions out of reconstruction/cache.
             var canonical=TargetPickers.SboxDefault().Spec.Rig;
             var builder=new HandMotionBuilder(canonical,Path.GetFileNameWithoutExtension(video),video,sourceHash,metadata.FrameRate){SwapHands=swapHands};
+            builder.Document.ModelVersion+="; "+ManagedHands.ImplementationVersion;
             foreach(var frame in raw){token.ThrowIfCancellationRequested();builder.Add(frame.Time,frame.Width,frame.Height,frame.Hands.Select(h=>h.ToObservation()).ToArray());}
             builder.Document.Validate();
             var path=Path.Combine(directory,swapHands?"raw-hands-v4-swapped.hmotion":"raw-hands-v4.hmotion");

@@ -144,7 +144,11 @@ public sealed partial class RetargetWindow
         _capturePosition=Field(placement,"Capture origin (m)","0,1.65,0");
         _captureYaw=Field(placement,"Capture yaw","180");_capturePitch=Field(placement,"Capture pitch","0");
         _capturePosition.ToolTip="Place camera-relative hand tracks in the target rig. This editable placement is not recovered camera motion.";
-        _captureYaw.ToolTip=_capturePitch.ToolTip="Capture-camera placement in degrees; separate from the preview camera and viewmodel FOV.";
+        _captureYaw.ToolTip="Capture-camera placement in degrees; separate from the preview camera and viewmodel FOV.";
+        _capturePitch.ToolTip="Recorded camera tilt: negative looks down, positive looks up. A level assumption can raise the arms when the original video looks down. This is an editable placement assumption, not measured camera tracking.";
+        var tiltPresets=placement.AddRow();tiltPresets.Spacing=4;
+        tiltPresets.Add(new Button("Level","horizontal_rule"){Clicked=()=>_=SetCaptureTiltAsync(0),ToolTip="Place the capture as a level camera. Reuses reconstruction."});
+        tiltPresets.Add(new Button("Looking down","south_east"){Clicked=()=>_=SetCaptureTiltAsync(-45),ToolTip="Assume a camera tilted 45 degrees down. Changes target arm placement and the exported animation; keeps captured hand detail. Adjust Capture pitch for your footage."});
         _firstOptions.ToolTip="Shoulders and hidden elbows are estimated. These controls apply to target arm correction when hand tracks are present.";
 
         _thirdOptions=_advancedPanel.Layout.Add(new Group(this){Title="Third Person · ground and facing",Icon="directions_walk"});
@@ -313,11 +317,18 @@ public sealed partial class RetargetWindow
         }
     }
     static float Number(LineEdit field,float fallback)=>float.TryParse(field.Text,NumberStyles.Float,CultureInfo.InvariantCulture,out var n)&&float.IsFinite(n)?n:fallback;
+    Task SetCaptureTiltAsync(float degrees)
+    {
+        _capturePitch.Text=degrees.ToString(CultureInfo.InvariantCulture);
+        return RefreshMocapPreviewAsync();
+    }
     void FitMocapPlacementToTarget()
     {
         if(_target is null||_shoulderL is null)return;
         var settings=TargetCorrectionSettings.ForRig(_target.Spec.Rig,_target.Spec.UpAxis);
-        string Coordinates(System.Numerics.Vector3 v)=>FormattableString.Invariant($"{v.X:0.####},{v.Y:0.####},{v.Z:0.####}");
+        // These editable values also feed the solver; retain sub-millimetre rig
+        // precision instead of shortening the shoulder span through display rounding.
+        string Coordinates(System.Numerics.Vector3 v)=>FormattableString.Invariant($"{v.X:0.######},{v.Y:0.######},{v.Z:0.######}");
         _shoulderL.Text=Coordinates(settings.LeftShoulder);_shoulderR.Text=Coordinates(settings.RightShoulder);
         _elbowL.Text=Coordinates(settings.LeftElbow);_elbowR.Text=Coordinates(settings.RightElbow);
         _capturePosition.Text=Coordinates(settings.CaptureCameraPosition);_captureYaw.Text="180";_capturePitch.Text="0";

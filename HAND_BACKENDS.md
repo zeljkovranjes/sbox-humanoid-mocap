@@ -16,6 +16,13 @@ estimate, not a local memory measurement or accuracy rating.
 | WiLoR | Available, experimental C# native CPU port; 2.56 GB checkpoint | Wrist/finger rotations and shape with a larger transformer. Uses MediaPipe hand crops rather than the original detector. |
 | ACE-Ego-Hand | Optional future backend; not integrated | Offline bimanual reconstruction through occlusion using the much larger Wan video backbone. Downloads and model loading must be opt-in. |
 
+The ACE K-free checkpoint was verified against its published SHA-256 and all 844
+projector, ray-head and backbone-delta tensors were read through the C# checkpoint
+reader. This is checkpoint compatibility testing, **not ACE inference**. The C# Wan
+backbone, video VAE and caption-conditioning path are still missing, so ACE remains
+unavailable for reconstruction. The upstream inference entry point is Python; this
+library does not launch it as a bridge.
+
 WildHands provides the intermediate processing option between MediaPipe and larger models.
 Its authors report a model about ten times smaller than HaMeR and better results on
 three of six compared metrics. That comparison is **against HaMeR, not ACE-Ego-Hand**.
@@ -47,6 +54,12 @@ previews and moving FBX animations imported by s&box. The native hand models sha
 recover prop tracks or calibrated camera motion. See the [worker instructions](InferenceWorker/README.md)
 for pinned setup, cache/resume behavior and measured processing costs. Functional
 verification does not establish parity with the original demos or ground-truth 3D accuracy.
+
+The managed MediaPipe kernels were compared against native TensorFlow Lite 2.17.1
+using identical tensors from the sample footage. This caught and corrected a bilinear
+resize option error in the palm detector. Reconstruction caches now include the detector
+implementation version, including the crops used by WildHands and WiLoR. Kernel agreement
+does not establish parity for the complete MediaPipe tracking pipeline or fix every missed hand.
 
 All hand backends now keep a hand-and-wrist source skeleton. MediaPipe fits landmark
 rotations to fixed canonical finger lengths and assumes wrist depth on an image plane.

@@ -58,3 +58,11 @@ Use `wilor` instead of `wildhands` for WiLoR. A hand job contains `Video`, `Mode
 WildHands downloads 855,094,722 bytes and WiLoR downloads 2,564,989,533 bytes, plus the shared 7,819,105-byte MediaPipe crop detector. No separate MANO file is needed by these ports: the pinned checkpoints contain the model buffers used by the C# decoder. These files remain local and are not committed. The crop detector runs fresh landmark inference; missing observations remain marked as missing. The ports use MediaPipe crops rather than the original demos' detectors, so upstream accuracy results do not establish this pipeline's accuracy.
 
 On the same Ryzen 7 system, 15 frames of `segment_037.mp4` took 10.8 seconds in WildHands inference with 1.38 GB peak worker RAM, and 31.2 seconds in WiLoR inference with 4.50 GB peak worker RAM. Inference timings exclude initial download/checkpoint loading; RAM includes the complete worker process. Native GPU inference has not been tested. Both produced moving armature-only FBX animations that compiled and played in s&box. These are small functional examples, not ground-truth accuracy or minimum-hardware measurements.
+
+After correcting the shared palm detector's resize operation, both models were rerun
+on the first 30 frames of `video_0.mp4`, with both hands observed throughout that range.
+WildHands recorded 12.47 seconds of model inference and 1.49 GB peak worker RAM;
+WiLoR recorded 87.23 seconds and 3.84 GB. These timings include crop detection and
+hand inference, and exclude initialization, decoding and retargeting. Both fresh jobs passed native target preview,
+arm-length checks, armature-only FBX export and compiled animation playback. The
+detector implementation version is part of the job cache key and motion provenance.

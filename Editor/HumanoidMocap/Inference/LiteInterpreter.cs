@@ -53,7 +53,9 @@ public sealed class LiteInterpreter
                         output[(((n+(int)padding[0])*target[1]+y+(int)padding[2])*target[2]+x+(int)padding[4])*target[3]+c+(int)padding[6]]=a[((n*shape[1]+y)*shape[2]+x)*shape[3]+c];
                     break;
                 case 23:
-                    var align=model.Byte(op.Options,0)!=0;var half=model.Byte(op.Options,1)!=0;
+                    // ResizeBilinearOptions retains two deprecated size fields.
+                    // Unlike ResizeNearestNeighborOptions, these flags occupy slots 2/3.
+                    var align=model.Byte(op.Options,2)!=0;var half=model.Byte(op.Options,3)!=0;
                     var sy=align && target[1]>1?(shape[1]-1f)/(target[1]-1):(float)shape[1]/target[1];
                     var sx=align && target[2]>1?(shape[2]-1f)/(target[2]-1):(float)shape[2]/target[2];
                     for(var y=0;y<target[1];y++)for(var x=0;x<target[2];x++)

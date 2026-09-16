@@ -24,7 +24,7 @@ public sealed class TorchCheckpoint : IDisposable
     const int MaximumMetadataBytes=32*1024*1024;
     const long MaximumTensorElements=1_000_000_000;
 
-    public TorchCheckpoint(string path)
+    public TorchCheckpoint(string path,string? stateKey=null)
     {
         archive=ZipFile.OpenRead(path);
         try
@@ -37,8 +37,11 @@ public sealed class TorchCheckpoint : IDisposable
             {using var r=new StreamReader(byteorder.Open());if(r.ReadToEnd().Trim()!="little")throw new NotSupportedException("Only little-endian checkpoints are supported.");}
             using var source=entry.Open();using var memory=new MemoryStream();source.CopyTo(memory);
             var root=new DataReader(memory.ToArray()).Read() as Dictionary<object,object?> ?? throw new InvalidDataException("Checkpoint root must be a dictionary.");
-            var state=root.TryGetValue("state_dict",out var value)?value as Dictionary<object,object?>:root;
-            if(state is null)throw new InvalidDataException("Checkpoint state_dict must be a dictionary.");
+            // Some inference checkpoints (including ACE) keep separately named
+            // component dictionaries. Select one explicitly; never traverse optimizer state.
+            var key=stateKey??(root.ContainsKey("state_dict")?"state_dict":null);
+            var state=key is null?root:root.TryGetValue(key,out var value)?value as Dictionary<object,object?>:null;
+            if(state is null)throw new InvalidDataException($"Checkpoint component '{key}' is missing or is not a dictionary.");
             foreach(var pair in state)
             {
                 if(pair.Value is not TensorRef t)continue;

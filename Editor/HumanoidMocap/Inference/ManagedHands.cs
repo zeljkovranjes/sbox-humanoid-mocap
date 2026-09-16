@@ -16,6 +16,7 @@ using Vector3 = System.Numerics.Vector3;
 /// Image landmarks are pixels. World landmarks are hand-relative metres, not world tracking.</summary>
 public sealed class ManagedHands
 {
+    public const string ImplementationVersion="managed-hands-v4-resize";
     readonly LiteInterpreter palms,hands;
     readonly List<Vector2> anchors=new();
     public ManagedHands(byte[] task)
