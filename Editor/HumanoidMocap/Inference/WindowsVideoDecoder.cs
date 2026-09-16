@@ -50,6 +50,14 @@ public sealed class WindowsVideoDecoder : IDisposable
         }
         finally{Release(ref type);}
     }
+    /// <summary>Seek to the preceding keyframe. Read forward to the requested presentation timestamp.</summary>
+    public void Seek(double seconds)
+    {
+        if(!double.IsFinite(seconds)||seconds<0)throw new ArgumentOutOfRangeException(nameof(seconds));
+        using var com=new ComScope();
+        var position=new TimePosition{Type=20,Value=checked((long)(seconds*10_000_000))}; // VT_I8, 100 ns
+        Check(Method<SetPosition>(reader,8)(reader,Guid.Empty,position));
+    }
     public DecodedVideoFrame Read(CancellationToken token)
     {
         using var com=new ComScope();
@@ -105,6 +113,12 @@ public sealed class WindowsVideoDecoder : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBuffer(IntPtr self,out IntPtr buffer);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int LockBuffer(IntPtr self,out IntPtr data,out int maximum,out int length);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int NoArgs(IntPtr self);
+    [StructLayout(LayoutKind.Explicit,Size=24)] struct TimePosition
+    {
+        [FieldOffset(0)] public ushort Type;
+        [FieldOffset(8)] public long Value;
+    }
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int SetPosition(IntPtr self,in Guid format,in TimePosition position);
     [DllImport("mfplat.dll",ExactSpelling=true)] static extern int MFStartup(int version,int flags);
     [DllImport("mfplat.dll",ExactSpelling=true)] static extern int MFShutdown();
     [DllImport("mfplat.dll",ExactSpelling=true)] static extern int MFCreateAttributes(out IntPtr attributes,int count);

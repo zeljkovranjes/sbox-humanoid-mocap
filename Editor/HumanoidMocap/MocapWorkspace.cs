@@ -20,97 +20,148 @@ public sealed partial class RetargetWindow
     Label _captureStatus, _clock;
     LineEdit _sourcePath, _rangeStart, _rangeEnd, _fov, _rootSmooth, _armSmooth, _fingerSmooth;
     LineEdit _shoulderL, _shoulderR, _elbowL, _elbowR, _reach, _facing, _ground, _viewPitch;
-    VideoWidget _video;
+    LineEdit _capturePosition, _captureYaw, _capturePitch, _viewNear;
+    MocapVideoWidget _video;
     PreviewWidget _mocapPreview;
     FloatSlider _timeline;
     MotionDocument _rawMotion, _editedMotion;
     string _motionPath;
     string _handModelPath;
+    string _handBackend="mediapipe";
     bool _swapHands;
+    Checkbox _swapHandsControl;
+    Checkbox _inPlaceControl;
+    bool _showTargetBones=true;
     CancellationTokenSource _processing;
+    SegmentedControl _workspacePicker;
+    Widget _advancedPanel;
+    Label _motionDetails;
+    Button _exportMotionButton, _uploadVideoButton, _phoneVideoButton, _cancelCaptureButton, _retryCaptureButton;
+    bool _exportCaptured;
+    bool _previewFirstPerson = true;
+    SegmentedControl _viewPicker;
+    Widget _welcome, _previewArea, _transportBar;
+    Label _videoName;
+    Dialog _adjustments;
 
     // Direct reuse of retargeter Group/Theme controls and sbox-public's SegmentedControl.
     void BuildMocapUi()
     {
-        var workspace=Layout.AddRow();workspace.Margin=8;workspace.Spacing=8;
-        var pages=workspace.Add(new SegmentedControl(this));
-        pages.AddOption("First Person","pan_tool");pages.AddOption("Third Person","directions_walk");
-        pages.OnSelectedChanged=_=>SetWorkspace(pages.SelectedIndex==0);
-        workspace.AddStretchCell();
-        workspace.Add(new Label("Capture viewpoint:",this));
-        var viewpoint=workspace.Add(new ComboBox(this));
-        viewpoint.AddItem("Unknown / uncalibrated",selected:true);
-        viewpoint.AddItem("Egocentric");viewpoint.AddItem("External camera");
-        viewpoint.ToolTip="Capture viewpoint does not choose the output workspace. Calibration is stored with the motion document.";
+        Layout.Margin=12;Layout.Spacing=10;
+        var header=Layout.AddRow();header.Spacing=8;
+        _workspacePicker=header.Add(new SegmentedControl(this){FixedWidth=280});
+        _workspacePicker.AddOption("First Person","pan_tool");_workspacePicker.AddOption("Third Person","directions_walk");
+        _workspacePicker.OnSelectedChanged=_=>SetWorkspace(_workspacePicker.SelectedIndex==0);
+        header.AddStretchCell();
+        var advanced=header.Add(new Button("Advanced","tune"));
+        advanced.Clicked=ShowAdjustments;
+        _exportMotionButton=header.Add(new Button.Primary("Export…"){Icon="file_download",Enabled=false});
+        _exportMotionButton.Clicked=()=>PickMotionExport(!_exportCaptured);
+        _exportMotionButton.ToolTip="Export the armature and animated bones as FBX.";
 
-        var source=Layout.AddRow();source.Margin=8;source.Spacing=8;
-        var import=source.Add(new Button.Primary("Import Video…"){Icon="video_file"});
-        import.Clicked=()=>
-        {
-            var path=EditorUtility.OpenFileDialog("Import video","Video (*.mp4 *.mov *.webm)",null);
-            if(!string.IsNullOrEmpty(path))LoadVideo(path);
+        var upload=Layout.AddRow();upload.Spacing=8;
+        _uploadVideoButton=upload.Add(new Button.Primary("Upload video…"){Icon="video_file"});
+        _uploadVideoButton.Clicked=()=>{
+            var path=EditorUtility.OpenFileDialog("Upload video","Video (*.mp4 *.mov)",null);
+            if(!string.IsNullOrEmpty(path))ImportVideoAndProcess(path);
         };
-        var phone=source.Add(new Button("Receive from Phone","qr_code_2"));
-        phone.Clicked=()=>new PhoneUploadDialog(this,LoadVideo).Show();
-        _sourcePath=source.Add(new LineEdit(this){PlaceholderText="Original footage is preserved"},1);
-        source.Add(new Label("Range (s):",this));_rangeStart=source.Add(new LineEdit(this){Text="0",FixedWidth=55});
-        _rangeEnd=source.Add(new LineEdit(this){Text="",PlaceholderText="End",FixedWidth=55});
-        var load=source.Add(new Button("Open Motion…","folder_open"));
-        load.Clicked=()=>
-        {
-            var path=EditorUtility.OpenFileDialog("Open reconstructed motion","Humanoid Motion (*.hmotion)",null);
-            if(!string.IsNullOrEmpty(path))_ = LoadMotionAsync(path);
-        };
+        _phoneVideoButton=upload.Add(new Button("Upload from phone","qr_code_2"));
+        _phoneVideoButton.Clicked=()=>new PhoneUploadDialog(this,ImportVideoAndProcess).Show();
+        _sourcePath=new LineEdit(this){Visible=false,ReadOnly=true};
+        _videoName=upload.Add(new Label("",this),1);
+        _videoName.SetStyles($"color: {Theme.TextLight.Hex};");
 
-        var views=Layout.AddRow();views.Margin=8;views.Spacing=8;
-        _videoHost=views.Add(new Group(this){Title="Source video",Icon="movie",MinimumHeight=210},1);
-        _videoHost.Layout=Layout.Column();_videoHost.Layout.Margin=new Sandbox.UI.Margin(4,26,4,4);
-        _videoHost.Layout.Add(new Label("Import footage to inspect lens distortion and tracking visibility.",this));
-        _targetHost=views.Add(new Group(this){Title="Target rig · synchronized preview",Icon="accessibility_new",MinimumHeight=210},1);
-        _targetHost.Layout=Layout.Column();_targetHost.Layout.Margin=new Sandbox.UI.Margin(4,26,4,4);
-        _targetHost.Layout.Add(new Label("Open a motion document to preview on the selected target.",this));
-        var transport=Layout.AddRow();transport.Margin=8;transport.Spacing=8;
-        var play=transport.Add(new Button("","play_arrow"){FixedWidth=28});
-        play.Clicked=()=>_video?.Player?.TogglePause();
+        _welcome=Layout.Add(new VideoDropArea(this,ImportVideoAndProcess),1);
+        _previewArea=Layout.Add(new Widget(this){Visible=false},1);
+        _previewArea.Layout=Layout.Row();_previewArea.Layout.Spacing=10;
+        var sourcePanel=_previewArea.Layout.Add(new Widget(this),1);sourcePanel.Layout=Layout.Column();sourcePanel.Layout.Spacing=6;
+        sourcePanel.Layout.Add(new Label("Source video",sourcePanel){FixedHeight=28});
+        _videoHost=sourcePanel.Layout.Add(new Widget(sourcePanel),1);_videoHost.Layout=Layout.Column();
+        var animationPanel=_previewArea.Layout.Add(new Widget(this),1);animationPanel.Layout=Layout.Column();animationPanel.Layout.Spacing=6;
+        var viewBar=animationPanel.Layout.AddRow();viewBar.Spacing=4;
+        _viewPicker=viewBar.Add(new SegmentedControl(animationPanel),1);
+        _viewPicker.AddOption("First person","videocam");_viewPicker.AddOption("Third person","3d_rotation");
+        _viewPicker.ToolTip="Preview camera only. Switching views does not change the capture or animation.";
+        _viewPicker.OnSelectedChanged=_=>SetPreviewView(_viewPicker.SelectedIndex==0);
+        var resetView=viewBar.Add(new Button("","center_focus_strong"){FixedWidth=28,ToolTip="Reset preview camera",Clicked=()=>_mocapPreview?.ResetView()});
+        resetView.SetStyles("min-width: 20px; padding: 3px;");
+        _targetHost=animationPanel.Layout.Add(new Widget(animationPanel),1);_targetHost.Layout=Layout.Column();
+        _targetHost.Layout.Add(new Label("Preparing animation…",_targetHost){Alignment=TextFlag.Center},1);
+
+        _transportBar=Layout.Add(new Widget(this){Visible=false});_transportBar.Layout=Layout.Row();
+        var transport=_transportBar.Layout;transport.Spacing=8;
+        var play=_playButton=transport.Add(new Button("","play_arrow"){FixedWidth=28,ToolTip="Play / pause",Clicked=TogglePlayback});
+        play.SetStyles("min-width: 20px; padding: 3px;");
         _timeline=transport.Add(new FloatSlider(this),1);_timeline.Minimum=0;_timeline.Maximum=1;
-        _timeline.OnValueEdited=()=>
-        {
-            if(_video?.Player is { } player)player.Seek(_timeline.Value*player.Duration);
-            SynchronizePreview();
-        };
+        _timeline.OnValueEdited=()=>SeekPlaybackFraction(_timeline.Value);
         _clock=transport.Add(new Label("0.00 s",this){MinimumWidth=80});
-        var refresh=transport.Add(new Button("Update target preview","refresh"));refresh.Clicked=()=>_ = RefreshMocapPreviewAsync();
+        var bones=transport.Add(new Checkbox("Bones"){Value=true});
+        bones.Clicked=()=>{_showTargetBones=bones.Value;if(_mocapPreview.IsValid())_mocapPreview.ShowTargetBones=bones.Value;};
 
-        _firstOptions=Layout.Add(new Group(this){Title="First Person · estimated arm rig",Icon="pan_tool"});
-        _firstOptions.Layout=Layout.Row();_firstOptions.Layout.Margin=new Sandbox.UI.Margin(14,30,14,12);_firstOptions.Layout.Spacing=24;
-        var left=_firstOptions.Layout.AddColumn();left.Spacing=6;
+        var status=Layout.AddRow();status.Spacing=8;
+        _captureStatus=status.Add(new Label("Choose a workspace, then upload a video.",this){WordWrap=true,MinimumHeight=24},1);
+        _cancelCaptureButton=status.Add(new Button("Cancel","cancel"){Visible=false,Clicked=CancelCapture});
+        _retryCaptureButton=status.Add(new Button("Retry","refresh"){Visible=false,Clicked=()=>_=ProcessImportedVideoAsync()});
+
+        _advancedPanel=new Widget(this){Visible=false};_advancedPanel.Layout=Layout.Column();_advancedPanel.Layout.Spacing=10;
+        var advancedTop=_advancedPanel.Layout.AddRow();advancedTop.Spacing=8;
+        var models=advancedTop.Add(new Button("Hand models…","memory"));
+        models.Clicked=()=>new HandBackendDialog(this,SelectHandModel,_handBackend).Show();
+        advancedTop.Add(new Label("Target:",this));
+        var target=advancedTop.Add(new ComboBox(this));
+        target.AddItem("s&box Human","person",()=>{TrySelectSboxTarget();_=RefreshMocapPreviewAsync();},selected:true);
+        target.AddItem("s&box Citizen","person",()=>{TrySelectSboxCitizenTarget();_=RefreshMocapPreviewAsync();});
+        target.AddItem("Custom VMDL…","folder_open",PickCustomModelTarget);
+        target.AddItem("Custom FBX / GLB…","folder_open",PickCustomFbxTarget);
+        var captured=advancedTop.Add(new Checkbox("Export captured skeleton"));
+        captured.ToolTip="Skip target retargeting when exporting. Captured hands do not include estimated arms.";
+        captured.Clicked=()=>{_exportCaptured=captured.Value;UpdateExportAvailability();};
+        advancedTop.AddStretchCell();
+        advancedTop.Add(new Button("Open motion…","folder_open"){Clicked=()=>{
+            var file=EditorUtility.OpenFileDialog("Open motion","Humanoid Motion (*.hmotion)",null);
+            if(!string.IsNullOrEmpty(file))_=LoadMotionAsync(file);
+        }});
+        var range=_advancedPanel.Layout.AddRow();range.Spacing=8;
+        _rangeStart=Field(range,"Start (s)","0");_rangeEnd=Field(range,"End (s)","");
+        _swapHandsControl=range.Add(new Checkbox("Swap hands (MediaPipe)"));
+        _swapHandsControl.ToolTip="Correct MediaPipe handedness for mirrored footage. Native MANO models currently use their detected side.";
+        _swapHandsControl.Clicked=()=>_swapHands=_swapHandsControl.Value;
+        range.Add(new Button("Process again","refresh"){Clicked=()=>_=ProcessImportedVideoAsync()});
+        _firstOptions=_advancedPanel.Layout.Add(new Group(this){Title="First Person · estimated arm rig",Icon="pan_tool"});
+        _firstOptions.Layout=Layout.Column();_firstOptions.Layout.Margin=new Sandbox.UI.Margin(12,30,12,12);_firstOptions.Layout.Spacing=12;
+        var arms=_firstOptions.Layout.AddRow();arms.Spacing=16;
+        var left=arms.AddColumn();left.Spacing=6;
         _shoulderL=Field(left,"Left shoulder (m)","0.18,1.45,0");_elbowL=Field(left,"Left elbow target","0.45,1.1,0.15");
-        var right=_firstOptions.Layout.AddColumn();right.Spacing=6;
+        var right=arms.AddColumn();right.Spacing=6;
         _shoulderR=Field(right,"Right shoulder (m)","-0.18,1.45,0");_elbowR=Field(right,"Right elbow target","-0.45,1.1,0.15");
-        var camera=_firstOptions.Layout.AddColumn();camera.Spacing=6;
+        var placementRow=_firstOptions.Layout.AddRow();placementRow.Spacing=16;
+        var camera=placementRow.AddColumn();camera.Spacing=6;
         _reach=Field(camera,"Reach fraction","0.995");_fov=Field(camera,"Viewmodel FOV","75");
-        _viewPitch=Field(camera,"Camera pitch","35");
+        _viewPitch=Field(camera,"Camera pitch","0");
+        _viewNear=Field(camera,"Near clip (cm)","15");
+        _viewNear.ToolTip="Hide nearby head geometry on full-body targets. Reduce this distance to inspect hands close to the viewmodel camera.";
+        var placement=placementRow.AddColumn();placement.Spacing=6;
+        _capturePosition=Field(placement,"Capture origin (m)","0,1.65,0");
+        _captureYaw=Field(placement,"Capture yaw","180");_capturePitch=Field(placement,"Capture pitch","0");
+        _capturePosition.ToolTip="Place camera-relative hand tracks in the target rig. This editable placement is not recovered camera motion.";
+        _captureYaw.ToolTip=_capturePitch.ToolTip="Capture-camera placement in degrees; separate from the preview camera and viewmodel FOV.";
         _firstOptions.ToolTip="Shoulders and hidden elbows are estimated. These controls apply to target arm correction when hand tracks are present.";
 
-        _thirdOptions=Layout.Add(new Group(this){Title="Third Person · ground and facing",Icon="directions_walk"});
+        _thirdOptions=_advancedPanel.Layout.Add(new Group(this){Title="Third Person · ground and facing",Icon="directions_walk"});
         _thirdOptions.Layout=Layout.Row();_thirdOptions.Layout.Margin=new Sandbox.UI.Margin(14,30,14,12);_thirdOptions.Layout.Spacing=24;
         _ground=Field(_thirdOptions.Layout,"Ground offset (m)","0");_facing=Field(_thirdOptions.Layout,"Facing (degrees)","0");
+        var inPlace=_inPlaceControl=_thirdOptions.Layout.Add(new Checkbox("In place"));
+        inPlace.ToolTip="Remove horizontal travel from the baked animation. Camera-relative capture remains camera-relative.";
+        inPlace.Clicked=()=>{_rootMotion=inPlace.Value?HumanoidMocap.Cleanup.RootMotionMode.InPlace:HumanoidMocap.Cleanup.RootMotionMode.Off;_=RefreshMocapPreviewAsync();};
         _thirdOptions.Visible=false;
 
-        var process=Layout.AddRow();process.Margin=8;process.Spacing=8;
-        _rootSmooth=Field(process,"Root cleanup","0.10");_armSmooth=Field(process,"Arms","0.10");_fingerSmooth=Field(process,"Fingers","0.025");
-        var cleanup=process.Add(new Button("Apply cleanup","auto_fix_high"));cleanup.Clicked=()=>_ = ProcessMotionAsync();
-        var cancel=process.Add(new Button("Cancel","cancel"));cancel.Clicked=()=>_processing?.Cancel();
-        var model=process.Add(new Button("Hand model…","memory"));
-        model.Clicked=()=>_handModelPath=EditorUtility.OpenFileDialog("Select hand_landmarker.task","MediaPipe task (*.task)",null);
-        var reconstruct=process.Add(new Button.Primary("Reconstruct hands"){Icon="motion_photos_on"});
-        reconstruct.Clicked=()=>_=ReconstructHandsAsync();
-        reconstruct.ToolTip="Experimental C# landmark inference. Downloads the verified 7.8 MB hand model on first use. Footage stays local. This is not ACE-Ego-Hand or GVHMR.";
-        var swap=process.Add(new Checkbox("Swap hands"));swap.Clicked=()=>_swapHands=swap.Value;
-        var contacts=Layout.Add(new Group(this){Title="Prop contacts · suggestions require review",Icon="touch_app"});
-        contacts.Layout=Layout.Column();contacts.Layout.Margin=new Sandbox.UI.Margin(14,30,14,12);_contactRows=contacts.Layout;
-        _captureStatus=Layout.Add(new Label("Experimental C# hand landmarks · ACE-Ego-Hand and GVHMR ports are not installed.",this));
-        _captureStatus.SetStyles($"color: {Theme.Yellow.Hex}; margin: 8px;");
+
+        var cleanup=_advancedPanel.Layout.AddRow();cleanup.Spacing=8;
+        _rootSmooth=Field(cleanup,"Root cleanup","0.10");_armSmooth=Field(cleanup,"Arms","0.10");_fingerSmooth=Field(cleanup,"Fingers","0.025");
+        cleanup.Add(new Button("Apply adjustments","check"){Clicked=()=>_=ProcessMotionAsync()});
+        var contacts=_advancedPanel.Layout.Add(new Group(this){Title="Contact review",Icon="touch_app"});
+        contacts.Layout=Layout.Column();contacts.Layout.Margin=new Sandbox.UI.Margin(8,26,8,8);_contactRows=contacts.Layout;
+        _motionDetails=_advancedPanel.Layout.Add(new Label(this){WordWrap=true});
         RefreshContacts();
     }
 
@@ -119,56 +170,124 @@ public sealed partial class RetargetWindow
         var row=layout.AddRow();row.Spacing=6;row.Add(new Label(title,this));
         return row.Add(new LineEdit(this){Text=value,MinimumWidth=65},1);
     }
+    internal void SelectHandModel(HandModelChoice choice)
+    {
+        if(_processing is not null){_captureStatus.Text="Finish or cancel the active capture before changing models.";return;}
+        if(choice.Backend is not ("mediapipe" or "wildhands" or "wilor"))throw new NotSupportedException("This hand backend is not available.");
+        _handBackend=choice.Backend;_handModelPath=choice.ModelPath;
+        _swapHandsControl.Enabled=_firstPerson&&_handBackend=="mediapipe";
+    }
     public void SetWorkspace(bool firstPerson)
     {
+        var changed=_firstPerson!=firstPerson;
         _firstPerson=firstPerson;_firstOptions.Visible=firstPerson;_thirdOptions.Visible=!firstPerson;
+        _swapHandsControl.Enabled=firstPerson&&_handBackend=="mediapipe";
+        if(_workspacePicker.SelectedIndex!=(firstPerson?0:1))_workspacePicker.SelectedIndex=firstPerson?0:1;
+        if(changed){SetPreviewView(firstPerson);_=RefreshMocapPreviewAsync();}
+    }
+    public void SetPreviewView(bool firstPerson)
+    {
+        _previewFirstPerson=firstPerson;
+        if(_viewPicker.SelectedIndex!=(firstPerson?0:1))_viewPicker.SelectedIndex=firstPerson?0:1;
         if(_mocapPreview.IsValid())_mocapPreview.FirstPerson=firstPerson;
+    }
+    internal void ShowAdjustments()
+    {
+        if(_adjustments.IsValid()){_adjustments.Show();_adjustments.Window.Raise();return;}
+        _adjustments=new Dialog(this);_adjustments.Window.Title="Mocap adjustments";
+        _adjustments.Layout=Layout.Column();_adjustments.Layout.Margin=12;
+        var scroll=_adjustments.Layout.Add(new ScrollArea(_adjustments),1);
+        _advancedPanel.Parent=scroll;scroll.Canvas=_advancedPanel;_advancedPanel.Visible=true;
+        // Preserve the settings widgets when the user closes this separate window.
+        _adjustments.Window.DeleteOnClose=false;
+        _adjustments.Window.MinimumSize=new Vector2(760,460);_adjustments.Window.Size=new Vector2(800,580);_adjustments.Show();
     }
     public void LoadVideo(string path)
     {
+        _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
+        Update();
+        _videoName.Text=Path.GetFileName(path);_videoName.ToolTip=path;
         _sourcePath.Text=path;_videoHost.Layout.Clear(true);
-        _video=_videoHost.Layout.Add(new VideoWidget(_videoHost,null),1);
-        var relative=VideoFiles.CacheVideo(path);
-        _video.Player.Play(global::Editor.FileSystem.ProjectTemporary,relative);
-        _video.Player.Muted=true;
+        _video=_videoHost.Layout.Add(new MocapVideoWidget(_videoHost,path),1);
+        _video.TogglePlayback=TogglePlayback;
+        _video.Show();
+        ResetPlayback();
         _captureStatus.Text="Inspect source visibility and lens distortion. No camera calibration is assumed.";
     }
     public async Task LoadMotionAsync(string path)
     {
+        var revision=++_motionLoadRevision;
         try
         {
-            var doc=await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(path)));
-            await EditorPipeline.SwitchToMainThread();if(!this.IsValid())return;
+            var loaded=await Task.Run(()=>{var document=MotionDocument.Parse(File.ReadAllBytes(path));return(document,quality:MotionDiagnostics.Analyze(document));});
+            var doc=loaded.document;
+            await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_motionLoadRevision)return;
+            InvalidateMocapPreview();
             _rawMotion=doc;_editedMotion=doc.Copy();_motionPath=path;
+            _viewPitch.Text="0";
             if(File.Exists(doc.SourceVideo))LoadVideo(doc.SourceVideo);
-            _entries.RemoveAll(e=>string.Equals(e.FilePath,path,StringComparison.OrdinalIgnoreCase));
-            await AddFilesAsync(new[]{path});RefreshContacts();
-            _captureStatus.Text=$"{doc.Backend} · {doc.Space} · {doc.Frames.Count} samples. "+string.Join(" ",doc.Diagnostics.Take(2));
+            else
+            {
+                _videoHost.Layout.Clear(true);_video=null;_videoName.Text="Source video unavailable";_videoName.ToolTip=doc.SourceVideo;
+                _sourcePath.Text=doc.SourceVideo;_videoHost.Layout.Add(new Label("The source video could not be found.\nAnimation playback is still available.",_videoHost){Alignment=TextFlag.Center,WordWrap=true},1);
+                ResetPlayback();
+            }
+            RefreshContacts();
+            var missingHands=loaded.quality.Tracks.Where(t=>t.Role is HumanoidMocap.Mapping.BoneRole.HandL or HumanoidMocap.Mapping.BoneRole.HandR)
+                .Where(t=>t.Reconstructed<doc.Frames.Count/2d)
+                .Select(t=>$"{(t.Role==HumanoidMocap.Mapping.BoneRole.HandL?"Left":"Right")} hand {(t.Reconstructed==0?"not detected":"mostly untracked")}").ToArray();
+            _captureStatus.Text=missingHands.Length==0?$"Ready · {doc.Frames.Count} frames. Review the animation, then export."
+                :$"Review needed · {string.Join("; ",missingHands)}. See Advanced for tracking coverage.";
+            _motionDetails.Text=$"{doc.Backend} · {doc.Space}. "+loaded.quality.HandSummary+" "+string.Join(" ",doc.Diagnostics);
             await RefreshMocapPreviewAsync();
         }
-        catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid())_captureStatus.Text=e.Message;}
+        catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid()&&revision==_motionLoadRevision)_captureStatus.Text=e.Message;}
     }
-    async Task RefreshMocapPreviewAsync()
+    async Task BuildMocapPreviewAsync(int revision)
     {
         if(_editedMotion is null || _target is null)return;
+        _previewPending=true;_bakedPreview=null;UpdateExportAvailability();
         try
         {
-            var target=_target;var bytes=Encoding.UTF8.GetBytes(_editedMotion.ToJson());var corrections=CaptureTargetCorrections();
-            var result=await Task.Run(()=>Retargeter.Convert(new RetargetRequest{SourceData=bytes,SourceFileName="capture.hmotion",FootPlantCleanup=!corrections.FirstPerson,ArmEffectorIk=false,MocapCorrections=corrections},target.Spec));
-            await EditorPipeline.SwitchToMainThread();if(!this.IsValid())return;
+            if(_fbxPreviewTask is not null)await _fbxPreviewTask;
+            await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_previewRevision)return;
+            var target=_target;var spec=target.Spec;var motion=_editedMotion;
+            var bytes=Encoding.UTF8.GetBytes(motion.ToJson());var corrections=CaptureTargetCorrections();var rootMotion=_rootMotion;
+            var result=await Task.Run(()=>Retargeter.Convert(new RetargetRequest{SourceData=bytes,SourceFileName="capture.hmotion",FootPlantCleanup=!corrections.FirstPerson,ArmEffectorIk=false,MocapCorrections=corrections,RootMotion=rootMotion},spec));
+            await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_previewRevision)return;
             var clip=result.Clips.FirstOrDefault(c=>c.Success);
             if(clip is null)throw new InvalidOperationException("No convertible motion. Check the bone mapping.");
             _targetHost.Layout.Clear(true);
-            _mocapPreview=_targetHost.Layout.Add(new PreviewWidget(_targetHost,target.Spec.Rig,target.PreviewModelPath,target.PreviewPositionScale,target.Spec.UpAxis),1);
-            _mocapPreview.Playing=false;_mocapPreview.FirstPerson=_firstPerson;_mocapPreview.ViewmodelFov=Number(_fov,75);_mocapPreview.ViewmodelPitch=Number(_viewPitch,35);
-            _mocapPreview.SetClip(clip);SynchronizePreview();
+            _mocapPreview=_targetHost.Layout.Add(new PreviewWidget(_targetHost,spec.Rig,target.PreviewModelPath,target.PreviewPositionScale,spec.UpAxis),1);
+            _mocapPreview.Playing=false;_mocapPreview.FirstPerson=_previewFirstPerson;_mocapPreview.ViewmodelFov=Number(_fov,75);_mocapPreview.ViewmodelPitch=Number(_viewPitch,35);
+            _mocapPreview.ShowTargetBones=_showTargetBones;
+            var handCoverage=motion.Bones.Select((b,i)=>(b,i))
+                .Where(x=>x.b.Role is HumanoidMocap.Mapping.BoneRole.HandL or HumanoidMocap.Mapping.BoneRole.HandR)
+                .Select(x=>(Role:x.b.Role.Value,Count:motion.Frames.Count(f=>f.Evidence[x.i]==JointEvidence.Reconstructed))).ToArray();
+            var strongest=handCoverage.Select(x=>x.Count).DefaultIfEmpty(0).Max();
+            // A briefly detected hand spends most of the clip held or at rest.
+            // It must not pull the FPS camera away from the consistently tracked hand.
+            _mocapPreview.FramingHands=handCoverage.Where(x=>x.Count>0&&x.Count>=strongest*.5f).Select(x=>x.Role).ToArray();
+            _mocapPreview.ViewmodelNearClipCm=Number(_viewNear,15);
+            if(HandCaptureRetargeter.Supports(motion))_mocapPreview.CaptureView=corrections;
+            _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
+            Update();
+            _previewFps=clip.Fps;_mocapPreview.SetClip(clip);_mocapPreview.ResetView();SynchronizePreview();
+            _mocapPreview.Show();_targetHost.Update();
+            _bakedPreview=new BakedPreview(clip,spec,motion.Space.ToString(),revision,corrections.FirstPerson);
         }
-        catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid())_captureStatus.Text=e.Message;}
+        catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid()&&revision==_previewRevision)_captureStatus.Text=e.Message;}
+        finally
+        {
+            await EditorPipeline.SwitchToMainThread();
+            if(this.IsValid()&&revision==_previewRevision){_previewPending=false;UpdateExportAvailability();}
+        }
     }
     async Task ProcessMotionAsync()
     {
         if(_rawMotion is null || _processing is not null)return;
         _processing=new CancellationTokenSource();var token=_processing.Token;
+        SetCaptureBusy(true);
         try
         {
             var settings=new CleanupSettings{Root=Number(_rootSmooth,.1f),Arms=Number(_armSmooth,.1f),Fingers=Number(_fingerSmooth,.025f)};
@@ -178,45 +297,38 @@ public sealed partial class RetargetWindow
             _editedMotion=doc;
             var destination=Path.Combine(Path.GetDirectoryName(_motionPath),Path.GetFileNameWithoutExtension(_motionPath)+".edited.hmotion");
             File.WriteAllText(destination,doc.ToJson());
-            _entries.RemoveAll(e=>string.Equals(e.FilePath,_motionPath,StringComparison.OrdinalIgnoreCase)||string.Equals(e.FilePath,destination,StringComparison.OrdinalIgnoreCase));
-            await AddFilesAsync(new[]{destination});
             _captureStatus.Text="Cleanup saved as a separate motion document. Original observations are preserved.";
             await RefreshMocapPreviewAsync();
         }
         catch(OperationCanceledException){await EditorPipeline.SwitchToMainThread();if(this.IsValid())_captureStatus.Text="Cancelled. Original motion preserved.";}
         catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid())_captureStatus.Text=e.Message;}
-        finally{_processing.Dispose();_processing=null;}
-    }
-    async Task ReconstructHandsAsync()
-    {
-        if(_processing is not null)return;
-        if(!File.Exists(_sourcePath.Text)){_captureStatus.Text="Import a local video first.";return;}
-        if(_target is null){_captureStatus.Text="Select a target rig first.";return;}
-        _processing=new CancellationTokenSource();
-        try
+        finally
         {
-            if(!File.Exists(_handModelPath))
+            await EditorPipeline.SwitchToMainThread();_processing.Dispose();_processing=null;
+            if(this.IsValid())
             {
-                _captureStatus.Text="Downloading and verifying the 7.8 MB hand model. Your footage stays local.";
-                _handModelPath=await HandModelStore.EnsureAsync(_processing.Token);
-                await EditorPipeline.SwitchToMainThread();
-                if(!this.IsValid())return;
+                SetCaptureBusy(false);
+                if(_queuedVideos.TryDequeue(out var queued)){SetWorkspace(queued.FirstPerson);ImportVideoAndProcess(queued.Path,queued.Start,queued.End);}
             }
-            var path=await HandCaptureJob.RunAsync(_sourcePath.Text,_handModelPath,_target.Spec.Rig,Number(_rangeStart,0),
-                string.IsNullOrWhiteSpace(_rangeEnd.Text)?null:Number(_rangeEnd,0),_swapHands,
-                (done,total,message)=>{if(this.IsValid())_captureStatus.Text=$"{message} · {done}/{total}";},_processing.Token);
-            await LoadMotionAsync(path);
         }
-        catch(OperationCanceledException){await EditorPipeline.SwitchToMainThread();if(this.IsValid())_captureStatus.Text="Cancelled. Restart reconstruction to resume cached observations.";}
-        catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid())_captureStatus.Text=e.Message;}
-        finally{_processing.Dispose();_processing=null;}
     }
     static float Number(LineEdit field,float fallback)=>float.TryParse(field.Text,NumberStyles.Float,CultureInfo.InvariantCulture,out var n)&&float.IsFinite(n)?n:fallback;
+    void FitMocapPlacementToTarget()
+    {
+        if(_target is null||_shoulderL is null)return;
+        var settings=TargetCorrectionSettings.ForRig(_target.Spec.Rig,_target.Spec.UpAxis);
+        string Coordinates(System.Numerics.Vector3 v)=>FormattableString.Invariant($"{v.X:0.####},{v.Y:0.####},{v.Z:0.####}");
+        _shoulderL.Text=Coordinates(settings.LeftShoulder);_shoulderR.Text=Coordinates(settings.RightShoulder);
+        _elbowL.Text=Coordinates(settings.LeftElbow);_elbowR.Text=Coordinates(settings.RightElbow);
+        _capturePosition.Text=Coordinates(settings.CaptureCameraPosition);_captureYaw.Text="180";_capturePitch.Text="0";
+    }
+
     TargetCorrectionSettings CaptureTargetCorrections() => new()
     {
         FirstPerson=_firstPerson,LeftShoulder=Vector(_shoulderL),RightShoulder=Vector(_shoulderR),
         LeftElbow=Vector(_elbowL),RightElbow=Vector(_elbowR),Reach=Number(_reach,.995f),
-        GroundOffset=Number(_ground,0),FacingDegrees=Number(_facing,0)
+        GroundOffset=Number(_ground,0),FacingDegrees=Number(_facing,0),
+        CaptureCameraPosition=Vector(_capturePosition),CaptureCameraYawDegrees=Number(_captureYaw,180),CaptureCameraPitchDegrees=Number(_capturePitch,0)
     };
     static System.Numerics.Vector3 Vector(LineEdit edit)
     {
@@ -243,15 +355,9 @@ public sealed partial class RetargetWindow
     [EditorEvent.Frame]
     public void MocapTick()
     {
-        if(!this.IsValid() || _video?.Player is null)return;
-        var p=_video.Player;_clock.Text=$"{p.PlaybackTime:F2} s";
-        if(p.Duration>0)_timeline.Value=(float)(p.PlaybackTime/p.Duration);
-        SynchronizePreview();
-    }
-    void SynchronizePreview()
-    {
-        if(!_mocapPreview.IsValid() || _editedMotion is null)return;
-        var time=_video?.Player?.PlaybackTime??(_editedMotion.Frames[0].Time+_timeline.Value*(_editedMotion.Frames[^1].Time-_editedMotion.Frames[0].Time));
-        _mocapPreview.Scrub((int)Math.Round((time-_editedMotion.Frames[0].Time)*_editedMotion.SourceFps));
+        if(!this.IsValid())return;
+        _video?.Present();
+        if(Interlocked.Exchange(ref _workerMessage,null) is { } message)_captureStatus.Text=message;
+        TickPlayback();
     }
 }

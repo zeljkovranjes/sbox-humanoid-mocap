@@ -77,6 +77,11 @@ public sealed class SourceScene
     /// </summary>
     public MappingResult? AuthoredMapping { get; set; }
 
+    /// <summary>Capture coordinates and resampled evidence, present for motion documents.
+    /// Evidence uses this skeleton's bone order and the first clip's sample grid.</summary>
+    public Motion.MotionSpace? CaptureSpace { get; init; }
+    public IReadOnlyList<Motion.JointEvidence[]>? CaptureEvidence { get; init; }
+
     /// <summary>
     /// Alternate skeleton whose rest is the file's Pose/BindPose, offered by the FBX
     /// importer when the node transforms are GROSSLY posed away from it (a mid-pose

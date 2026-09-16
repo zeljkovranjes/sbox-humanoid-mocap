@@ -12,9 +12,9 @@ public static class BodyModelDownloads
         new("models/vitpose/vitpose-h-multi-coco.pth","https://huggingface.co/camenduru/GVHMR/resolve/21b32d5389e2e59c0737d4c4095bbc0b8c23f66b/vitpose/vitpose-h-multi-coco.pth",2549075546,"50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc"),
         new("models/smplx/SMPLX_NEUTRAL.npz","https://huggingface.co/camenduru/SMPLer-X/resolve/9e5548b70b48efe6992faa3b2a418df108542bf7/SMPLX_NEUTRAL.npz",108752058,"376021446ddc86e99acacd795182bbef903e61d33b76b9d8b359c2b0865bd992")
     };
-    public static async Task Ensure(string modelFolder)
+    public static async Task Ensure(string modelFolder,CancellationToken token=default)
     {
-        using var cancellation=new CancellationTokenSource();
+        using var cancellation=CancellationTokenSource.CreateLinkedTokenSource(token);
         ConsoleCancelEventHandler handler=(_,e)=>{e.Cancel=true;cancellation.Cancel();};Console.CancelKeyPress+=handler;
         using var client=new HttpClient{Timeout=TimeSpan.FromHours(1)};
         try
@@ -29,7 +29,7 @@ public static class BodyModelDownloads
                     var partial=asset.Path+"."+Guid.NewGuid().ToString("N")+".partial";
                     try
                     {
-                        Console.WriteLine($"Downloading {asset.Path} ({asset.Bytes:N0} bytes)");
+                        Console.WriteLine($"Downloading {System.IO.Path.GetFileName(asset.Path)} ({asset.Bytes:N0} bytes)");
                         using var response=await client.GetAsync(asset.Url,HttpCompletionOption.ResponseHeadersRead,cancellation.Token);response.EnsureSuccessStatusCode();
                         if(response.Content.Headers.ContentLength is long size&&size!=asset.Bytes)throw new InvalidDataException("Model download size mismatch.");
                         await using(var input=await response.Content.ReadAsStreamAsync(cancellation.Token))
@@ -43,7 +43,7 @@ public static class BodyModelDownloads
                     }
                     finally{if(File.Exists(partial))File.Delete(partial);}
                 }
-                Console.WriteLine("Verified "+asset.Path);
+                Console.WriteLine("Verified "+System.IO.Path.GetFileName(asset.Path));
             }
             Directory.CreateDirectory(modelFolder);
             File.WriteAllText(System.IO.Path.Combine(modelFolder,"gvhmr-models.json"),JsonSerializer.Serialize(new{

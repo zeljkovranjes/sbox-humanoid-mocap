@@ -118,24 +118,31 @@ public sealed class MotionDocument
         var duration=Frames[^1].Time-Frames[0].Time;
         var count=Math.Max(1,(int)Math.Round(duration*fps)+1);
         if (count>108000) throw new ArgumentException("Export exceeds frame budget.");
-        var frames=new List<XForm[]>(count);var cursor=0;
+        var frames=new List<XForm[]>(count);var evidence=new List<JointEvidence[]>(count);var cursor=0;
         for (var i=0;i<count;i++)
         {
             var time=Math.Min(Frames[0].Time+i/fps,Frames[^1].Time);
             while(cursor+1<Frames.Count && Frames[cursor+1].Time<time)cursor++;
             var a=Frames[cursor];var b=Frames[Math.Min(cursor+1,Frames.Count-1)];
             var t=b.Time>a.Time?(float)((time-a.Time)/(b.Time-a.Time)):0;
-            var frame=new XForm[Bones.Count];
-            for(var j=0;j<Bones.Count;j++) frame[skeleton.IndexOf(Bones[j].Name)]=new XForm(
+            var frame=new XForm[Bones.Count];var frameEvidence=new JointEvidence[Bones.Count];
+            for(var j=0;j<Bones.Count;j++)
+            {
+                var index=skeleton.IndexOf(Bones[j].Name);
+                frame[index]=new XForm(
                 Vector3.Lerp(V(a.Positions[j]),V(b.Positions[j]),t)*100,
                 Quaternion.Slerp(Q(a.Rotations[j]),Q(b.Rotations[j]),t));
-            frames.Add(frame);
+                frameEvidence[index]=t<=0?a.Evidence[j]:t>=1?b.Evidence[j]:
+                    a.Evidence[j]==JointEvidence.Unobserved||b.Evidence[j]==JointEvidence.Unobserved?JointEvidence.Unobserved:
+                    a.Evidence[j]==b.Evidence[j]?a.Evidence[j]:JointEvidence.InferredGap;
+            }
+            frames.Add(frame);evidence.Add(frameEvidence);
         }
         var notes=new List<string>(Diagnostics) { $"{Backend}: {Space}; metric scale calibrated={MetricScaleCalibrated}.",
             "Mapping confidence describes explicit bone-role assignments, not reconstruction accuracy." };
         if (Space==MotionSpace.CameraRelative) notes.Add("Camera-relative motion: no world root-motion claim.");
         return new SourceScene(skeleton,new[]{new Clip(Name,fps,false,frames,(float)SourceFps)},100,notes:notes)
-        { AuthoredMapping=mapping };
+        { AuthoredMapping=mapping, CaptureSpace=Space, CaptureEvidence=evidence };
     }
 }
 

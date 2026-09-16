@@ -29,18 +29,16 @@ public sealed class PhoneUploadDialog : Dialog
         Layout.Add(new Label.Subtitle("Receive from Phone"){Alignment=TextFlag.Center});
         var subtitle=Layout.Add(new Label("Scan once · upload videos for one hour",this){Alignment=TextFlag.Center});
         subtitle.SetStyles($"color: {Theme.TextLight.Hex};");
-        var addresses=NetworkInterface.GetAllNetworkInterfaces().Where(n=>n.OperationalStatus==OperationalStatus.Up)
-            .SelectMany(n=>n.GetIPProperties().UnicastAddresses).Select(a=>a.Address)
-            .Where(a=>a.AddressFamily==AddressFamily.InterNetwork&&!IPAddress.IsLoopback(a)).ToArray();
-        if(addresses.Length==0)addresses=new[]{IPAddress.Loopback};selected=addresses[0];
+        var networks=PhoneNetwork.Discover();selected=networks[0].Address;
         var network=Layout.Add(new ComboBox(this));
-        foreach(var ip in addresses)network.AddItem(ip.ToString(),"wifi",()=>{selected=ip;Start();},selected:ip.Equals(selected));
+        network.ToolTip="Choose the Wi-Fi or Ethernet connection shared with your phone. Virtual adapters such as WSL are usually unreachable from phones.";
+        foreach(var connection in networks)network.AddItem(connection.Label,"wifi",()=>{selected=connection.Address;Start();},selected:connection.Address.Equals(selected));
         // Fill the available width. The painter centers the square and mark on both axes.
         qr=Layout.Add(new QrWidget(this){MinimumSize=new Vector2(300,300)},1);
         address=Layout.Add(new LineEdit(this));address.ReadOnly=true;
         status=Layout.Add(new Label("",this){Alignment=TextFlag.Center});
         status.SetStyles($"color: {Theme.Green.Hex};");
-        var help=Layout.Add(new Label("Use the same Wi-Fi as this PC. Choose a video from Photos or your gallery.\nKeep this window open to receive more videos.",this){Alignment=TextFlag.Center});
+        var help=Layout.Add(new Label("Connect your phone to the same router as this PC.\nUse Wi-Fi or Ethernet above, not a WSL/VPN adapter.\nKeep this window open to receive more videos.",this){Alignment=TextFlag.Center,WordWrap=true});
         help.SetStyles($"color: {Theme.TextLight.Hex};");
         var row=Layout.AddRow();row.Spacing=8;
         var renew=row.Add(new Button.Primary("New one-hour pairing"){Icon="refresh"},1);renew.Clicked=Start;
@@ -59,7 +57,10 @@ public sealed class PhoneUploadDialog : Dialog
             server.Progress=(done,total)=>_=StatusAsync($"Receiving video · {100*done/total}%");
             server.ThemeCss=$":root{{--window:{Theme.WindowBackground.Hex};--surface:{Theme.WidgetBackground.Hex};--border:{Theme.Border.Hex};--text:{Theme.Text.Hex};--muted:{Theme.TextLight.Hex};--primary:{Theme.Blue.Hex};}}";
             qr.Code=PhoneQrPresentation.Create(server.PairingUrl);qr.Update();address.Text=server.PairingUrl;
-            status.Text="Ready · one-hour pairing. Uploads stay on this PC.";
+            var connection=PhoneNetwork.Discover().FirstOrDefault(n=>n.Address.Equals(selected));
+            status.Text=connection?.LocalOnly==true?"This address cannot receive uploads from a phone. Connect to Wi-Fi or Ethernet."
+                :connection?.Virtual==true?"Virtual adapter selected. Choose Wi-Fi or Ethernet if your phone cannot connect."
+                :"Ready · one-hour pairing. Uploads stay on this PC.";
         }
         catch(Exception e){status.Text=e.Message;}
     }

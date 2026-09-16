@@ -775,8 +775,11 @@ public static class Retargeter
         SourceScene scene, MappingResult map, MappingReportInfo report, int take, string clipName)
     {
         var requested = request.Solve ?? new SolveOptions();
-        var solver = ResolveSolver(request, target, context, report);
-        var solved = solver.Solve(scene, map, target.Rig, new SolveOptions
+        var handCapture = Motion.HandCaptureRetargeter.Supports(scene, map);
+        var solved = handCapture
+            ? Motion.HandCaptureRetargeter.Solve(scene, map, target.Rig, target.UpAxis,
+                request.MocapCorrections ?? Motion.TargetCorrectionSettings.ForRig(target.Rig,target.UpAxis), take, clipName, requested.TransferFingers)
+            : ResolveSolver(request, target, context, report).Solve(scene, map, target.Rig, new SolveOptions
         {
             GroundedLegDirections = request.FootPlantCleanup,
             HipScaleHorizontal = requested.HipScaleHorizontal,
@@ -793,7 +796,7 @@ public static class Retargeter
             PassThroughSourceTranslations(scene, target.Rig, frames, take, report);
 
         // ---- foot-plant cleanup (target space; up axis from the TARGET character frame) ----
-        if (request.FootPlantCleanup)
+        if (request.FootPlantCleanup && !handCapture)
         {
             if (context.Up is { } up && context.FootChains is { } feet)
             {
@@ -824,7 +827,7 @@ public static class Retargeter
 
         // ---- optional arm effector IK (default off: the solver already matches anatomical
         // directions; arm IK is only for reach-critical work) ----
-        if (request.ArmEffectorIk)
+        if (request.ArmEffectorIk && !handCapture)
         {
             var problem = ArmIkCleanup.Apply(frames, scene, map, target.Rig, context, take);
             if (problem is not null)
@@ -836,18 +839,23 @@ public static class Retargeter
 
         if (request.MocapCorrections is { } corrections)
         {
-            Motion.TargetCorrections.Apply(frames, target.Rig, target.UpAxis, corrections);
+            if (!handCapture || !corrections.FirstPerson)
+                Motion.TargetCorrections.Apply(frames, target.Rig, target.UpAxis, corrections);
             if (corrections.FirstPerson) AddNote(report, "Shoulders and elbows are generated target-rig IK, not measured joints.");
         }
+
+        if (handCapture) AddNote(report, "Camera-relative hand capture uses editable camera placement and target-proportion arm IK. Shoulders and elbows are estimated; unreachable wrists are clamped without stretching bones. Unobserved hands hold their last pose.");
 
         // ---- IK helper bones (root_IK, IK targets, ikrule) need real baked channels ----
         if (context.HasIkBakedBones)
             IkBoneBaker.Bake(frames, target.Rig);
 
         // ---- unmapped limb twist bones follow their joint's roll ------------------------
-        // (on shipped s&box rigs the model's own AnimConstraintList owns those instead)
+        // Mocap exports a portable baked armature, so it cannot rely on the target
+        // model's runtime constraints. Its preview overrides those helpers too.
+        // Keep runtime-owned helpers only for the ordinary model-constraint path.
         var twistCount = TwistBoneFollow.Apply(frames, target.Rig,
-            target.Rig.HelpersAreConstraintDriven ? context.ConstraintDrivenBones : null);
+            request.MocapCorrections is null && target.Rig.HelpersAreConstraintDriven ? context.ConstraintDrivenBones : null);
         if (twistCount > 0)
             AddNote(report, $"{twistCount} limb deform helper bone(s) follow their "
                 + "neighboring joints (left at rest they pinch or candy-wrap the skin).");

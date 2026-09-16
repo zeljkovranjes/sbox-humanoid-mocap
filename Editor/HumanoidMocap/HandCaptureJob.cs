@@ -28,7 +28,8 @@ public sealed class RawHandSample
         public float Handedness { get; set; }
         public float[][] Image { get; set; }
         public float[][] RelativeWorld { get; set; }
-        public HandObservation ToObservation()=>new(Side,Presence,Handedness,Image.Select(MotionDocument.V).ToArray(),RelativeWorld.Select(MotionDocument.V).ToArray());
+        public bool Tracked { get; set; }
+        public HandObservation ToObservation()=>new(Side,Presence,Handedness,Image.Select(MotionDocument.V).ToArray(),RelativeWorld.Select(MotionDocument.V).ToArray(),Tracked);
     }
 }
 
@@ -47,7 +48,7 @@ public static class HandCaptureJob
             if(times.Length==0||times.Length>1800)throw new ArgumentException("Choose a nonempty range of at most 1800 frames.");
             string Hash(string path){using var stream=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();}
             var sourceHash=Hash(video);var modelHash=Hash(modelPath);
-            var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(FormattableString.Invariant($"managed-hands-v2-mf|{sourceHash}|{modelHash}|{start:R}|{end:R}")))).ToLowerInvariant();
+            var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(FormattableString.Invariant($"managed-hands-v3-mf-tracked|{sourceHash}|{modelHash}|{start:R}|{end:R}")))).ToLowerInvariant();
             var fs=global::Editor.FileSystem.ProjectTemporary;var relative="humanoid_mocap/jobs/"+key;fs.CreateDirectory(relative);
             var directory=fs.GetFullPath(relative);var rawPath=Path.Combine(directory,"observations.json");
             var raw=File.Exists(rawPath)?JsonSerializer.Deserialize<List<RawHandSample>>(File.ReadAllText(rawPath),MotionDocument.JsonOptions):new List<RawHandSample>();
@@ -79,10 +80,11 @@ public static class HandCaptureJob
                             if(Math.Abs(decoded.Time-sampleTime)>.001)throw new InvalidDataException("Decoder timestamps disagree with the video sample table.");
                             return decoded;
                         },token);
-                        var hands=await Task.Run(()=>backend.Detect(frame.Rgba,frame.Width,frame.Height,token),token);
+                        var previous=raw.Count>0?raw[^1].Hands.Select(h=>h.ToObservation()).ToArray():Array.Empty<HandObservation>();
+                        var hands=await Task.Run(()=>backend.DetectTracked(frame.Rgba,frame.Width,frame.Height,previous,token),token);
                         await EditorPipeline.SwitchToMainThread();
                         raw.Add(new RawHandSample{Time=frame.Time,DecoderTime=frame.Time,Width=frame.Width,Height=frame.Height,
-                            Hands=hands.Select(h=>new RawHandSample.RawHand{Side=h.Side,Presence=h.Presence,Handedness=h.Handedness,
+                            Hands=hands.Select(h=>new RawHandSample.RawHand{Side=h.Side,Presence=h.Presence,Handedness=h.Handedness,Tracked=h.Tracked,
                                 Image=h.ImageLandmarks.Select(MotionDocument.A).ToArray(),RelativeWorld=h.RelativeWorldLandmarks.Select(MotionDocument.A).ToArray()}).ToList()});
                         peak=Math.Max(peak,Process.GetCurrentProcess().WorkingSet64);if(raw.Count%10==0)Save("running");
                         progress(raw.Count,times.Length,$"Reconstructing · {hands.Count} visible hand(s)");
@@ -98,7 +100,7 @@ public static class HandCaptureJob
             var builder=new HandMotionBuilder(canonical,Path.GetFileNameWithoutExtension(video),video,sourceHash,metadata.FrameRate){SwapHands=swapHands};
             foreach(var frame in raw){token.ThrowIfCancellationRequested();builder.Add(frame.Time,frame.Width,frame.Height,frame.Hands.Select(h=>h.ToObservation()).ToArray());}
             builder.Document.Validate();
-            var path=Path.Combine(directory,swapHands?"raw-motion-swapped.hmotion":"raw-motion.hmotion");
+            var path=Path.Combine(directory,swapHands?"raw-hands-v4-swapped.hmotion":"raw-hands-v4.hmotion");
             File.WriteAllText(path,builder.Document.ToJson());Save("complete");return path;
         }
         finally{SingleJob.Release();}

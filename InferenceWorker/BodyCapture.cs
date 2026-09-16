@@ -36,6 +36,7 @@ public static class BodyCapture
             temporal=GvhmrTemporalNetwork.CheckpointSha256,hmr="2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",pose="50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc"
         }))));
         var folder=Path.Combine(request.Output,key);Directory.CreateDirectory(folder);var statePath=Path.Combine(folder,"reconstruction.json");
+        using var jobLock=new FileStream(Path.Combine(folder,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         var state=File.Exists(statePath)?JsonSerializer.Deserialize<State>(File.ReadAllText(statePath))!:new State{Key=key};
         if(state is null||state.Key!=key||state.Frames.Count>count)throw new InvalidDataException("Invalid reconstruction checkpoint.");
         void Save(string status)

@@ -36,14 +36,15 @@ public sealed class TorchCheckpoint : IDisposable
             if(archive.GetEntry(prefix+"byteorder") is { } byteorder)
             {using var r=new StreamReader(byteorder.Open());if(r.ReadToEnd().Trim()!="little")throw new NotSupportedException("Only little-endian checkpoints are supported.");}
             using var source=entry.Open();using var memory=new MemoryStream();source.CopyTo(memory);
-            var root=new DataReader(memory.ToArray()).Read() as Dictionary<string,object?> ?? throw new InvalidDataException("Checkpoint root must be a dictionary.");
-            var state=root.TryGetValue("state_dict",out var value)?value as Dictionary<string,object?>:root;
+            var root=new DataReader(memory.ToArray()).Read() as Dictionary<object,object?> ?? throw new InvalidDataException("Checkpoint root must be a dictionary.");
+            var state=root.TryGetValue("state_dict",out var value)?value as Dictionary<object,object?>:root;
             if(state is null)throw new InvalidDataException("Checkpoint state_dict must be a dictionary.");
             foreach(var pair in state)
             {
                 if(pair.Value is not TensorRef t)continue;
-                var info=new TensorInfo(pair.Key,t.Storage.Key,t.Storage.Dtype,t.Storage.Count,t.Offset,t.Shape,t.Stride);
-                Validate(info);tensors.Add(pair.Key,info);
+                if(pair.Key is not string name)throw new InvalidDataException("Tensor names must be strings.");
+                var info=new TensorInfo(name,t.Storage.Key,t.Storage.Dtype,t.Storage.Count,t.Offset,t.Shape,t.Stride);
+                Validate(info);tensors.Add(name,info);
             }
             if(tensors.Count==0)throw new InvalidDataException("No tensor weights in checkpoint.");
         }
@@ -127,9 +128,14 @@ public sealed class TorchCheckpoint : IDisposable
         {if(length<0||length>MaximumMetadataBytes||length>reader.BaseStream.Length-reader.BaseStream.Position)throw new InvalidDataException("Invalid pickle string length.");return Encoding.UTF8.GetString(reader.ReadBytes(length));}
         static long Integer(object? value)=>value switch{int i=>i,long l=>l,_=>throw new InvalidDataException("Expected integer.")};
         static object?[] Tuple(object? value)=>value as object?[]??throw new InvalidDataException("Expected tuple.");
-        static Dictionary<string,object?> Dict(object? value)=>value as Dictionary<string,object?>??throw new InvalidDataException("Expected dictionary.");
-        static void Set(Dictionary<string,object?> dictionary,object? key,object? value)
-        {if(key is not string s)throw new InvalidDataException("Only string dictionary keys are supported.");dictionary[s]=value;}
+        static Dictionary<object,object?> Dict(object? value)=>value as Dictionary<object,object?>??throw new InvalidDataException("Expected dictionary.");
+        static void Set(Dictionary<object,object?> dictionary,object? key,object? value)
+        {
+            // Training checkpoints contain integer-keyed optimizer states. Keep those
+            // as inert data, with numeric keys distinct from strings such as "0".
+            var normalized=key switch{string s=>(object)s,int i=>(long)i,long l=>l,_=>throw new InvalidDataException("Only string and integer dictionary keys are supported.")};
+            dictionary[normalized]=value;
+        }
         public object? Read()
         {
             while(reader.BaseStream.Position<reader.BaseStream.Length)
@@ -142,7 +148,7 @@ public sealed class TorchCheckpoint : IDisposable
                     case (byte)'.':if(stack.Count!=1||reader.BaseStream.Position!=reader.BaseStream.Length)throw new InvalidDataException("Invalid pickle termination.");return Pop();
                     case (byte)'(':stack.Add(Mark);break;
                     case (byte)')':stack.Add(System.Array.Empty<object?>());break;
-                    case (byte)'}':stack.Add(new Dictionary<string,object?>(StringComparer.Ordinal));break;
+                    case (byte)'}':stack.Add(new Dictionary<object,object?>());break;
                     case (byte)']':stack.Add(new List<object?>());break;
                     case (byte)'N':stack.Add(null);break;
                     case 0x88:stack.Add(true);break;
@@ -176,14 +182,16 @@ public sealed class TorchCheckpoint : IDisposable
                         stack.Add(new StorageRef(storageKey,type.Name,Integer(storage[4])));break;
                     case (byte)'R':
                         var arguments=Tuple(Pop());var symbol=Pop() as Symbol??throw new InvalidDataException("Unsupported pickle callable.");
-                        if(symbol==new Symbol("collections","OrderedDict")&&arguments.Length==0)stack.Add(new Dictionary<string,object?>(StringComparer.Ordinal));
+                        if(symbol==new Symbol("collections","OrderedDict")&&arguments.Length==0)stack.Add(new Dictionary<object,object?>());
+                        else if(symbol==new Symbol("collections","Counter")&&arguments.Length<=1)
+                            stack.Add(arguments.Length==0?new Dictionary<object,object?>():new Dictionary<object,object?>(Dict(arguments[0])));
                         else if(symbol.Module=="torch._utils"&&(symbol.Name=="_rebuild_tensor_v2"||symbol.Name=="_rebuild_tensor")&&arguments.Length>=4&&arguments[0] is StorageRef sr)
                             stack.Add(new TensorRef(sr,Integer(arguments[1]),Tuple(arguments[2]).Select(x=>checked((int)Integer(x))).ToArray(),Tuple(arguments[3]).Select(Integer).ToArray()));
                         else throw new InvalidDataException("Unsupported checkpoint construction: "+symbol);
                         break;
                     case (byte)'b':
                         var metadata=Dict(Pop());_ = Dict(Peek());
-                        if(metadata.Keys.Any(k=>k!="_metadata"))throw new InvalidDataException("Unsupported checkpoint object state.");
+                        if(metadata.Keys.Any(k=>!Equals(k,"_metadata")))throw new InvalidDataException("Unsupported checkpoint object state.");
                         break;
                     default:throw new NotSupportedException($"Checkpoint pickle opcode 0x{op:X2} at {reader.BaseStream.Position-1} is unsupported.");
                 }
@@ -192,7 +200,7 @@ public sealed class TorchCheckpoint : IDisposable
         }
         static Symbol AllowedSymbol(string module,string name)
         {
-            if(module=="collections"&&name=="OrderedDict"||module=="torch._utils"&&(name=="_rebuild_tensor_v2"||name=="_rebuild_tensor"))return new(module,name);
+            if(module=="collections"&&(name=="OrderedDict"||name=="Counter")||module=="torch._utils"&&(name=="_rebuild_tensor_v2"||name=="_rebuild_tensor"))return new(module,name);
             if(module=="torch"){_ = ElementSize(name);return new(module,name);}
             throw new InvalidDataException("Executable/unsupported checkpoint symbol rejected: "+module+"."+name);
         }

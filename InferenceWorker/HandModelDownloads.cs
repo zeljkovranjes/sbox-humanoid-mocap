@@ -1,0 +1,61 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+
+namespace HumanoidMocap.Worker;
+
+/// <summary>Only the explicitly selected backend and its crop detector are downloaded.</summary>
+public static class HandModelDownloads
+{
+    public sealed record Asset(string Path,string Url,long Bytes,string Sha256);
+    static readonly Asset Detector=new("hand_landmarker.task",
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        7819105,"fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1");
+    static readonly Asset WildHands=new("wildhands/wildhands.ckpt",
+        "https://drive.usercontent.google.com/download?id=1FJWBrMmTKjKAo6j5DQS1KYpqqFbAbJ9Q&export=download&confirm=t",
+        855094722,"cac3f9a9334da852f3993e95b4ec088dcc6c69f0337db63dacd83e4642880a7b");
+    static readonly Asset Wilor=new("wilor/wilor_final.ckpt",
+        "https://huggingface.co/spaces/rolpotamias/WiLoR/resolve/99fe3d7acff8104ecca1055df7467709506c2fa6/pretrained_models/wilor_final.ckpt",
+        2564989533,"3e97aafc7dd08d883a4cc5a027df61fdb6fda6136dbd1319405413862ada6bb2");
+
+    public static async Task Ensure(string folder,string backend,CancellationToken token)
+    {
+        var model=backend switch{"wildhands"=>WildHands,"wilor"=>Wilor,_=>throw new NotSupportedException("Select WildHands or WiLoR. ACE is not downloaded or loaded by this worker.")};
+        using var http=new HttpClient{Timeout=TimeSpan.FromHours(1)};
+        foreach(var asset in new[]{Detector,model})
+        {
+            var path=Path.Combine(folder,asset.Path);Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            if(!File.Exists(path))
+            {
+                var temporary=path+"."+Guid.NewGuid().ToString("N")+".partial";
+                try
+                {
+                    Console.WriteLine($"Downloading {Path.GetFileName(path)} · {asset.Bytes/1000000f:0.#} MB");
+                    using var response=await http.GetAsync(asset.Url,HttpCompletionOption.ResponseHeadersRead,token);response.EnsureSuccessStatusCode();
+                    if(response.Content.Headers.ContentLength is long length&&length!=asset.Bytes)throw new InvalidDataException("Unexpected model download size.");
+                    await using(var source=await response.Content.ReadAsStreamAsync(token))
+                    await using(var output=File.Create(temporary))
+                    {
+                        var buffer=new byte[1024*1024];long received=0;var lastPercent=-1;
+                        int count;while((count=await source.ReadAsync(buffer,token))>0)
+                        {
+                            received+=count;if(received>asset.Bytes)throw new InvalidDataException("Model response exceeds its expected size.");
+                            await output.WriteAsync(buffer.AsMemory(0,count),token);
+                            var percent=(int)(received*100/asset.Bytes);if(percent>=lastPercent+5){Console.WriteLine($"Downloading {backend} · {percent}%");lastPercent=percent;}
+                        }
+                    }
+                    await Verify(temporary,asset,token);File.Move(temporary,path);
+                }
+                finally{if(File.Exists(temporary))File.Delete(temporary);}
+            }
+            else await Verify(path,asset,token);
+            Console.WriteLine("Verified "+Path.GetFileName(path));
+        }
+        File.WriteAllText(Path.Combine(folder,backend+"-models.json"),JsonSerializer.Serialize(new{backend,assets=new[]{Detector,model},verifiedUtc=DateTime.UtcNow},new JsonSerializerOptions{WriteIndented=true}));
+    }
+    static async Task Verify(string path,Asset asset,CancellationToken token)
+    {
+        if(new FileInfo(path).Length!=asset.Bytes)throw new InvalidDataException("Unexpected model size; original preserved: "+path);
+        await using var file=File.OpenRead(path);var hash=Convert.ToHexString(await SHA256.HashDataAsync(file,token));
+        if(!hash.Equals(asset.Sha256,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Model checksum mismatch; original preserved: "+path);
+    }
+}

@@ -41,7 +41,7 @@ namespace HumanoidMocap.Editor;
 /// the actual character. Camera: fixed 3/4 framing from the model bounds with left-drag
 /// yaw orbit (same idiom as the editor's other preview widgets).</para>
 /// </remarks>
-public sealed class PreviewWidget : SceneRenderingWidget
+public sealed partial class PreviewWidget : SceneRenderingWidget
 {
 	/// <summary>Rotation about +X by 90°, taking Y-up coordinates to Z-up (y→z, z→−y).</summary>
 	static readonly System.Numerics.Quaternion YUpToZUp =
@@ -59,6 +59,9 @@ public sealed class PreviewWidget : SceneRenderingWidget
 	HumanoidMocap.ClipResult _clip;
 	float _time;
 	float _yaw = 35f;
+	float _lookYaw, _lookPitch;
+	Vector3? _handViewDirection;
+	public BoneRole[] FramingHands { get; set; } = new[] { BoneRole.HandL, BoneRole.HandR };
 	Vector2 _lastMouse;
 
 	// ---- target skeleton wireframe (the RETARGETED pose as stick skeleton) --------------
@@ -255,7 +258,7 @@ public sealed class PreviewWidget : SceneRenderingWidget
 		_rig = rig;
 		_positionScale = positionScale;
 		_convertYUpToZUp = upAxis == TargetUpAxis.YUpCm;
-		MinimumSize = new Vector2( 360, 360 );
+		MinimumSize = new Vector2( 240, 200 );
 		MouseTracking = true;
 
 		Scene = Scene.CreateEditorScene();
@@ -330,6 +333,43 @@ public sealed class PreviewWidget : SceneRenderingWidget
 		_time = 0;
 		CurrentFrame = 0;
 		_ghostAlignedClip = null; // ghost anchor depends on this clip's frame 0 - recompute
+		_handViewDirection = null;
+	}
+
+	/// <summary>Frame the captured hands from eye height using a fixed direction for the
+	/// entire clip. This only changes the preview camera, never the captured motion.</summary>
+	public void ResetView()
+	{
+		_yaw = 35; _lookYaw = 0; _lookPitch = 0; _handViewDirection = null;
+		if (_clip?.SolvedFrames is not { Count: > 0 } frames) return;
+		var skeleton = _rig.Skeleton;
+		if (TryCharacterBasis(_rig.BoneForRole,skeleton.RestWorld,out _,out _,out var facing,out _,out _))
+		{
+			var origin=RigWorldToEngine(XForm.Identity).Position;
+			var direction=RigWorldToEngine(new XForm(facing,System.Numerics.Quaternion.Identity)).Position-origin;
+			_yaw=MathF.Atan2(direction.y,direction.x)*180/MathF.PI+25;
+		}
+		var scratch = new XForm[skeleton.Count];
+		var hands = FramingHands.Select(_rig.BoneForRole).Where(i=>i.HasValue).Select(i=>i.Value).ToArray();
+		var sum = Vector3.Zero; var count = 0;
+		for (var f = 0; f < frames.Count; f += Math.Max(1, frames.Count / 120))
+		{
+			for (var b=0;b<scratch.Length;b++)
+				scratch[b]=skeleton[b].ParentIndex<0?frames[f][b]:XForm.Compose(scratch[skeleton[b].ParentIndex],frames[f][b]);
+			var eye = _rig.BoneForRole(BoneRole.Head) is int head ? RigWorldToEngine(scratch[head]).Position : new Vector3(0,0,64);
+			if(CaptureView is { } capture)
+			{
+				var p=VecN.Transform(capture.CaptureCameraPosition*39.3700787f,YUpToZUp);
+				eye=new Vector3(p.X,p.Y,p.Z);
+			}
+			foreach(var hand in hands)
+			{
+				var direction=RigWorldToEngine(scratch[hand]).Position-eye;
+				if(direction.Length>1){sum+=direction.Normal;count++;}
+			}
+		}
+		if(count>0&&sum.Length>.01f)_handViewDirection=sum.Normal;
+		UpdateCamera();
 	}
 
 	/// <summary>Jumps to a frame (scrubber); pauses playback.</summary>
@@ -397,6 +437,7 @@ public sealed class PreviewWidget : SceneRenderingWidget
 			ApplyInterpolatedFrame( frames );
 		else
 			ApplyCurrentFrame();
+		DrawTargetBones();
 	}
 
 	/// <summary>Interpolates solved samples at the editor render rate. Output animation
@@ -571,7 +612,11 @@ public sealed class PreviewWidget : SceneRenderingWidget
 		UpdateCamera();
 
 		var bitmap = new Bitmap( size, size );
-		Camera.RenderToBitmap( bitmap );
+		using ( GizmoInstance.Push() )
+		{
+			DrawTargetBones();
+			Camera.RenderToBitmap( bitmap );
+		}
 
 		var count = 0;
 		foreach ( var pixel in bitmap.GetPixels() )
@@ -594,7 +639,11 @@ public sealed class PreviewWidget : SceneRenderingWidget
 		UpdateCamera();
 
 		var bitmap = new Bitmap( size, size );
-		Camera.RenderToBitmap( bitmap );
+		using ( GizmoInstance.Push() )
+		{
+			DrawTargetBones();
+			Camera.RenderToBitmap( bitmap );
+		}
 		return bitmap.ToPng();
 	}
 
@@ -1019,6 +1068,7 @@ public sealed class PreviewWidget : SceneRenderingWidget
 		if ( !Camera.IsValid() )
 			return;
 		Camera.FieldOfView = FirstPerson ? Math.Clamp( ViewmodelFov, 35, 120 ) : 45;
+		Camera.ZNear = FirstPerson ? Math.Clamp( ViewmodelNearClipCm, .1f, 50 ) * .3937008f : 1f;
 		if ( FirstPerson )
 		{
 			var head = _rig.BoneForRole( BoneRole.Head );
@@ -1033,8 +1083,22 @@ public sealed class PreviewWidget : SceneRenderingWidget
 				forward = (RigWorldToEngine( new XForm( rigForward, System.Numerics.Quaternion.Identity ) ).Position - origin).Normal;
 				up = (RigWorldToEngine( new XForm( rigUp, System.Numerics.Quaternion.Identity ) ).Position - origin).Normal;
 			}
-			Camera.WorldPosition = position + forward * 3;
-			var pitch = Math.Clamp( ViewmodelPitch, -70, 70 ) * MathF.PI / 180f;
+			if ( CaptureView is { } capture )
+			{
+				var cameraRotation = YUpToZUp * System.Numerics.Quaternion.CreateFromYawPitchRoll(
+					capture.CaptureCameraYawDegrees * MathF.PI / 180, capture.CaptureCameraPitchDegrees * MathF.PI / 180, 0 );
+				var p = VecN.Transform( capture.CaptureCameraPosition * 39.3700787f, YUpToZUp );
+				var f = VecN.Transform( -VecN.UnitZ, cameraRotation );
+				var u = VecN.Transform( VecN.UnitY, cameraRotation );
+				position = new Vector3( p.X, p.Y, p.Z );
+				forward = new Vector3( f.X, f.Y, f.Z ); up = new Vector3( u.X, u.Y, u.Z );
+			}
+			Camera.WorldPosition = CaptureView is null ? position + forward * 3 : position;
+			forward = _handViewDirection ?? forward;
+			var yaw = _lookYaw * MathF.PI / 180f;
+			var right = Vector3.Cross(forward,up).Normal;
+			forward = (forward*MathF.Cos(yaw)+right*MathF.Sin(yaw)).Normal;
+			var pitch = Math.Clamp( ViewmodelPitch + _lookPitch, -70, 70 ) * MathF.PI / 180f;
 			Camera.WorldRotation = Rotation.LookAt( (forward * MathF.Cos( pitch ) - up * MathF.Sin( pitch )).Normal, up );
 			return;
 		}
@@ -1061,6 +1125,10 @@ public sealed class PreviewWidget : SceneRenderingWidget
 	public bool FirstPerson { get; set; }
 	public float ViewmodelFov { get; set; } = 75;
 	public float ViewmodelPitch { get; set; } = 35;
+	public float ViewmodelNearClipCm { get; set; } = 15;
+	/// <summary>Optional user-assumed capture placement for camera-relative hand clips.
+	/// The viewmodel FOV and additional preview pitch remain independently editable.</summary>
+	public Motion.TargetCorrectionSettings CaptureView { get; set; }
 
 	protected override void OnMouseMove( MouseEvent e )
 	{
@@ -1068,7 +1136,10 @@ public sealed class PreviewWidget : SceneRenderingWidget
 		var delta = e.LocalPosition - _lastMouse;
 		_lastMouse = e.LocalPosition;
 		if ( (e.ButtonState & MouseButtons.Left) != 0 )
-			_yaw -= delta.x * 0.4f;
+		{
+			if(FirstPerson){_lookYaw=Math.Clamp(_lookYaw+delta.x*.25f,-100,100);_lookPitch=Math.Clamp(_lookPitch+delta.y*.25f,-70,70);}
+			else _yaw -= delta.x * 0.4f;
+		}
 	}
 
 	public override void OnDestroyed()

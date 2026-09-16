@@ -117,12 +117,11 @@ public static class RootMotion
 
             case RootMotionMode.InPlace:
             {
-                var smoothed = Smooth(horizontal, axes.SmoothHalfWindow);
                 var origin = horizontal[0];
                 for (int i = 0; i < n; i++)
                 {
                     var f = frames[i];
-                    var travel = smoothed[i] - origin;
+                    var travel = horizontal[i] - origin;
                     var newHips = hipsWorld[i] - travel;
                     if (axes.HipsParentIsRoot)
                         newHips -= f[axes.RootIndex].Pos;
@@ -207,11 +206,12 @@ public static class RootMotion
 
             case RootMotionMode.InPlace:
             {
-                var smoothed = Smooth(horizontal, axes.SmoothHalfWindow);
                 var origin = horizontal[0];
                 for (int i = 0; i < n; i++)
                 {
-                    var travel = smoothed[i] - origin;
+                    // Remove the actual path. Filtering here leaves a horizontal
+                    // residual, particularly at clip boundaries and fast turns.
+                    var travel = horizontal[i] - origin;
                     WriteWorld(frames[i], skeleton, hips,
                         new XForm(hipsWorld[i].Pos - travel, hipsWorld[i].Rot));
                 }

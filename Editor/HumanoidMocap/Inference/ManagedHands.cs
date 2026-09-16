@@ -60,8 +60,45 @@ public sealed class ManagedHands
             var cx=palm.X+.5f*palm.Height*sin;var cy=palm.Y-.5f*palm.Height*cos;
             var size=Math.Max(palm.Width,palm.Height)*2.6f;
             if(size<2)continue;
+            var observation=Landmarks(rgba,width,height,cx,cy,size,angle,token);
+            if(observation is not null)result.Add(observation);
+        }
+        return result;
+    }
+
+    /// <summary>Redetects palms, then attempts missing hands using the prior frame's
+    /// landmark ROI. Every accepted track requires fresh landmark-model presence;
+    /// no prior pose is returned as a newly observed hand.</summary>
+    public List<HandObservation> DetectTracked(byte[] rgba,int width,int height,IReadOnlyList<HandObservation> previous,CancellationToken token=default)
+    {
+        var current=Detect(rgba,width,height,token);
+        foreach(var prior in previous.Take(2))
+        {
+            if(current.Any(h=>h.Side==prior.Side)||prior.ImageLandmarks.Length!=21)continue;
+            var points=prior.ImageLandmarks;
+            var direction=(points[5]+points[13]+2*points[9])*.25f-points[0];
+            var angle=MathF.PI/2+MathF.Atan2(direction.Y,direction.X);
+            var cos=MathF.Cos(angle);var sin=MathF.Sin(angle);
+            // MediaPipe's HandLandmarksToRect partial set and ROI graph: the
+            // palm/proximal landmarks, square-long scale 2 and local y shift -0.1.
+            var subset=new[]{0,1,2,3,5,6,9,10,13,14,17,18};
+            var rotated=subset.Select(i=>new Vector2(cos*points[i].X+sin*points[i].Y,-sin*points[i].X+cos*points[i].Y)).ToArray();
+            var min=new Vector2(rotated.Min(p=>p.X),rotated.Min(p=>p.Y));
+            var max=new Vector2(rotated.Max(p=>p.X),rotated.Max(p=>p.Y));
+            var center=(min+max)*.5f;center.Y-=(max.Y-min.Y)*.1f;
+            var size=Math.Max(max.X-min.X,max.Y-min.Y)*2;
+            if(!float.IsFinite(size)||size<2||size>Math.Max(width,height)*2)continue;
+            var tracked=Landmarks(rgba,width,height,cos*center.X-sin*center.Y,sin*center.X+cos*center.Y,size,angle,token);
+            if(tracked is not null&&tracked.Side==prior.Side)current.Add(tracked with{Tracked=true});
+        }
+        return current.GroupBy(h=>h.Side).Select(g=>g.OrderByDescending(h=>h.Presence).First()).ToList();
+    }
+
+    HandObservation? Landmarks(byte[] rgba,int width,int height,float cx,float cy,float size,float angle,CancellationToken token)
+    {
+            var cos=MathF.Cos(angle);var sin=MathF.Sin(angle);
             var predictions=hands.Run(Crop(rgba,width,height,224,cx,cy,size,angle),token);
-            if(predictions[1][0]<.5f)continue;
+            if(predictions[1][0]<.5f)return null;
             var screen=new Vector3[21];var world=new Vector3[21];
             for(var i=0;i<21;i++)
             {
@@ -71,9 +108,7 @@ public sealed class ManagedHands
             }
             // Preserve the task model's handedness label; mirrored footage can be corrected
             // explicitly with Swap hands. Verified against the visible stirring hand sample.
-            var right=predictions[2][0];result.Add(new(right>.5f?"R":"L",predictions[1][0],Math.Max(right,1-right),screen,world));
-        }
-        return result;
+            var right=predictions[2][0];return new(right>.5f?"R":"L",predictions[1][0],Math.Max(right,1-right),screen,world);
     }
     static float Iou(Palm a,Palm b)
     {
