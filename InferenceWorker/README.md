@@ -6,7 +6,7 @@ The separate [`import-hot3d` command](../HOT3D.md) imports published hand/object
 annotations and produces a synchronized review video without running neural inference.
 The editor invokes it when **Advanced → Open motion…** opens an annotated HOT3D Aria archive.
 
-The editor starts this worker automatically for both workspaces and every available hand model. Select a workspace, upload a video, and inspect the result. **Advanced → Hand models…** changes the model used for subsequent FPS uploads. MediaPipe remains the lightweight default; its managed C# inference now runs in the separate worker too. ACE is not downloaded or executed.
+The editor starts this worker automatically for both workspaces and every available hand model. Select a workspace, upload a video, and inspect the result. FPS defaults to WildHands pose reconstruction with MediaPipe hand detection. **Advanced → Hand models…** selects WiLoR, MobileHand or optional MediaPipe-only reconstruction for subsequent FPS uploads. These all run in the separate C# worker. ACE is not downloaded or executed.
 
 First-time native worker setup requires .NET 10 SDK and the complete repository checkout. The editor publishes the included worker into `%LOCALAPPDATA%/sbox-humanoid-mocap/worker/<source fingerprint>`. Changes to its C# sources or pinned dependencies automatically select a new build; an interrupted build is retried. To use a prebuilt worker, set `HUMANOID_MOCAP_WORKER` to its executable. Explicitly configured builds are maintained by their owner. `HUMANOID_MOCAP_MODELS` optionally selects a shared model folder. Models are downloaded only for the selected backend and verified against pinned hashes.
 
@@ -99,7 +99,7 @@ Tested on Ryzen 7 7800X3D with 32 GB RAM: all 312 tennis-video frames took appro
 
 Complete Human and Citizen animations have been retargeted, previewed, compiled and played in s&box. Foot drift and occasional pose jumps remain; these functional checks do not establish 3D accuracy or solved contacts. See [drift measurements](../DRIFT_REDUCTION.md), the repository's third-party notices and `Editor/HumanoidMocap/Inference/Gvhmr.LICENSE`.
 
-For hand capture, download only the selected model. For the default MediaPipe path:
+For hand capture, download only the selected model. For optional MediaPipe-only reconstruction:
 
 ```powershell
 dotnet run --project InferenceWorker -- download-hand-models models mediapipe
@@ -213,3 +213,19 @@ or GPU-memory measurement was performed. Median native-palm disagreement with de
 image landmarks was 77.3, 137.8 and 153.0 pixels for the three MobileHand clips, 277.1
 pixels for WildHands and 35.2 pixels for WiLoR. These are disagreement measurements
 between estimators, not a ground-truth accuracy ranking or minimum hardware requirements.
+
+The FPS-default verification ran WildHands on all 121 frames of `video_0` on the Ryzen 7
+7800X3D CPU: 23.39 seconds of detection/inference and 1.62 GB peak worker RAM. It produced
+157 hand observations across 89 frames. Median/p95 palm projection disagreement with
+MediaPipe was 170.3/263.5 pixels. Human preview, cleanup, 121-frame armature-only FBX
+export and compiled playback passed; visual pose and placement mismatch remained.
+This test used estimated 1920×1080 pinhole intrinsics, not measured lens calibration.
+Changing the default does not establish a quality improvement or recover missed hands.
+
+WiLoR processed the same 121-frame clip and the same 157 detected hands in 224.94 seconds
+of detection/inference, with 6.01 GB peak worker RAM on that CPU. Median/p95 palm projection
+disagreement was 27.9/55.8 pixels. Its closer image agreement does not establish correct
+3D pose, depth, or accuracy during the shared detection gap. Its Human preview, cleanup,
+121-frame armature-only FBX export and compiled playback also passed. Synchronized
+visual review still showed placement/pose mismatch and held hands during tracking loss.
+No GPU inference was used.

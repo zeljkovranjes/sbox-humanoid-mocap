@@ -27,7 +27,7 @@ public sealed partial class RetargetWindow
     MotionDocument _rawMotion, _editedMotion;
     string _motionPath;
     string _handModelPath;
-    string _handBackend="mediapipe";
+    string _handBackend="wildhands";
     bool _swapHands;
     Checkbox _swapHandsControl;
     Checkbox _inPlaceControl;
@@ -136,7 +136,7 @@ public sealed partial class RetargetWindow
         }});
         var range=_advancedPanel.Layout.AddRow();range.Spacing=8;
         _rangeStart=Field(range,"Start (s)","0");_rangeEnd=Field(range,"End (s)","");
-        _swapHandsControl=range.Add(new Checkbox("Swap hands (MediaPipe)"));
+        _swapHandsControl=range.Add(new Checkbox("Swap hands (MediaPipe)"){Enabled=_handBackend=="mediapipe"});
         _swapHandsControl.ToolTip="Correct MediaPipe handedness for mirrored footage. Native MANO models currently use their detected side.";
         _swapHandsControl.Clicked=()=>_swapHands=_swapHandsControl.Value;
         range.Add(new Button("Process again","refresh"){Clicked=()=>_=ProcessImportedVideoAsync()});

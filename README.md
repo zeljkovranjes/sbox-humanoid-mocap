@@ -34,7 +34,7 @@ FPS cleanup reduces small wrist-position fluctuations while preserving fast move
 
 The default export uses the preview rig and applied corrections. **Advanced → Export captured skeleton** keeps the reconstruction's skeleton and sample timing. Both export bone positions and rotations. Keep the original video, `.hmotion` and `.hmotion.adjustments.json` files for reversible edits; confidence, observation labels and contact-review data are not FBX animation channels. Applied adjustments are remembered per target and workspace, and changes reuse cached reconstruction.
 
-Use **Advanced → Hand models…** to choose MediaPipe, MobileHand, WildHands or WiLoR for subsequent FPS uploads. MediaPipe is the lightweight default. Badges describe processing cost, not accuracy. See [hand backend options](HAND_BACKENDS.md) for measured results and limitations.
+FPS uploads default to **WildHands for pose reconstruction, with MediaPipe locating the hands**. Use **Advanced → Hand models…** to choose WiLoR, MobileHand or the lightweight MediaPipe-only option. Existing captures stay unchanged; use **Process again** to reconstruct with the selected model. Badges describe processing cost, not accuracy. See [hand backend options](HAND_BACKENDS.md) for measured results and limitations.
 
 All reconstruction runs locally in a separate C# worker. First-time setup requires the included worker source and .NET 10 SDK, or a configured prebuilt worker. Models download on first use for the selected backend. Cancellation preserves completed observations for retry. Exported animation playback needs neither the worker nor its models. See the [worker setup](InferenceWorker/README.md) and [capture instructions](CAPTURE.md).
 

@@ -15,17 +15,17 @@ public sealed partial class RetargetWindow
         sealed record Backend(string Id,string Name,string Weight,Color Color,string Status,string Download,string Output,string Requirements,string Limit);
         readonly Backend[] _backends =
         {
-            new("mediapipe","MediaPipe","Light",Theme.Green,"Available · experimental C#","7.8 MB","Hand landmarks and finger motion","C# worker prepared on first use","Wrist depth and hidden arm joints are estimated."),
+            new("mediapipe","MediaPipe only","Light",Theme.Green,"Optional · experimental C#","7.8 MB","Hand landmarks and fitted finger motion","C# worker prepared on first use","Lightweight alternative. Wrist depth uses an assumed plane; tracking loss holds the last pose. Not the default FPS pose model."),
             new("mobilehand","MobileHand","Light*",Theme.Green,"Experimental C# / native CPU","15.2 MB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Small image model. Tests show pose jumps and unstable depth. Occluded hands depend on the crop detector. Review carefully before export."),
-            new("wildhands","WildHands","Medium*",Color.Lerp(Theme.Blue,Theme.Text,.4f),"Experimental C# / native CPU","855 MB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Designed for egocentric footage. Estimated intrinsics can shift the reconstructed hand."),
-            new("wilor","WiLoR","Heavy*",Theme.Yellow,"Experimental C# / native CPU","2.56 GB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Large transformer model. Depth remains dependent on camera assumptions."),
+            new("wildhands","WildHands","Medium*",Color.Lerp(Theme.Blue,Theme.Text,.4f),"FPS default · experimental C# / native CPU","855 MB + 7.8 MB crop detector","WildHands pose · MediaPipe hand detection","C# worker prepared on first use","MediaPipe locates the hands; WildHands reconstructs wrist and finger rotations. Missing detections and estimated camera intrinsics still limit the result. Review against the video."),
+            new("wilor","WiLoR","Heavy*",Theme.Yellow,"Experimental C# / native CPU","2.56 GB + 7.8 MB crop detector","WiLoR pose · MediaPipe hand detection","C# worker prepared on first use","MediaPipe locates the hands; WiLoR reconstructs wrist and finger rotations. Larger model; depth and occlusion remain uncertain."),
             new("ace","ACE-Ego-Hand","Very heavy*",Theme.Red,"Optional · integration pending · untested","Not measured","Temporal hand reconstruction","Wan backbone and hand model assets","Optional integration. Its model has not been run on this PC. Selecting this entry only shows information.")
         };
         readonly Widget _inspector;
         readonly Action<HandModelChoice> _selectModel;
         readonly ListView _list;
 
-        public HandBackendDialog(Widget parent,Action<HandModelChoice> selectModel,string selectedBackend="mediapipe"):base(parent)
+        public HandBackendDialog(Widget parent,Action<HandModelChoice> selectModel,string selectedBackend="wildhands"):base(parent)
         {
             _selectModel=selectModel;
             Window.WindowTitle="Hand backends";
@@ -109,7 +109,7 @@ public sealed partial class RetargetWindow
                     if(picker.Execute()&&!string.IsNullOrWhiteSpace(picker.SelectedFile))
                     {_selectModel(new("mediapipe",picker.SelectedFile));Close();}
                 };
-                var automatic=controls.Add(new Button("Use default","download"));
+                var automatic=controls.Add(new Button("Use MediaPipe only","download"));
                 automatic.ToolTip="Download the verified MediaPipe model on the next reconstruction if needed.";
                 automatic.Clicked=()=>{_selectModel(new("mediapipe"));Close();};
                 controls.AddStretchCell();

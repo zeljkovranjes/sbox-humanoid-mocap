@@ -1,6 +1,11 @@
 # Hand backend options
 
-MediaPipe remains the lightweight option. ACE-Ego-Hand is optional and must not become
+WildHands is the FPS default, with MediaPipe locating hands and supplying image crops.
+WildHands supplies wrist and finger pose; MediaPipe rotations are not blended into it.
+WiLoR uses the same detection/pose split when selected. MediaPipe-only reconstruction
+remains an optional lightweight mode. Existing captures are preserved; select the model
+and use **Advanced → Process again** to reconstruct the video with it.
+ACE-Ego-Hand is optional and must not become
 a prerequisite for video import, hand reconstruction, preview or animation playback.
 Open **Advanced → Hand models…** to select MediaPipe, MobileHand, WildHands or WiLoR for the next
 FPS upload. Each selection prepares its model automatically on first use. Existing
@@ -8,6 +13,17 @@ reconstruction is preserved. ACE remains an informational optional entry and is 
 selected, downloaded or loaded automatically. The badges are **Light** (MediaPipe), **Light*** (MobileHand), **Medium*** (WildHands), **Heavy*** (WiLoR)
 and **Very heavy*** (ACE). An asterisk means the processing weight is an architectural
 estimate, not a local memory measurement or accuracy rating.
+
+The default change separates hand detection from pose reconstruction; it is not a
+claim that the current WildHands port faithfully reproduces every FPS performance.
+On the complete 121-frame `video_0` sample, it produced 157 observed hand instances
+across 89 frames and still missed both hands during the shared occlusion. Native
+editor preview, cleanup, armature export and compiled playback passed. Synchronized
+visual review still showed pose/placement disagreement. MediaPipe supplies crop and
+side estimates only; it does not overwrite WildHands finger rotations or fill missing poses.
+WiLoR also completed the same clip and passed native preview/export/playback. Its closer
+image-landmark agreement still did not resolve the visible placement/pose mismatch or
+shared tracking loss. Both native backends remain experimental.
 
 | Backend | Status in Humanoid Mocap | Intended use and limits |
 | --- | --- | --- |
@@ -24,8 +40,8 @@ The video integration uses a square MediaPipe crop with 1.5× padding and reflec
 hands. This is our crop policy, not verified parity with an upstream video tracker.
 The three downloaded hand clips completed real inference, but local rotation steps reached
 approximately 180 degrees and estimated wrist speeds reached 68 m/s in the latest full-clip runs. Visual review also showed
-misaligned fingers. Conservative cleanup did not remove these failures. MediaPipe stays
-the default, and no accuracy equivalence with larger models is claimed.
+misaligned fingers. Conservative cleanup did not remove these failures. MobileHand is
+not the default, and no accuracy equivalence with larger models is claimed.
 
 The ACE K-free checkpoint was verified against its published SHA-256 and all 844
 projector, ray-head and backbone-delta tensors were read through the C# checkpoint

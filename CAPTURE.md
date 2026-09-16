@@ -27,7 +27,8 @@ Include an open hand and a relaxed closed hand at the beginning so handedness an
 finger articulation are easy to review. Avoid an ultra-wide/fisheye lens unless you
 can correct it with known calibration. The current automatic path estimates camera
 intrinsics; it does not calibrate or undistort the lens. WildHands is designed for
-egocentric footage. MediaPipe is the small default; WiLoR is the heavier alternative.
+egocentric footage and is the FPS default, with MediaPipe locating hands for its crops.
+WiLoR is the heavier alternative; MediaPipe-only reconstruction remains optional.
 
 For body capture, record one person with their feet and head inside the frame. A
 stationary camera and an unobstructed view are useful for reviewing ground contact.
