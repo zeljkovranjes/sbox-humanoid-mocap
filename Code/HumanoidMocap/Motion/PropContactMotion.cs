@@ -7,6 +7,7 @@ using HumanoidMocap.Maths;
 
 namespace HumanoidMocap.Motion;
 using Vector3 = System.Numerics.Vector3;
+using Vector4 = System.Numerics.Vector4;
 
 /// <summary>Explicit object animation in the capture's metre coordinates. Sampling never
 /// extrapolates or treats an unobserved object as tracked. Objects drive hands, never vice versa.</summary>
@@ -112,8 +113,12 @@ public sealed class PropContactMotion
     }
 
     public Vector3 ApplyWrist(string bone,Vector3 freeWrist,double time,ContactSettings settings)
+        =>ApplyWristPose(bone,new(freeWrist,Quaternion.Identity),time,settings).Pos;
+
+    public XForm ApplyWristPose(string bone,XForm freeWrist,double time,ContactSettings settings)
     {
         var weighted=Vector3.Zero;var total=0f;
+        var rotations=new List<(Quaternion Rotation,float Weight,string Key)>();
         foreach(var contact in Contacts)
         {
             if(contact.Bone!=bone||contact.Review!=ContactReview.Confirmed||string.IsNullOrEmpty(contact.Object))continue;
@@ -124,9 +129,28 @@ public sealed class PropContactMotion
             if(!available[index])continue;
             var point=XForm.Compose(world[index],new XForm(ContactSolver.LocalTarget(contact,time),Quaternion.Identity)).Pos;
             weighted+=point*weight;total+=weight;
+            if(contact.LocalRotation is { } local)
+                rotations.Add((Quaternion.Normalize(world[index].Rot*MotionDocument.Q(local)),weight,
+                    contact.Object+"\n"+contact.ObjectBone+"\n"+string.Join(",",local.Select(v=>v.ToString("R",System.Globalization.CultureInfo.InvariantCulture)))));
         }
         // Overlapping transitions blend authoritative goals together, independent of list
         // order. Sequential lerps would let the last object arbitrarily win.
-        return total>0?Vector3.Lerp(freeWrist,weighted/total,Math.Min(1,total)):freeWrist;
+        var position=total>0?Vector3.Lerp(freeWrist.Pos,weighted/total,Math.Min(1,total)):freeWrist.Pos;
+        var rotation=freeWrist.Rot;
+        if(rotations.Count>0)
+        {
+            // Choose the same hemisphere reference regardless of contact-list order.
+            // Antipodal quaternion encodings represent the same physical orientation.
+            var ordered=rotations.OrderByDescending(r=>r.Weight).ThenBy(r=>r.Key,StringComparer.Ordinal).ToArray();
+            var reference=ordered[0].Rotation;var sum=Vector4.Zero;var weight=0f;
+            foreach(var item in ordered)
+            {
+                var q=item.Rotation;var sign=Quaternion.Dot(reference,q)<0?-1:1;
+                sum+=new Vector4(q.X,q.Y,q.Z,q.W)*(item.Weight*sign);weight+=item.Weight;
+            }
+            var goal=Quaternion.Normalize(new Quaternion(sum.X,sum.Y,sum.Z,sum.W));
+            rotation=Quaternion.Normalize(Quaternion.Slerp(freeWrist.Rot,goal,Math.Min(1,weight)));
+        }
+        return new(position,rotation);
     }
 }

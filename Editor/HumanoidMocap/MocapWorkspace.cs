@@ -402,10 +402,10 @@ public sealed partial class RetargetWindow
         foreach(var contact in _editedMotion.Contacts)
         {
             var row=_contactRows.AddRow();row.Spacing=8;
-            var label=row.Add(new Label($"{contact.Start:F2}–{contact.End:F2}s · {contact.Bone} → {contact.Object} · {contact.Review}",this),1);
+            var label=row.Add(new Label($"{contact.Start:F2}–{contact.End:F2}s · {contact.Bone} → {contact.Object} · {contact.Review}"+(contact.LocalRotation is null?"":" · Rotation held"),this),1);
             label.SetStyles($"color: {(contact.Review==ContactReview.Suggested?Theme.Yellow:Theme.TextLight).Hex};");
             var reason=new PropContactMotion(_editedMotion).UnsupportedReason(contact);
-            label.ToolTip=reason??contact.Reason+" Wrist position only; wrist attitude and captured fingers are preserved. Reach limits may leave a residual gap.";
+            label.ToolTip=reason??contact.Reason+(contact.LocalRotation is null?" Wrist position only; captured wrist rotation is preserved.":" Wrist position and orientation follow the prop bone.")+" Captured finger articulation is preserved. Reach limits may leave a residual gap.";
             row.Add(new IconButton("play_arrow",()=>{
                 var range=PlaybackRange;SeekPlaybackFraction(range.Last>range.Start?(float)(((contact.Start+contact.End)*.5-range.Start)/(range.Last-range.Start)):0);
             },this){FixedSize=24,IconSize=16,ToolTip="Review the middle of this interval"});

@@ -97,6 +97,7 @@ public sealed class MotionDocument
             if (c.Start < Frames[0].Time || c.End > Frames[^1].Time || c.End < c.Start || !double.IsFinite(c.Start+c.End))
                 throw new FormatException("Contact interval is outside the clip.");
             CheckVector(c.LocalTarget,3);
+            if(c.LocalRotation is not null)CheckRotation(c.LocalRotation);
             if (!Enum.IsDefined(typeof(ContactReview),c.Review)) throw new FormatException("Unknown contact review state.");
             if(c.TargetKeys is null)throw new FormatException("Contact target keys cannot be null.");
             double previousKey=double.NegativeInfinity;
@@ -251,6 +252,9 @@ public sealed class ContactInterval
     public double Start { get; set; }
     public double End { get; set; }
     public float[] LocalTarget { get; set; } = new float[3];
+    /// <summary>Optional reviewed wrist orientation in the object bone's coordinates,
+    /// XYZW. Null preserves captured orientation, including on older contacts.</summary>
+    public float[]? LocalRotation { get; set; }
     public bool Sliding { get; set; }
     /// <summary>Object-bone-local metre positions at source-video timestamps. Required
     /// for a sliding constraint; not inferred from the hand model.</summary>

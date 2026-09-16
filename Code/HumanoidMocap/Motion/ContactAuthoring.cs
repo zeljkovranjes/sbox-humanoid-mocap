@@ -9,7 +9,7 @@ public static class ContactAuthoring
 {
     /// <summary>Explicit manual anchor from an observed wrist at a nearby sample.
     /// This is a user placement aid, not an automatically detected grip.</summary>
-    public static double PlaceAtWrist(MotionDocument motion,ContactInterval contact)
+    public static double PlaceAtWrist(MotionDocument motion,ContactInterval contact,bool includeRotation=false)
     {
         motion.Validate();
         var hand=motion.Bones.FindIndex(b=>b.Name==contact.Bone);
@@ -30,7 +30,9 @@ public static class ContactAuthoring
         var props=new PropContactMotion(motion);
         if(props.UnsupportedReason(contact) is {} reason)throw new ArgumentException(reason);
         if(!props.TrySample(contact.Object,frame.Time,out var world,out var valid)||!valid[bone])throw new ArgumentException("The prop track is unavailable at this time.");
-        contact.LocalTarget=MotionDocument.A(XForm.Compose(world[bone].Inverse(),wrist).Pos);
+        var local=XForm.Compose(world[bone].Inverse(),wrist);
+        contact.LocalTarget=MotionDocument.A(local.Pos);
+        if(includeRotation)contact.LocalRotation=MotionDocument.A(local.Rot);
         return frame.Time;
     }
 

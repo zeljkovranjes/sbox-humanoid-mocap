@@ -22,6 +22,15 @@ returns it to Suggested. These edits are saved in the motion's adjustment sideca
 Sliding contacts retain their authored keys; changing those keys still requires a prepared
 motion file. An edited interval must contain all existing sliding keys.
 
+For a rigid grip, enable **Hold wrist orientation relative to prop**, then use
+**Use wrist at interval midpoint** to capture the orientation anchor as well. Save and
+confirm after review. The wrist follows the chosen object's articulated bone rotation;
+local finger articulation remains captured. This can reduce rotational slip when an
+aligned prop track is available. Leave it off for a hand turning freely against a prop.
+Switching the wrist or prop bone requires placing the orientation anchor again. Clearing
+the option and saving restores captured wrist rotation. Existing contacts keep their
+previous position-only behavior.
+
 You can also open a prepared `.hmotion` through **Advanced → Open motion…**. Neither path
 automatically tracks props from video or reconstructs an object's geometry.
 
@@ -47,7 +56,7 @@ New intervals stay yellow until confirmed. Their object-local wrist anchors reta
 initial wrist offset instead of placing the wrist itself on the prop surface. These are
 heuristics, not calibrated confidence or proof of a grip. They may miss open-handed
 contacts, sliding grasps or inaccurate hand/prop alignment. Contact surfaces are not a
-hand mesh, and this pass does not solve finger penetration or palm orientation.
+hand mesh, and suggestions do not solve finger penetration or choose orientation anchors.
 
 Use the First Person workspace with camera-relative hand capture. Add `objects` and
 `contacts` to the document. Each object needs a unique `id`, explicit `source`
@@ -87,10 +96,18 @@ object root. For example, adapt the names and times below to your actual tracks:
 
 **Contact review** can seek to the middle of an interval, confirm it or disable it.
 Suggested intervals remain yellow and do not constrain the wrist. Confirmation applies
-an 80 ms smooth activation/release. The target arm solver preserves wrist orientation,
-finger articulation and limb lengths. Unreachable targets leave a gap rather than
+an 80 ms smooth activation/release. The target arm solver preserves captured wrist orientation
+unless a reviewed orientation anchor is set, and preserves finger articulation and limb lengths.
+Unreachable targets leave a gap rather than
 stretching an arm. Object tracks remain authoritative when both hands touch the same prop.
 Overlapping contacts blend their goals independently of list order.
+
+The optional `localRotation` field is an XYZW unit quaternion giving the captured wrist's
+orientation relative to the object bone. Omit it or set it to null for a position-only
+contact. Orientation constraints use the same smooth activation/release and suspend
+when the prop is unavailable. They do not rotate the prop to follow the hand. During
+sliding contacts, position keys may move while this orientation stays fixed relative to
+the object; animated orientation keys are not currently supported.
 
 For sliding, set `sliding` to true and supply at least two `targetKeys`, each containing
 `time` and an object-bone-local `position`. Key times must increase within the interval.
@@ -132,3 +149,13 @@ That search took about 0.021 s on the tested Ryzen 7 7800X3D. The native Citizen
 imported all 12 box triangles, ran the search and compiled/played the final 99-bone export.
 These checks establish the import/search/review path; they do not establish automatic
 grip accuracy on real object capture or provide a penetration benchmark.
+
+Orientation anchoring was checked with the real 121-frame MediaPipe sample and the
+explicitly authored prop track on both Human and Citizen. The setting survived editing,
+confirmation and reopening. Across 31 fully active contact frames, maximum exported
+wrist-to-prop rotation change was below 0.00006 degrees on both targets. Their combined
+98- and 99-bone FBX animations compiled and played in s&box. This measures constraint and
+export consistency, not whether the authored grip matches the filmed object. Numerical
+checks also cover activation/release, missing prop observations, equivalent quaternion
+signs, overlapping contacts, two hands sharing a prop, fixed bone lengths and preserved
+local finger motion at different target proportions.

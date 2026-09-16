@@ -75,11 +75,17 @@ public static class HandCaptureRetargeter
             var frame=previous.ToArray();var wristTargets=new Dictionary<BoneRole,XForm>();
             foreach(var (left,hand) in mappedHands)if(seen.Contains(left))
             {
-                var capturedPosition=sourceWorld[hand.Source].Pos/100;
+                var captured=new XForm(sourceWorld[hand.Source].Pos/100,sourceWorld[hand.Source].Rot);
                 if(source.CaptureContacts is { } contacts)
-                    capturedPosition=contacts.ApplyWrist(source.Skeleton[hand.Source].Name,capturedPosition,
+                {
+                    var corrected=contacts.ApplyWristPose(source.Skeleton[hand.Source].Name,captured,
                         Math.Min(contacts.StartTime+f/(double)input.Fps,contacts.EndTime),contactSettings);
-                var position=capturePlacement.Transform(new XForm(capturedPosition,Quaternion.Identity)).Pos;
+                    var delta=Quaternion.Normalize(placement*corrected.Rot*Quaternion.Inverse(captured.Rot)*Quaternion.Inverse(placement));
+                    // Rotate the whole hand together: local finger articulation stays captured.
+                    foreach(var plan in plans.Where(p=>p.Left==left))desired[plan.Target]=Quaternion.Normalize(delta*desired[plan.Target]);
+                    captured=corrected;
+                }
+                var position=capturePlacement.Transform(captured).Pos;
                 wristTargets[left?BoneRole.HandL:BoneRole.HandR]=new(position,desired[hand.Target]);
             }
             for(var i=0;i<frame.Length;i++)

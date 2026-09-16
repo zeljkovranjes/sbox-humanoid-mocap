@@ -17,6 +17,12 @@ recover world motion from camera-relative hands. MediaPipe still uses an assumed
 plane; native MANO backends still infer monocular depth. Confirmed contacts with explicit
 object tracks provide stronger anchors; see [prop tracks](PROP_TRACKS.md).
 
+Reviewed rigid grips can also anchor wrist orientation relative to a moving prop bone.
+This constrains rotational slip using an explicitly aligned object track, with the same
+smooth activation/release as position contacts. The whole hand rotates together before
+final arm IK, preserving local finger articulation and bone lengths. It is opt-in per
+contact and does not estimate object motion or repair an inaccurate captured grip.
+
 Third Person first preserves GVHMR's source temporal/contact processing. For an explicitly
 stationary recording camera, **Refine · stationary camera** produces a separate estimated
 world-relative result. Its `stationaryJoints` retain the model's contact probabilities,
