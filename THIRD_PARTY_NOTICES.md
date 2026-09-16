@@ -10,4 +10,8 @@ The experimental hand model is downloaded separately from Google's official Medi
 
 ACE-Ego-Hand, GVHMR and other research checkouts, MANO data, footage and checkpoints are local development inputs, not redistributed package assets. Those inputs and development records stay outside this repository.
 
+The C# GVHMR temporal network, output statistics, decoder, SMPL-X skeleton calculations and contact processing in `Editor/HumanoidMocap/Inference`, and the HMR2/ViTPose architecture and input/output processing in `InferenceWorker`, are adapted from [zju3dv/GVHMR](https://github.com/zju3dv/GVHMR) at `ee960bb6e2ea2d381aa97f08e9b71ef320b624b1`. The upstream research/noncommercial terms are retained in `Gvhmr.LICENSE`. Checkpoints and SMPL-X model data are downloaded separately and are not committed. Full video-backend parity and final contact correction remain unverified.
+
+The C# worker restores [TorchSharp](https://github.com/dotnet/TorchSharp) 0.107.0, native LibTorch CPU 2.10.0, and [OpenCvSharp](https://github.com/shimat/opencvsharp) managed/Windows runtime 4.13.0.20260627 from NuGet. Their package licenses and native third-party notices apply. Native binaries are not copied into this source repository.
+
 Windows Media Foundation API signatures and GUIDs follow Windows SDK 10.0.26100.0. The source-reader implementation calls the OS directly; see [Microsoft's Source Reader documentation](https://learn.microsoft.com/en-us/windows/win32/medfound/processing-media-data-with-the-source-reader).

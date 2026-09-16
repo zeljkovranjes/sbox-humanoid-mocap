@@ -27,8 +27,9 @@ immediately. Uploads are local, limited to 2 GiB per file, and preserve previous
 Guest Wi-Fi isolation or a firewall can block the connection.
 
 This is an experimental development build. The available hand backend uses MediaPipe
-landmarks; ACE-Ego-Hand and GVHMR inference are not implemented. Third Person currently
-provides the workspace and retargeting controls, not full-body video reconstruction.
+landmarks; ACE-Ego-Hand is not implemented. The [C# body worker](InferenceWorker/README.md)
+can reconstruct raw camera-relative GVHMR motion. Direct editor body capture and final
+source contact correction are still being integrated.
 Wrist depth, hidden elbows and shoulders are estimated. There is no calibrated world-space
 recovery, automatic prop tracking or validated multi-camera fusion. Review tracking loss,
 handedness, finger motion and contacts before exporting.
@@ -36,7 +37,7 @@ handedness, finger motion and contacts before exporting.
 Custom models need a rig and skin weights. Automatic mapping is not perfect; check the
 preview before exporting. Windows Media Foundation decodes footage directly from C#;
 phone codec availability depends on Windows. A small browser page handles phone uploads.
-There is no Python dependency or external inference bridge.
+There is no Python dependency or Python inference bridge.
 
 See [third-party notices](THIRD_PARTY_NOTICES.md).
 
