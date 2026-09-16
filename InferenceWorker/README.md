@@ -154,3 +154,27 @@ the same 30-frame interval recorded 9.70 seconds / 1.47 GB for WildHands and
 82.85 seconds / 5.35 GB for WiLoR. One frame lacked one hand. Both passed native
 preview/export/playback checks again. These are individual runs, not controlled
 cross-model speed or quality benchmarks.
+
+The current native hand cache version, `native-mano-v4-image-observations`, retains all
+21 detector image landmarks for each observed hand alongside its native prediction.
+Old cache directories remain intact. Target/correction changes and completed-cache
+replays do not load the neural models. Palm reprojection disagreement is reported as
+a derived diagnostic, separately from detector presence and any confidence fields.
+
+Fresh runs with the corrected video decoder recorded the following on the Ryzen 7
+7800X3D, 32 GB RAM, using four CPU inference threads and no GPU:
+
+| Backend / clip | Frames | Detection + inference | Peak worker RAM |
+| --- | --- | --- | --- |
+| MobileHand / video_0 | 121 | 13.49 s | 1.43 GB |
+| MobileHand / segment_018 | 120 | 11.99 s | 1.42 GB |
+| MobileHand / segment_037 | 120 | 13.56 s | 1.44 GB |
+| WildHands / segment_037 excerpt | 15 | 4.61 s | 1.44 GB |
+| WiLoR / segment_037 excerpt | 15 | 24.30 s | 5.98 GB |
+
+GB uses decimal bytes. Timings exclude setup, video decoding, retargeting and export.
+These runs used an estimated pinhole camera on the 1920×1080 footage; no lens calibration
+or GPU-memory measurement was performed. Median native-palm disagreement with detector
+image landmarks was 77.3, 137.8 and 153.0 pixels for the three MobileHand clips, 277.1
+pixels for WildHands and 35.2 pixels for WiLoR. These are disagreement measurements
+between estimators, not a ground-truth accuracy ranking or minimum hardware requirements.

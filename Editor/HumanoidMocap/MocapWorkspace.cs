@@ -261,6 +261,8 @@ public sealed partial class RetargetWindow
                 .Select(t=>$"{(t.Role==HumanoidMocap.Mapping.BoneRole.HandL?"Left":"Right")} hand {(t.Reconstructed==0?"not detected":"mostly untracked")}").ToArray();
             _captureStatus.Text=missingHands.Length==0?$"Ready · {doc.Frames.Count} frames. Review the animation, then export."
                 :$"Review needed · {string.Join("; ",missingHands)}. See Advanced for tracking coverage.";
+            if(missingHands.Length==0&&doc.Diagnostics.Any(d=>d.StartsWith("Review wrist placement:",StringComparison.Ordinal)))
+                _captureStatus.Text="Review needed · Hand projection disagrees with detected image landmarks. See Advanced before exporting.";
             _motionDetails.Text=$"{doc.Backend} · {doc.Space}. "+loaded.quality.HandSummary+" "+string.Join(" ",doc.Diagnostics);
             if(loaded.session.Notice is { } notice)_captureStatus.Text+=" "+notice;
             await RefreshMocapPreviewAsync();

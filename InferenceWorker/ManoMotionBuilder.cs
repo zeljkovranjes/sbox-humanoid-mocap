@@ -6,7 +6,8 @@ using HumanoidMocap.Motion;
 namespace HumanoidMocap.Worker;
 
 public sealed record ManoHandSample(string Side,float[] RotationMatrices,float[] Shape,float[] WeakCamera,
-    GvhmrDecoder.Box Crop,float DetectorPresence,float DetectorHandedness,string CropSource="MediaPipe palm detector",float[]? NativeParameters=null);
+    GvhmrDecoder.Box Crop,float DetectorPresence,float DetectorHandedness,string CropSource="MediaPipe palm detector",float[]? NativeParameters=null,
+    float[][]? DetectorImageLandmarks=null);
 public sealed record ManoFrameSample(double Time,List<ManoHandSample> Hands);
 
 /// <summary>Preserves native MANO articulation and camera-space wrist translation.
@@ -47,6 +48,7 @@ public static class ManoMotionBuilder
         }
         var previousPositions=document.Bones.Select(b=>(float[])b.RestPosition.Clone()).ToArray();
         var previousRotations=document.Bones.Select(b=>(float[])b.RestRotation.Clone()).ToArray();
+        var palmResiduals=new List<float>();var palmRelativeResiduals=new List<float>();
         foreach(var sample in samples)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -80,6 +82,22 @@ public static class ManoMotionBuilder
                     translation=new(sign*weak[1]+2*(observed.Crop.CenterX-camera.Cx)/scale,
                         weak[2]+2*(observed.Crop.CenterY-camera.Cy)/scale,(camera.Fx+camera.Fy)/scale);
                 }
+                if(observed.DetectorImageLandmarks is {Length:21} image)
+                {
+                    if(image.Any(p=>p is null||p.Length<2||!float.IsFinite(p[0]+p[1])))throw new InvalidDataException("Invalid cached detector image landmarks.");
+                    int[] palm={0,5,9,13,17};var errors=new List<float>();float span=0;
+                    foreach(var a in palm)foreach(var b in palm)
+                        span=Math.Max(span,Vector2.Distance(new(image[a][0],image[a][1]),new(image[b][0],image[b][1])));
+                    foreach(var p in palm)
+                    {
+                        var point=hand.Landmarks[p];point.X*=sign;point+=translation;
+                        if(point.Z<=0)continue;
+                        var projected=new Vector2(camera.Fx*point.X/point.Z+camera.Cx,camera.Fy*point.Y/point.Z+camera.Cy);
+                        errors.Add(Vector2.Distance(projected,new(image[p][0],image[p][1])));
+                    }
+                    if(errors.Count==5&&span>1)
+                    {var rms=MathF.Sqrt(errors.Average(e=>e*e));palmResiduals.Add(rms);palmRelativeResiduals.Add(rms/span);}
+                }
                 for(var j=0;j<16;j++)
                 {
                     var index=side*16+j;var rotation=hand.LocalRotations[j];
@@ -108,6 +126,13 @@ public static class ManoMotionBuilder
             "These C# model ports remain experimental. Independent image-network reference parity and ground-truth accuracy are not established."
         });
         if(mobile)document.Diagnostics.Add("MobileHand is a small single-image model. Sample videos showed large rotation and estimated-depth jumps; no temporal or occlusion accuracy is established. Original 39-parameter predictions remain in the raw cache.");
+        if(palmResiduals.Count>0)
+        {
+            float Percentile(List<float> values,float fraction){var sorted=values.OrderBy(v=>v).ToArray();return sorted[(int)Math.Round((sorted.Length-1)*fraction)];}
+            var median=Percentile(palmResiduals,.5f);var p95=Percentile(palmResiduals,.95f);var relative=Percentile(palmRelativeResiduals,.5f);
+            document.Diagnostics.Add(FormattableString.Invariant($"Native palm reprojection versus MediaPipe image landmarks: median {median:F1} px, p95 {p95:F1} px across {palmResiduals.Count} observed hands. Derived disagreement metric, not 3D confidence or ground-truth accuracy."));
+            if(relative>.2f)document.Diagnostics.Add("Review wrist placement: native palm projection disagrees with detected image landmarks by more than 20% of palm span at the median. This heuristic can flag model/camera/crop errors; it does not identify which estimate is correct.");
+        }
         document.Validate();return document;
     }
 }

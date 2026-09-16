@@ -23,7 +23,7 @@ cache. C# reads its legacy checkpoint as data only; no Python or pickle callable
 The video integration uses a square MediaPipe crop with 1.5× padding and reflected left
 hands. This is our crop policy, not verified parity with an upstream video tracker.
 The three downloaded hand clips completed real inference, but local rotation steps reached
-170–179 degrees and estimated wrist speeds reached 12–46 m/s. Visual review also showed
+approximately 180 degrees and estimated wrist speeds reached 68 m/s in the latest full-clip runs. Visual review also showed
 misaligned fingers. Conservative cleanup did not remove these failures. MediaPipe stays
 the default, and no accuracy equivalence with larger models is claimed.
 
@@ -62,6 +62,11 @@ These integrations use C# and native inference libraries without a Python bridge
 All available models reconstruct in a separate local C# worker. MediaPipe uses its
 managed interpreter there. Decoder/model changes invalidate reconstruction caches;
 previous raw observations and motion files are preserved.
+Native hand caches now also retain the detector's per-frame image landmarks. The worker
+compares the reconstructed palm's projection with those landmarks and reports median
+and p95 disagreement in pixels. A median exceeding 20% of the detected palm span adds
+a wrist-placement review warning. This heuristic compares two estimates; it is neither
+3D confidence nor proof that either estimate is correct. It does not modify the motion.
 MediaPipe, WildHands and WiLoR have produced real reconstructed motion, target-rig
 previews and moving FBX animations imported by s&box. The native hand models share the
 7.8 MB MediaPipe crop detector. Missing detections stay explicit; the models do not

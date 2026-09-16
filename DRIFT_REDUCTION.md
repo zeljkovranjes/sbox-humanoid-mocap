@@ -83,3 +83,19 @@ their cached predictions predate the corrected video decoder. MobileHand's newer
 30-frame excerpt remained at 58.96 mm: its large depth jumps trigger the fast-motion
 guard and are not solved by this filter. All 21 flagged rapid MobileHand samples were
 preserved rather than silently classified as noise.
+
+An additional perspective palm-fit experiment was rejected for automatic use. It fitted
+wrist rotation and translation to six detector image landmarks. On a 30-frame MobileHand
+excerpt, the midpoint-residual proxy fell from 58.96 to 9.51 mm, but full-clip tests exposed
+regressions: maximum wrist speed rose from 11.26 to 40.40 m/s on `segment_037`, from
+17.84 to 42.83 m/s on `segment_018`, and from 68.11 to 109.20 m/s on `video_0`.
+Some fitted orientations also changed substantially. These results do not support enabling
+the fit or stacking it with cleanup. No fitted transforms are applied by the library.
+
+The native hand worker instead preserves detector image observations alongside the raw
+model predictions and reports palm reprojection disagreement for review. This helps
+identify captures needing correction without treating 2D agreement as correct 3D motion.
+Fresh MobileHand runs on all three clips, short WildHands/WiLoR runs, cancellation/resume
+and completed-cache reuse were checked. The MobileHand result passed native editor
+preview, armature-only FBX export and compiled playback; synchronized visual review still
+showed incorrect hand poses. These functional checks do not resolve that quality limitation.
