@@ -34,6 +34,8 @@ public sealed partial class RetargetWindow
         internal readonly Button Save;
         internal readonly Button Place;
         internal readonly Checkbox HoldOrientation;
+        internal readonly Checkbox Sliding;
+        internal readonly MocapContactKeys Keys;
         readonly MotionDocument _motion;
         readonly ContactInterval _draft;
 
@@ -66,13 +68,24 @@ public sealed partial class RetargetWindow
             HoldOrientation.ToolTip="Optional for a rigid grip. Place an anchor below, then review and confirm. Captured finger articulation remains unchanged.";
             var place=Place=Layout.Add(new Button("Use wrist at interval midpoint","my_location"));
             place.ToolTip="Use the captured wrist at the nearest midpoint sample. This places a manual anchor; it does not detect a grip. Sliding position keys are preserved.";
-            Status=Layout.Add(new Label(_draft.Sliding?"Sliding target keys are preserved. Edit the prepared motion file to change them.":"",this){WordWrap=true});
+            Status=new Label("",this){WordWrap=true};
             Status.SetStyles($"color: {Theme.Yellow.Hex};");
-            if(_draft.Sliding){Target.ReadOnly=true;props.Enabled=false;hands.Enabled=false;}
+            Sliding=Layout.Add(new Checkbox("Sliding contact · animate the local wrist target"){Value=_draft.Sliding});
+            Sliding.ToolTip="Uses at least two authored position keys. Turning this off keeps the keys for later and uses the fixed anchor above.";
+            void RefreshMode()
+            {
+                _draft.Sliding=Sliding.Value;Keys.Visible=Sliding.Value;Target.ReadOnly=Sliding.Value;
+                props.Enabled=hands.Enabled=_draft.TargetKeys.Count==0;
+                props.ToolTip=hands.ToolTip=_draft.TargetKeys.Count>0?"Remove the draft's position keys before changing their hand or object coordinate frame.":"";
+                Window.Size=new Vector2(560,Sliding.Value?660:460);
+            }
+            Keys=Layout.Add(new MocapContactKeys(this,_motion,_draft,Read,()=>owner.PlaybackTime,message=>Status.Text=message,RefreshMode));
+            Sliding.Clicked=RefreshMode;RefreshMode();Layout.Add(Status);
             place.Clicked=()=>{try{Read();var time=ContactAuthoring.PlaceAtWrist(_motion,_draft,HoldOrientation.Value);Target.Text=string.Join(",",_draft.LocalTarget.Select(v=>v.ToString("R",CultureInfo.InvariantCulture)));Status.Text=$"Manual anchor placed from the wrist at {time:F3} s.";}catch(Exception e){Status.Text=e.Message;}};
             var buttons=Layout.AddRow();buttons.AddStretchCell();buttons.Add(new Button("Cancel"){Clicked=Close});Save=buttons.Add(new Button.Primary("Save suggestion"));
             Save.Clicked=async ()=>{
-                try{Read();if(HoldOrientation.Value&&_draft.LocalRotation is null)throw new ArgumentException("Use wrist at interval midpoint to place the orientation anchor.");
+                try{Read();if(Sliding.Value&&Keys.HasUnappliedChanges)throw new ArgumentException("Add or update the edited sliding key before saving.");
+                    if(HoldOrientation.Value&&_draft.LocalRotation is null)throw new ArgumentException("Use wrist at interval midpoint to place the orientation anchor.");
                     if(!HoldOrientation.Value)_draft.LocalRotation=null;
                     _draft.Review=ContactReview.Suggested;_draft.Reason="Manually placed/edited wrist contact; requires review against the video.";
                     Save.Enabled=false;await owner.SaveContactAsync(_motion,index,_draft);await EditorPipeline.SwitchToMainThread();if(this.IsValid())Close();}

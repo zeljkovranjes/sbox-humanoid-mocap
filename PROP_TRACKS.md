@@ -27,8 +27,22 @@ intervals each get their own entries in the menu. Timing edits return the contac
 Suggested and rebuild from preserved observations; review again before confirming.
 The strip is hidden when no contacts exist. Timing edits cannot remove existing sliding
 target keys; the editor reports that conflict rather than discarding the keys.
-Sliding contacts retain their authored keys; changing those keys still requires a prepared
-motion file. An edited interval must contain all existing sliding keys.
+An edited interval must contain all existing sliding keys.
+
+Enable **Sliding contact** in the contact dialog to edit a moving wrist target. Choose
+**New key**, enter its video time and object-local position, then **Add key**. **Use
+playhead** fills the time; **Sample captured wrist** fills the nearest observed wrist's
+position relative to the selected prop bone. Sampling is a placement aid, not automatic
+sliding detection. Select an existing key to update its time/position or remove it.
+Use **Update key** before saving; saving reports unapplied field edits rather than discarding them.
+At least two keys are required, with distinct times inside the contact interval. Targets
+interpolate between keys and hold outside their first/last key within the interval.
+
+Turning sliding off retains the keys and uses the fixed anchor above. Remove all draft
+keys before changing the hand or prop bone, since their coordinates belong to that binding.
+Cancel discards the dialog's edits. **Save suggestion** stores them in the adjustment
+sidecar and requires review again, including when the original contact was confirmed.
+The editor supports up to 4,096 manually added keys per contact.
 
 For a rigid grip, enable **Hold wrist orientation relative to prop**, then use
 **Use wrist at interval midpoint** to capture the orientation anchor as well. Save and
@@ -188,3 +202,15 @@ and authored prop. Seeking and timing/review callbacks, save/reopen behavior and
 raw capture passed; the 99-bone animation compiled and played after the edit. Yellow,
 gray and green timeline states were visually inspected. Physical mouse gestures were
 not automated by this gate.
+
+Sliding-key editing was exercised using `segment_037` hand reconstruction and the
+explicitly authored control plane. Native dialog checks covered add, update, remove,
+fixed/sliding toggling, incomplete-key rejection, save/reopen and cancelled edits.
+Human and Citizen previews exported 120-frame, 95- and 96-bone FBX animations that
+compiled and played in s&box. The dialog and synchronized preview images were inspected.
+The raw capture stayed unchanged. A 2 cm authored slide exported on Citizen matched
+its target within 0.0001 cm across 54 reachable contact frames. Another 25 frames
+were reach-limited, leaving up to 7.36 cm of target gap while retaining arm lengths.
+Those frames matched the closest allowed reach position within 0.0001 cm. This measures
+solver/export consistency on a controlled fixture, not real capture accuracy. Review
+placement and reach when a hand cannot follow its prop; smoothing cannot fix that gap.
