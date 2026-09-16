@@ -91,9 +91,42 @@ from the target rig and preview camera. It is a candidate, not an integrated fea
 
 The official v1.0 pinhole checkpoint is 116,074,121 bytes, SHA-256
 `86d6aeacd8bbd974c59ce39f61854e00d36911c732ad89be471476fd708722ac`.
-The existing C# checkpoint reader successfully identified 889 tensors under its `model`
-component. No GeoCalib neural inference or accuracy/runtime benchmark has been run here.
-Weights remain local; the library does not download or load them. Adoption needs a C#
-implementation and checks against calibrated footage, plus synchronized hand-motion
-review. Estimated focal length or gravity must remain labeled model estimates; they
-do not establish measured scale, camera trajectory or correct 3D hand motion.
+The existing C# checkpoint reader identified 889 tensors under its `model` component.
+A local C# / native TorchSharp evaluation now runs the MSCAN backbone, both field
+decoders and seven-step NMF inference. All inference weights are consumed; batch-count
+buffers are excluded. The experimental pinhole solver uses the upstream confidence-
+weighted Huber objective for up vectors and sine latitude, with roll/pitch/log-focal
+updates instead of the upstream spherical-manifold optimizer. Independent tensor-by-
+tensor equivalence has not been established. No Python process or bridge was used.
+
+The solver recovered 27 synthetic camera configurations, covering 35°, 75° and 120°
+horizontal fields of view with different roll/pitch angles. On the upstream church
+example, the C# estimate was 553.1 px versus the notebook's recorded 551.4 px; this is a
+useful comparison with an upstream result, not proof of complete numerical parity.
+
+Six HOT3D reference images were rectified using their supplied FISHEYE624 calibration
+into known 60° and 80° pinhole views. All output pixels sampled inside the original
+images. Estimated focal lengths were 5.3–35.4% above the known virtual-camera values;
+field-of-view errors ranged from 2.9° to 13.8°. The earlier 120° reference views included
+large black regions and produced larger errors, so they are reported separately.
+These are three moments from one recording, not a dataset-wide calibration benchmark.
+
+Three frames each from `video_0`, `segment_018`, `segment_037` and `tennis` were also
+processed. The tennis estimates stayed between 31.4° and 33.1°, while `video_0` varied
+from 55.2° to 141.1° and `segment_037` from 48.9° to 107.8°. Those clips have no supplied
+calibration here; stability alone does not establish accuracy. Treating these
+framewise estimates as changing intrinsics could itself cause wrist-depth drift.
+
+On the Ryzen 7 7800X3D with four CPU inference threads, preprocessing plus network
+inference took 0.88–1.56 seconds per sampled video frame; fitting took 0.14–0.68 seconds.
+Peak process working set reached 2,073,812,992 bytes over the 15-frame video evaluation.
+This was CPU-only inference; no VRAM measurement or minimum hardware claim is made.
+Measurements exclude decode, checkpoint loading, JSON reports and mocap reconstruction.
+
+**Not adopted as automatic recording-lens correction.** The observed errors and
+within-clip variation do not justify changing the default or adding a model download.
+The evaluation code, weights and reports remain local. Further adoption needs validated
+temporal/shared-intrinsics and distortion handling, numerical verification, and a
+measured improvement in the resulting hand motion. Focal length and gravity remain
+model estimates; they do not establish measured scale, camera trajectory or correct
+3D hand motion.
