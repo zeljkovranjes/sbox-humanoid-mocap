@@ -79,13 +79,13 @@ internal static class NativeCapture
         return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end },progress,token);
     }
 
-    public static async Task<string> HandsAsync(string video,string backend,double start,double end,int width,int height,Action<string> progress,CancellationToken token)
+    public static async Task<string> HandsAsync(string video,string backend,double start,double end,int width,int height,Action<string> progress,CancellationToken token,float? recordingHorizontalFov=null)
     {
         if(backend is not ("mobilehand" or "wildhands" or "wilor"))throw new NotSupportedException("Choose MediaPipe, MobileHand, WildHands or WiLoR. ACE is not loaded automatically.");
+        var focal=Motion.CaptureCameraFraming.EstimatedFocalLength(width,height,recordingHorizontalFov);
         var (worker,models)=await Prepare(progress,token);
         await RunProcess(worker,new[]{"download-hand-models",models,backend},progress,token);
         // Estimated pinhole intrinsics; these are neither calibrated nor world-space recovery.
-        var focal=MathF.Sqrt((float)width*width+(float)height*height);
         var camera=new { Fx=focal,Fy=focal,Cx=width*.5f,Cy=height*.5f,Calibrated=false };
         return await Job(worker,"hand",jobs=>new { Video=video,Models=models,Output=jobs,Backend=backend,Start=start,End=end,Camera=camera },progress,token);
     }

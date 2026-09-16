@@ -3,9 +3,20 @@ using System.Linq;
 
 namespace HumanoidMocap.Motion;
 
-/// <summary>Initial editor view only. Does not estimate calibration or modify motion.</summary>
+/// <summary>Explicit pinhole assumptions and initial editor framing. Does not recover calibration.</summary>
 public static class CaptureCameraFraming
 {
+    /// <summary>Focal length in source-image pixels. A supplied horizontal FOV is
+    /// a recording-lens assumption, independent of the viewmodel camera.</summary>
+    public static float EstimatedFocalLength(int width,int height,float? horizontalFovDegrees=null)
+    {
+        if(width<=0||height<=0)throw new ArgumentOutOfRangeException(nameof(width),"Video dimensions must be positive.");
+        if(horizontalFovDegrees is not float fov)return (float)Math.Sqrt((double)width*width+(double)height*height);
+        if(!float.IsFinite(fov)||fov<20||fov>150)
+            throw new ArgumentOutOfRangeException(nameof(horizontalFovDegrees),"Recording FOV must be between 20 and 150 degrees.");
+        return width/(2*MathF.Tan(fov*MathF.PI/360));
+    }
+
     public static float InitialHorizontalFov(MotionDocument document,float fallback=75)
     {
         if(document.Space!=MotionSpace.CameraRelative)return fallback;

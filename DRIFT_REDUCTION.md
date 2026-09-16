@@ -262,3 +262,30 @@ rounding that previously mislabeled seven of this clip's 157 observed wrists as 
 The pose, observation label and stationary-joint probability use the same endpoint rule.
 Real intervals spanning missing data remain missing, and intermediate stationary-joint
 probabilities still use the conservative minimum. Original timestamps remain unchanged.
+
+An isolated WiLoR camera-sensitivity check reused all 121 frames of `video_0`'s native
+predictions, keeping finger/wrist rotations, evidence and timestamps identical. Changing
+the assumed focal length from 2,202.91 px to 600 px reduced Human's >1 mm reach-limited
+wrist targets from 157/157 to 39/157, and maximum target IK displacement from 141.6 cm
+to 6.2 cm. Citizen still limited 76/157, with a 9.6 cm maximum. Unlike uniform trajectory
+scaling, this changes camera depth without shrinking lateral hand spacing. Native preview,
+armature-only FBX export and compiled playback passed; synchronized visual review still
+showed pose differences. These numbers measure target reach, not ground-truth accuracy.
+
+The [HaWoR example's 600 px fallback](https://github.com/ThunderVVV/HaWoR/blob/main/scripts/scripts_test_video/hawor_video.py)
+is an assumption, not provided calibration for this footage. Its frame extraction does
+not resize the source. This experiment does not justify applying that focal length to
+every video. The editor now accepts an optional recording FOV in Advanced while retaining
+the existing automatic default. WildHands requires fresh inference when this changes,
+because camera-ray encodings enter its image network; a WiLoR-only cached prediction
+replay must not be used to simulate WildHands at another focal length.
+
+Fresh WildHands inference through the editor at the same 600 px assumption produced
+121 frames and the same 157 observed hand instances. Neither Human nor Citizen needed
+reach clamping on those observed wrists. CPU detection/inference took 27.01 s with
+1.70 GB peak worker working set on the Ryzen 7 7800X3D; this excludes setup, decode,
+retargeting and export. The native gate verified FOV persistence, rejection of invalid
+FOV without losing the current capture, and compiled 94-bone, 121-frame FBX playback.
+The reviewed frames still disagree with the source hand poses and show target-mesh
+deformation. Removing reach clamping is useful but does not establish acceptable final
+capture quality or justify changing the default lens assumption.

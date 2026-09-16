@@ -115,7 +115,7 @@ public static class ManoMotionBuilder
             }
             document.Frames.Add(frame);previousPositions=frame.Positions;previousRotations=frame.Rotations;
         }
-        document.Cameras.Add(new(){Id="video",Source=camera.Calibrated?"User-supplied camera calibration":"User-supplied estimated pinhole camera; not calibration",
+        document.Cameras.Add(new(){Id="video",Source=camera.Calibrated?"User-supplied camera calibration":"Estimated pinhole camera; not calibration",
             Calibrated=camera.Calibrated,Synchronized=true,ImageWidth=width,ImageHeight=height,Intrinsics=new[]{camera.Fx,0,camera.Cx,0,camera.Fy,camera.Cy,0,0,1}});
         document.Diagnostics.AddRange(new[]{
             "Native MANO wrist and finger rotations are retained. Shoulders and elbows are not observed and require target-rig IK.",

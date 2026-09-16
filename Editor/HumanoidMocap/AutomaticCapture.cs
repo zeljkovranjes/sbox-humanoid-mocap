@@ -46,6 +46,15 @@ public sealed partial class RetargetWindow
         if (_processing is not null) return;
         if (!File.Exists(_sourcePath.Text)) { _captureStatus.Text = "Upload a video first."; return; }
         var video = _sourcePath.Text; var firstPerson = _firstPerson;var handBackend=_handBackend;
+        var recordingFovText=_recordingFov.Text;
+        float? recordingFov=null;
+        if(firstPerson&&handBackend!="mediapipe"&&!string.IsNullOrWhiteSpace(recordingFovText))
+        {
+            if(!float.TryParse(recordingFovText,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var degrees)||
+                !float.IsFinite(degrees)||degrees<20||degrees>150)
+            {_captureStatus.Text="Recording FOV must be a number from 20 to 150 degrees, or blank for automatic.";return;}
+            recordingFov=degrees;
+        }
         var start = Number(_rangeStart, 0); double? end = string.IsNullOrWhiteSpace(_rangeEnd.Text) ? null : Number(_rangeEnd, 0);
         _processing = new CancellationTokenSource(); var token = _processing.Token;
         SetCaptureBusy(true); _retryCaptureButton.Visible = false;
@@ -77,7 +86,7 @@ public sealed partial class RetargetWindow
             else if(firstPerson)
             {
                 motionPath=await NativeCapture.HandsAsync(video,handBackend,start,end??metadata.Duration,metadata.Width,metadata.Height,
-                    ReceiveWorkerProgress,token);
+                    ReceiveWorkerProgress,token,recordingFov);
             }
             else
             {

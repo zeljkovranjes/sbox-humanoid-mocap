@@ -20,7 +20,7 @@ public sealed partial class RetargetWindow
     Label _captureStatus, _clock;
     LineEdit _sourcePath, _rangeStart, _rangeEnd, _fov, _rootSmooth, _armSmooth, _fingerSmooth;
     LineEdit _shoulderL, _shoulderR, _elbowL, _elbowR, _reach, _facing, _ground, _viewPitch;
-    LineEdit _capturePosition, _captureYaw, _capturePitch, _viewNear;
+    LineEdit _capturePosition, _captureYaw, _capturePitch, _viewNear, _recordingFov;
     MocapVideoWidget _video;
     PreviewWidget _mocapPreview;
     FloatSlider _timeline;
@@ -150,6 +150,9 @@ public sealed partial class RetargetWindow
         var placementRow=_firstOptions.Layout.AddRow();placementRow.Spacing=16;
         var camera=placementRow.AddColumn();camera.Spacing=6;
         _reach=Field(camera,"Reach fraction","0.995");_fov=Field(camera,"Viewmodel FOV","75");
+        _recordingFov=Field(camera,"Recording FOV (°)","");
+        _recordingFov.PlaceholderText="Automatic";
+        _recordingFov.ToolTip="Optional horizontal field of view of the recorded video, 20–150 degrees. Blank uses the automatic pinhole assumption. Applies to WildHands, WiLoR and MobileHand on Process again; changes reconstructed depth, not just the preview. This is not calibration or fisheye correction.";
         _viewPitch=Field(camera,"Camera pitch","0");
         _viewNear=Field(camera,"Near clip (cm)","15");
         _viewNear.ToolTip="Hide nearby head geometry on full-body targets. Reduce this distance to inspect hands close to the viewmodel camera.";
@@ -205,6 +208,7 @@ public sealed partial class RetargetWindow
         if(choice.Backend is not ("mediapipe" or "mobilehand" or "wildhands" or "wilor"))throw new NotSupportedException("This hand backend is not available.");
         _handBackend=choice.Backend;_handModelPath=choice.ModelPath;
         _swapHandsControl.Enabled=_firstPerson&&_handBackend=="mediapipe";
+        _recordingFov.Enabled=_handBackend!="mediapipe";
     }
     public void SetWorkspace(bool firstPerson)
     {
@@ -233,6 +237,9 @@ public sealed partial class RetargetWindow
     }
     public void LoadVideo(string path)
     {
+        // A lens override belongs to this recording. Never carry it into a new
+        // upload, including queued phone videos from another camera.
+        if(!string.Equals(_sourcePath.Text,path,StringComparison.OrdinalIgnoreCase))_recordingFov.Text="";
         _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
         Update();
         _videoName.Text=Path.GetFileName(path);_videoName.ToolTip=path;
@@ -262,6 +269,7 @@ public sealed partial class RetargetWindow
                 _sourcePath.Text=doc.SourceVideo;_videoHost.Layout.Add(new Label("The source video could not be found.\nAnimation playback is still available.",_videoHost){Alignment=TextFlag.Center,WordWrap=true},1);
                 ResetPlayback();
             }
+            RestoreRecordingFov(doc);
             RefreshContacts();
             var missingHands=loaded.quality.Tracks.Where(t=>t.Role is HumanoidMocap.Mapping.BoneRole.HandL or HumanoidMocap.Mapping.BoneRole.HandR)
                 .Where(t=>HandCaptureRetargeter.Supports(doc)&&t.Reconstructed<doc.Frames.Count/2d)
@@ -276,6 +284,19 @@ public sealed partial class RetargetWindow
         }
         catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid()&&revision==_motionLoadRevision)_captureStatus.Text=e.Message;}
     }
+    void RestoreRecordingFov(MotionDocument motion)
+    {
+        _recordingFov.Text="";
+        if(!new[]{"WildHands /","WiLoR /","MobileHand /"}.Any(prefix=>motion.Backend.StartsWith(prefix,StringComparison.Ordinal)))return;
+        var camera=motion.Cameras.SingleOrDefault(c=>c.Id=="video");
+        if(camera?.ImageWidth is not int width||camera.ImageHeight is not int height||camera.Intrinsics is not {Length:9} k||
+            camera.Calibrated||camera.Distortion?.Any(v=>v!=0)==true||k[0]!=k[4]||k[2]!=width*.5f||k[5]!=height*.5f)return;
+        var automatic=CaptureCameraFraming.EstimatedFocalLength(width,height);
+        if(Math.Abs(k[0]-automatic)<automatic*1e-6f)return;
+        var fov=2*MathF.Atan(width/(2*k[0]))*180/MathF.PI;
+        if(float.IsFinite(fov)&&fov>=20&&fov<=150)_recordingFov.Text=fov.ToString("G9",CultureInfo.InvariantCulture);
+    }
+
     async Task BuildMocapPreviewAsync(int revision)
     {
         if(_editedMotion is null || _target is null)return;
