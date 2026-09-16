@@ -26,9 +26,11 @@ Keep only one copy of the library installed. Humanoid Retargeter can remain inst
 
 The character selector shows **Human** or **Citizen**. Citizen uses Terry's classic `models/citizen/citizen.vmdl` and its own proportions. Switching rebuilds the preview and target export from the same capture; it does not rerun reconstruction. Each target retains its saved adjustments.
 
+For third-person recordings made with a stationary camera, **Advanced → Third Person → Refine · stationary camera** reuses saved predictions for root and limb-contact correction. It opens a separate result; the same button restores the original capture. Review the result before export. Target foot correction is applied during retargeting. **In place** removes horizontal travel.
+
 The default export uses the preview rig and applied corrections. **Advanced → Export captured skeleton** keeps the reconstruction's skeleton and sample timing. Both export bone positions and rotations. Keep the original video, `.hmotion` and `.hmotion.adjustments.json` files for reversible edits; confidence, observation labels and contact-review data are not FBX animation channels. Applied adjustments are remembered per target and workspace, and changes reuse cached reconstruction.
 
-Use **Advanced → Hand models…** to choose MediaPipe, MobileHand, WildHands or WiLoR for subsequent FPS uploads. MediaPipe is the lightweight default. Badges describe processing cost, not accuracy. MobileHand has a smaller checkpoint but still shows pose and depth jumps. ACE-Ego-Hand remains an optional planned backend; its inference is not implemented. See [hand backend options](HAND_BACKENDS.md) for measured results and limitations.
+Use **Advanced → Hand models…** to choose MediaPipe, MobileHand, WildHands or WiLoR for subsequent FPS uploads. MediaPipe is the lightweight default. Badges describe processing cost, not accuracy. See [hand backend options](HAND_BACKENDS.md) for measured results and limitations.
 
 All reconstruction runs locally in a separate C# worker. First-time setup requires the included worker source and .NET 10 SDK, or a configured prebuilt worker. Models download on first use for the selected backend. Cancellation preserves completed observations for retry. Exported animation playback needs neither the worker nor its models. See the [worker setup](InferenceWorker/README.md) and [capture instructions](CAPTURE.md).
 
@@ -36,16 +38,14 @@ Custom models need a rig and skin weights. Automatic mapping is not perfect; che
 preview before exporting. This library exports animation and armatures; it does not
 automatically rig or skin a character. Phone codec support depends on Windows Media Foundation.
 
+Third Person uses camera-relative GVHMR reconstruction, without detailed finger capture.
+Calibrated world recovery, automatic prop tracking and multi-camera fusion are not supported.
+
 This is an experimental development build. Wrist depth, hidden elbows and shoulders
 are estimated. Tracking loss, incorrect finger poses and motion jumps remain. The
 main status flags missing or mostly untracked hands; Advanced shows coverage and gaps.
-
-Third Person uses camera-relative GVHMR reconstruction, without detailed finger capture.
-For recordings made with a stationary camera, **Advanced → Third Person → Refine · stationary camera**
-reuses saved predictions for root and limb-contact correction. It opens a separate result;
-the same button restores the original capture. Review the result before export.
-Target foot correction is applied during retargeting. **In place** removes horizontal travel. Calibrated world
-recovery, automatic prop tracking and multi-camera fusion are not supported.
+MobileHand has a smaller checkpoint but still shows pose and depth jumps. ACE-Ego-Hand
+remains an optional planned backend; its inference is not implemented.
 See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 Package ident: `notpointless.chomnr_humanoid_mocap`
