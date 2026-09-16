@@ -38,15 +38,16 @@ public sealed partial class RetargetWindow
             JointEvidence.GeneratedIk=>"IK estimate",JointEvidence.Authored=>"authored",
             JointEvidence.Unobserved=>"not observed",_=>"not captured"};
         var manual=preview.WristOffsets.Any(e=>WristPositionOffsets.Weight(e,time,start,end)>0);
-        var text=$"Left wrist: {State(left)}   ·   Right wrist: {State(right)}"+(manual?"   ·   Manual correction":"");
+        var reach=preview.Clip.Mapping?.Notes.FirstOrDefault(n=>n.StartsWith(HandCaptureRetargeter.ReachWarningPrefix,StringComparison.Ordinal));
+        var text=$"Left wrist: {State(left)}   ·   Right wrist: {State(right)}"+(manual?"   ·   Manual correction":"")+(reach is not null?"   ·   Clip: arm reach limited":"");
         if(_trackingStatus.Text!=text)
         {
             _trackingStatus.Text=text;
-            _trackingStatus.SetStyles($"color: {(left==JointEvidence.Reconstructed&&right==JointEvidence.Reconstructed?Theme.TextLight:Theme.Yellow).Hex};");
+            _trackingStatus.SetStyles($"color: {(reach is null&&left==JointEvidence.Reconstructed&&right==JointEvidence.Reconstructed?Theme.TextLight:Theme.Yellow).Hex};");
         }
         _trackingStatus.ToolTip=$"Evidence at animation time {time:F3} s. Reconstructed means a model prediction, not measured ground truth. "+
             "Unobserved motion is not newly captured; a previous pose may be retained. Inferred gaps are interpolated. Hidden shoulders and elbows are estimated by IK. "+
-            "Manual and contact corrections do not turn missing observations into reconstructed motion.";
+            "Manual and contact corrections do not turn missing observations into reconstructed motion."+(reach is not null?"\nClip-level check: "+reach:"");
         _trackingStatus.Visible=true;
     }
 }

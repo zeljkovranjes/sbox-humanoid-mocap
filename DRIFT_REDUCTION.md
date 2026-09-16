@@ -239,3 +239,26 @@ Recent papers and measured candidate decisions are recorded in [research notes](
 The C# FootMR trial did not justify a default backend change: its foot displacement was
 worse on the same model-selected contact steps, and its arm-motion peak timing differed.
 No additional filter is enabled merely because it lowers a jitter metric.
+
+The native hand models also exposed a target-reach failure in `video_0`: all 157 observed
+wrist targets from either WildHands or WiLoR exceeded both built-in rigs' arm reach.
+Human's available shoulder-to-wrist reach was 51.34 cm and Citizen's was 44.86 cm.
+WildHands' mean requested distances were 143.42/131.18 cm on Human; WiLoR's were
+154.39/139.95 cm (left/right). Clamping preserves bone lengths but flattens wrist motion.
+The preview now shows **Clip: arm reach limited** when observed targets are displaced by
+more than 1 mm. Its tooltip reports the affected count and maximum displacement across
+the clip. This measures target IK displacement, not reconstruction accuracy, and does
+not modify the motion or turn an observation into a missing frame.
+
+A uniform trajectory-scale trial removed reach clipping but failed visual acceptance:
+the hands moved too close together and intersected. WiLoR's fitted Human scale was
+0.1853; the synchronized 1-second preview showed overlapping hands. This adjustment
+is not enabled or shipped. Better camera/depth handling remains necessary; successful
+animation export does not resolve the mismatch.
+
+Export resampling now treats timestamps within at most one microsecond (and at most
+0.01% of the adjacent interval) as the same source sample. This fixes 100 ns decoder
+rounding that previously mislabeled seven of this clip's 157 observed wrists as missing.
+The pose, observation label and stationary-joint probability use the same endpoint rule.
+Real intervals spanning missing data remain missing, and intermediate stationary-joint
+probabilities still use the conservative minimum. Original timestamps remain unchanged.

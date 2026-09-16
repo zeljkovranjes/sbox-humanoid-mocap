@@ -17,6 +17,7 @@ using Vector3 = System.Numerics.Vector3;
 /// transfer, then solves target arms against the captured wrist positions.</summary>
 public static class HandCaptureRetargeter
 {
+    public const string ReachWarningPrefix="Target arm reach limited";
     public static bool Supports(MotionDocument document)=>document.Space==MotionSpace.CameraRelative&&
         document.Bones.Any(b=>b.Role is BoneRole.HandL or BoneRole.HandR)&&
         document.Bones.All(b=>b.Role is BoneRole.HandL or BoneRole.HandR||b.Role is { } role&&FingerSolver.IsFingerRole(role));
@@ -28,7 +29,7 @@ public static class HandCaptureRetargeter
     sealed record Transfer(int Source,int Target,bool Left,Quaternion Offset);
 
     public static Clip Solve(SourceScene source,MappingResult mapping,TargetRig target,TargetUpAxis axis,
-        TargetCorrectionSettings settings,int take,string name,bool fingers=true)
+        TargetCorrectionSettings settings,int take,string name,bool fingers=true,Action<string>? diagnostic=null)
     {
         if(!Supports(source,mapping)||take!=0)throw new ArgumentException("Expected a camera-relative hand motion document.");
         if(!Finite(settings.CaptureCameraPosition)||!float.IsFinite(settings.CaptureCameraYawDegrees)||!float.IsFinite(settings.CaptureCameraPitchDegrees))
@@ -110,6 +111,24 @@ public static class HandCaptureRetargeter
             output.Frames.Add(frame);targets.Add(wristTargets);previous=frame;
         }
         TargetCorrections.Apply(output.Frames,target,axis,settings,targets);
+        if(diagnostic is not null)
+        {
+            var observed=0;var limited=0;var maximumCm=0f;
+            var toCm=axis==TargetUpAxis.YUpCm?1f:2.54f;
+            for(var f=0;f<output.Frames.Count;f++)
+            {
+                FkUtil.ToWorld(output.Frames[f],target.Skeleton,targetWorld);
+                foreach(var (left,hand) in mappedHands)
+                {
+                    if(evidence[f][hand.Source]!=JointEvidence.Reconstructed||!targets[f].TryGetValue(left?BoneRole.HandL:BoneRole.HandR,out var goal))continue;
+                    observed++;
+                    var error=Vector3.Distance(targetWorld[hand.Target].Pos,goal.Pos)*toCm;
+                    if(error<=.1f)continue; // ignore sub-millimetre numerical differences
+                    limited++;maximumCm=Math.Max(maximumCm,error);
+                }
+            }
+            if(limited>0)diagnostic(FormattableString.Invariant($"{ReachWarningPrefix} {limited}/{observed} observed wrist targets by more than 1 mm; maximum displacement {maximumCm:F1} cm. Bone lengths were preserved, but these wrist trajectories could not be reproduced. Review camera/depth assumptions and target placement. This is target IK displacement, not measured reconstruction accuracy."));
+        }
         if(source.CaptureContacts is {} finalContacts)FingerContactCorrection.Apply(output.Frames,target,axis,settings,finalContacts,input.Fps);
         return output;
     }

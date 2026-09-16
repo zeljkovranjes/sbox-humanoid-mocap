@@ -168,7 +168,7 @@ public sealed class MotionDocument
             var time=Math.Min(Frames[0].Time+i/(double)fps,Frames[^1].Time);
             while(cursor+1<Frames.Count && Frames[cursor+1].Time<time)cursor++;
             var a=Frames[cursor];var b=Frames[Math.Min(cursor+1,Frames.Count-1)];
-            var t=b.Time>a.Time?(float)((time-a.Time)/(b.Time-a.Time)):0;
+            var t=MotionEvidence.Fraction(time,a.Time,b.Time);
             var frame=new XForm[Bones.Count];var frameEvidence=new JointEvidence[Bones.Count];
             for(var j=0;j<Bones.Count;j++)
             {
@@ -192,7 +192,9 @@ public sealed class MotionDocument
                 var lo=0;var hi=Frames.Count-1;
                 while(lo<hi){var mid=(lo+hi)/2;if(Frames[mid].Time<time)lo=mid+1;else hi=mid;}
                 // Conservative resampling: both bracketing observations must agree.
-                return Frames[lo].Time==time||lo==0?s.Probability[lo]:Math.Min(s.Probability[lo-1],s.Probability[lo]);
+                if(lo==0)return s.Probability[lo];
+                var t=MotionEvidence.Fraction(time,Frames[lo-1].Time,Frames[lo].Time);
+                return t<=0?s.Probability[lo-1]:t>=1?s.Probability[lo]:Math.Min(s.Probability[lo-1],s.Probability[lo]);
             }).ToArray()),
             // A camera-space translation is not an authored offset from the model's
             // rest ground. Keeping it as one makes the target hover and start metres

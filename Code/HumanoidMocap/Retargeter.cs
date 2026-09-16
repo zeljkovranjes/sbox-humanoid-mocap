@@ -797,7 +797,8 @@ public static class Retargeter
         }
         var solved = handCapture
             ? Motion.HandCaptureRetargeter.Solve(scene, map, target.Rig, target.UpAxis,
-                request.MocapCorrections ?? Motion.TargetCorrectionSettings.ForRig(target.Rig,target.UpAxis), take, clipName, requested.TransferFingers)
+                request.MocapCorrections ?? Motion.TargetCorrectionSettings.ForRig(target.Rig,target.UpAxis), take, clipName, requested.TransferFingers,
+                diagnostic: note=>AddNote(report,note))
             : ResolveSolver(request, target, context, report).Solve(scene, map, target.Rig, new SolveOptions
         {
             GroundedLegDirections = request.FootPlantCleanup,
