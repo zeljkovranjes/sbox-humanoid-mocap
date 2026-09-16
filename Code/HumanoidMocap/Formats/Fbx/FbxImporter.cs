@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 using HumanoidMocap.Maths;
 using HumanoidMocap.Skeleton;
 
@@ -15,6 +16,8 @@ public sealed class FbxImportOptions
 {
     /// <summary>Fixed resampling rate for all clips, frames per second.</summary>
     public float SampleFps { get; init; } = 30f;
+    public long MaximumTransformSamples { get; init; } = long.MaxValue;
+    public CancellationToken CancellationToken { get; init; }
 
     /// <summary>
     /// When the static rest pose is degenerate (Mixamo-style zeroed bind translations) and no
@@ -42,6 +45,9 @@ public static class FbxImporter
         options ??= new FbxImportOptions();
         if (!(options.SampleFps > 0f) || !float.IsFinite(options.SampleFps))
             throw new ArgumentOutOfRangeException(nameof(options), "SampleFps must be positive.");
+        if (options.MaximumTransformSamples <= 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "MaximumTransformSamples must be positive.");
+        options.CancellationToken.ThrowIfCancellationRequested();
 
         var scene = FbxScene.Build(FbxTokenizer.Parse(data));
         float unitScale = (float)scene.UnitScaleFactor;
@@ -86,11 +92,16 @@ public static class FbxImporter
 
         // ---- clips -----------------------------------------------------------------
         var clips = new List<Clip>();
+        long remaining = options.MaximumTransformSamples;
         foreach (var stack in scene.Stacks)
         {
-            var clip = SampleClip(ctx, skeleton, stack, options.SampleFps);
+            options.CancellationToken.ThrowIfCancellationRequested();
+            var clip = SampleClip(ctx, skeleton, stack, options.SampleFps, remaining, options.CancellationToken);
             if (clip is not null)
+            {
                 clips.Add(clip);
+                remaining -= (long)clip.FrameCount * skeleton.Count;
+            }
         }
 
         return new SourceScene(
@@ -598,7 +609,7 @@ public static class FbxImporter
     /// Returns null when the stack drives none of the skeleton bones.
     /// </summary>
     private static Clip? SampleClip(
-        ImportContext ctx, Skeleton.Skeleton skeleton, FbxAnimStack stack, float fps)
+        ImportContext ctx, Skeleton.Skeleton skeleton, FbxAnimStack stack, float fps, long budget, CancellationToken cancellation)
     {
         long start, stop;
         if (KeyRange(ctx, stack) is { } range)
@@ -608,8 +619,11 @@ public static class FbxImporter
         else
             return null;
 
-        double durationSeconds = (stop - start) / (double)FbxAnimCurve.TicksPerSecond;
-        int frameCount = Math.Max(1, (int)Math.Round(durationSeconds * fps) + 1);
+        double durationSeconds = ((double)stop - start) / FbxAnimCurve.TicksPerSecond;
+        var count = Math.Max(1, Math.Round(durationSeconds * fps) + 1);
+        if (!double.IsFinite(count) || count > int.MaxValue || count * skeleton.Count > budget)
+            throw new FormatException("FBX animation exceeds the transform budget. Import a shorter take.");
+        int frameCount = (int)count;
 
         // Skeleton bone order may differ from context bone order (topological sort) — map.
         var boneToSkeleton = new int[ctx.Bones.Count];
@@ -619,6 +633,7 @@ public static class FbxImporter
         var frames = new List<XForm[]>(frameCount);
         for (int f = 0; f < frameCount; f++)
         {
+            cancellation.ThrowIfCancellationRequested();
             long ticks = start + (long)Math.Round(f * (FbxAnimCurve.TicksPerSecond / (double)fps));
             var locals = WorldsToLocals(ctx, EvaluateWorlds(ctx, stack, ticks));
 

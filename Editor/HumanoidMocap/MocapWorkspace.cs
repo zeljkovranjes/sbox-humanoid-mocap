@@ -205,7 +205,7 @@ public sealed partial class RetargetWindow
         _firstPerson=firstPerson;_firstOptions.Visible=firstPerson;_thirdOptions.Visible=!firstPerson;
         _swapHandsControl.Enabled=firstPerson&&_handBackend=="mediapipe";
         if(_workspacePicker.SelectedIndex!=(firstPerson?0:1))_workspacePicker.SelectedIndex=firstPerson?0:1;
-        if(changed){FitMocapPlacementToTarget();SetPreviewView(firstPerson);_=RefreshMocapPreviewAsync();}
+        if(changed){FitMocapPlacementToTarget();SetPreviewView(firstPerson);RefreshContacts();_=RefreshMocapPreviewAsync();}
     }
     public void SetPreviewView(bool firstPerson)
     {
@@ -383,6 +383,12 @@ public sealed partial class RetargetWindow
     void RefreshContacts()
     {
         _contactRows.Clear(true);
+        var actions=_contactRows.AddRow();actions.Spacing=8;
+        var supported=_firstPerson&&_editedMotion is not null&&HandCaptureRetargeter.Supports(_editedMotion)&&_editedMotion.Space==MotionSpace.CameraRelative;
+        actions.Add(new Button("Import prop FBX…","view_in_ar"){Enabled=supported,Clicked=PickPropAnimation,
+            ToolTip="Import animated prop bones with explicit camera-space alignment into a separate capture."});
+        actions.Add(new Button("Add contact…","add"){Enabled=supported&&_editedMotion.Objects.Count>0,Clicked=()=>OpenContactEditor()});
+        actions.AddStretchCell();
         if(_editedMotion is { Objects.Count: >0 })
             _contactRows.Add(new Label("Prop armatures · "+string.Join(", ",_editedMotion.Objects.Select(p=>$"{p.Id} ({p.Source})")),this){WordWrap=true});
         if(_editedMotion is null || _editedMotion.Contacts.Count==0)
@@ -402,6 +408,7 @@ public sealed partial class RetargetWindow
             var confirm=row.Add(new Button("Confirm","check"));confirm.Clicked=()=>_=ReviewContactAsync(contact,ContactReview.Confirmed);
             confirm.Enabled=reason is null;confirm.ToolTip=reason??"Apply the object-local wrist target to the target arm solve.";
             var disable=row.Add(new Button("Disable","block"));disable.Clicked=()=>_=ReviewContactAsync(contact,ContactReview.Disabled);
+            row.Add(new IconButton("edit",()=>OpenContactEditor(contact),this){FixedSize=24,IconSize=16,Enabled=reason is null,ToolTip="Edit interval and wrist anchor"});
         }
     }
     [EditorEvent.Frame]
