@@ -19,6 +19,7 @@ public sealed class HandMotionBuilder
     readonly XForm[] rest;
     readonly int[] sourceBones;
     readonly Dictionary<int,int> documentIndices;
+    CameraObservation? previewCamera;
     public MotionDocument Document { get; }
     public bool SwapHands { get; set; }
     public float WristPlaneWidth { get; set; }=.9f;
@@ -31,7 +32,7 @@ public sealed class HandMotionBuilder
             rig.RoleOf(b.Index) is { } role&&FingerSolver.IsFingerRole(role)).Select(b=>b.Index).ToArray();
         documentIndices=sourceBones.Select((source,index)=>(source,index)).ToDictionary(x=>x.source,x=>x.index);
         Document=new MotionDocument{Name=name,SourceVideo=video,SourceSha256=hash,SourceFps=fps,
-            Backend="MediaPipe hands / experimental managed C#",ModelVersion="hand_landmarker/float16/1; hand-forest-v3-authored-metacarpals",
+            Backend="MediaPipe hands / experimental managed C#",ModelVersion="hand_landmarker/float16/1; hand-forest-v3-authored-metacarpals; camera-framing-v1",
             Space=MotionSpace.CameraRelative,MetricScaleCalibrated=false};
         foreach(var source in sourceBones)
         {
@@ -56,6 +57,20 @@ public sealed class HandMotionBuilder
     {
         if(width<=0||height<=0||!float.IsFinite(WristPlaneWidth)||!float.IsFinite(WristPlaneDepth)||WristPlaneWidth<=0||WristPlaneDepth<=0)
             throw new ArgumentException("Invalid image dimensions or assumed wrist plane.");
+        var focal=width*WristPlaneDepth/WristPlaneWidth;
+        if(previewCamera is null)
+        {
+            previewCamera=new(){Id="video",Source="Authored preview camera matching the assumed wrist plane; not recovered video calibration",
+                ImageWidth=width,ImageHeight=height,Calibrated=false,Synchronized=true,
+                Intrinsics=new[]{focal,0,width/2f,0,focal,height/2f,0,0,1}};
+            Document.Cameras.Add(previewCamera);
+        }
+        else if(previewCamera.Intrinsics is {} intrinsics&&(previewCamera.ImageWidth!=width||previewCamera.ImageHeight!=height||intrinsics[0]!=focal))
+        {
+            // One static camera cannot describe changing image/plane geometry.
+            previewCamera.ImageWidth=previewCamera.ImageHeight=null;previewCamera.Intrinsics=null;
+            previewCamera.Source="Assumed wrist-plane geometry changes within this clip; preview camera is unspecified";
+        }
         var previous=Document.Frames.LastOrDefault();
         var frame=new MotionFrame{Time=time,
             Positions=(previous?.Positions??Document.Bones.Select(b=>b.RestPosition).ToArray()).Select(p=>p.ToArray()).ToArray(),

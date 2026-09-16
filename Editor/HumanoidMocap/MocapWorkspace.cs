@@ -360,7 +360,8 @@ public sealed partial class RetargetWindow
     {
         if(_target is null||_shoulderL is null)return;
         _ground.Text="0";_facing.Text="0";_reach.Text="0.995";
-        _fov.Text="75";_viewPitch.Text="0";_viewNear.Text="15";
+        _fov.Text=(_firstPerson&&_editedMotion is not null?CaptureCameraFraming.InitialHorizontalFov(_editedMotion):75).ToString(CultureInfo.InvariantCulture);
+        _viewPitch.Text="0";_viewNear.Text="15";
         _rootMotion=HumanoidMocap.Cleanup.RootMotionMode.Off;_inPlaceControl.Value=false;
         _stabilizeFeetControl.Value=true;
         var settings=TargetCorrectionSettings.ForRig(_target.Spec.Rig,_target.Spec.UpAxis);

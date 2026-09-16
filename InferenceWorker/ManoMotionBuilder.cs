@@ -25,7 +25,7 @@ public static class ManoMotionBuilder
         var mobileDecoder=mobile?MobileHandModel.ReadDecoder(checkpointPath,cancellation):null;
         var document=new MotionDocument{Name=name,SourceVideo=video,SourceSha256=sourceHash,SourceFps=fps,
             Backend=mobile?"MobileHand / C# native CPU / MediaPipe crops":wild?"WildHands / C# native CPU / MediaPipe crops":"WiLoR / C# native CPU / MediaPipe crops",
-            ModelVersion=mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256,
+            ModelVersion=(mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256)+"; camera-framing-v1",
             Space=MotionSpace.CameraRelative,MetricScaleCalibrated=false};
         var cameraToDocument=Quaternion.CreateFromAxisAngle(Vector3.UnitX,MathF.PI);
         var decoders=new ManoDecoder[2];var betas=new float[2][];var rest=new ManoDecoder.DecodedHand[2];
@@ -116,7 +116,7 @@ public static class ManoMotionBuilder
             document.Frames.Add(frame);previousPositions=frame.Positions;previousRotations=frame.Rotations;
         }
         document.Cameras.Add(new(){Id="video",Source=camera.Calibrated?"User-supplied camera calibration":"User-supplied estimated pinhole camera; not calibration",
-            Calibrated=camera.Calibrated,Synchronized=true,Intrinsics=new[]{camera.Fx,0,camera.Cx,0,camera.Fy,camera.Cy,0,0,1}});
+            Calibrated=camera.Calibrated,Synchronized=true,ImageWidth=width,ImageHeight=height,Intrinsics=new[]{camera.Fx,0,camera.Cx,0,camera.Fy,camera.Cy,0,0,1}});
         document.Diagnostics.AddRange(new[]{
             "Native MANO wrist and finger rotations are retained. Shoulders and elbows are not observed and require target-rig IK.",
             "Camera-relative output; camera motion and world-space trajectories have not been recovered. Monocular metric scale remains model-derived.",

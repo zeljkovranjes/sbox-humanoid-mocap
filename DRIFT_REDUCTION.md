@@ -175,6 +175,14 @@ remains outside the library; no additional filtering or depth correction was ena
 The [MediaPipe output definition](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/python#handle_and_display_results)
 describes hand-centered 3D landmarks; it does not supply calibrated camera translation.
 
+Repeating the translation-only test with the calibrated HOT3D view and native model
+poses did not justify adoption either. The robust palm fit accepted only 2/236 MobileHand,
+46/236 WildHands and 35/236 WiLoR observations. On the same accepted samples, WildHands'
+mean wrist disagreement improved but its worst error reached 1.57 m; WiLoR's p95 wrist
+disagreement worsened and peak fitted wrist speed nearly doubled. The fit leaves pose
+rotation fixed and uses no reference landmarks in optimization. It remains a local
+experiment; calibration and lower average reprojection error alone do not make it reliable.
+
 Recent papers and measured candidate decisions are recorded in [research notes](RESEARCH.md).
 The C# FootMR trial did not justify a default backend change: its foot displacement was
 worse on the same model-selected contact steps, and its arm-motion peak timing differed.

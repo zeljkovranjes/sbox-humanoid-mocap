@@ -121,7 +121,7 @@ public static class HandCapture
             var motion=ManoMotionBuilder.Build(state.Frames,request.Backend,checkpointPath,Path.GetFileNameWithoutExtension(request.Video),
                 Path.GetFullPath(request.Video),sourceHash,metadata.FrameRate,request.Camera,metadata.Width,metadata.Height,cancellation);
             motion.ModelVersion+="; "+ImplementationVersion+"; crop detector "+ManagedHands.ImplementationVersion+"; "+WindowsVideoDecoder.ImplementationVersion;
-            var motionPath=Path.Combine(directory,"raw-hands.hmotion");Atomic(motionPath,motion.ToJson());
+            var motionPath=Path.Combine(directory,"raw-hands-v5-camera.hmotion");Atomic(motionPath,motion.ToJson());
             state.Error=null;Save("complete");return motionPath;
         }
         catch(OperationCanceledException){Save("cancelled_resumable");throw;}

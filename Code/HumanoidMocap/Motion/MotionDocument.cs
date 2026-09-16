@@ -67,6 +67,10 @@ public sealed class MotionDocument
             throw new FormatException("Invalid source frame rate.");
         if (Bones.Count is < 1 or > 1024 || Frames.Count is < 1 or > 108000)
             throw new FormatException("Motion exceeds the supported bone/frame budget or is empty.");
+        foreach(var camera in Cameras)
+            if(camera is null||camera.ImageWidth.HasValue!=camera.ImageHeight.HasValue||
+                camera.ImageWidth is <=0 or >65536||camera.ImageHeight is <=0 or >65536)
+                throw new FormatException("Camera image dimensions must be a positive width/height pair, or both unknown.");
         var names = new HashSet<string>();
         for (var i = 0; i < Bones.Count; i++)
         {
@@ -231,6 +235,10 @@ public sealed class CameraObservation
     public bool Calibrated { get; set; }
     public bool Synchronized { get; set; }
     public double TimeOffset { get; set; }
+    /// <summary>Pixel dimensions associated with Intrinsics, after the decoder's orientation.
+    /// Null for older captures or unknown image geometry; principal point alone does not determine them.</summary>
+    public int? ImageWidth { get; set; }
+    public int? ImageHeight { get; set; }
     public float[]? Intrinsics { get; set; }
     public float[]? Distortion { get; set; }
     public List<MotionFrame> Frames { get; set; } = new();

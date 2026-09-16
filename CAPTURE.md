@@ -7,6 +7,12 @@ Choose **Human** or **Citizen** at the preview's top right to change the charact
 Citizen is Terry's `models/citizen/citizen.vmdl`. Both use their own skeleton and
 proportions; switching reuses the captured motion and updates the target FBX export.
 
+New hand captures widen the initial FPS preview when their stored camera geometry
+needs it, up to 120°. Saved FOV adjustments still take priority. For older captures,
+**Advanced → Process again** can rebuild camera metadata from cached predictions;
+previous motion files remain intact. This improves framing only, not depth accuracy
+or intersections caused by tracking errors.
+
 Record in good light with a short exposure when possible. Keep the subject sharp and
 avoid motion blur, digital zoom changes and sudden camera movement. Keep the original
 video; trimming or conversion should create a new file. MP4 with H.264 is a practical

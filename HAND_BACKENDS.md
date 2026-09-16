@@ -149,6 +149,10 @@ inference was not tested. Checkpoint sizes remain those in the backend table abo
 The full WildHands/Human and WiLoR/Citizen results passed native preview, armature-only
 FBX compilation and animated playback. Synchronized images were visually inspected;
 the wide-angle source also exposed clipping in the narrower default FPS preview.
+New captures retain camera image dimensions, and the initial FPS view widens up to
+120 degrees when the stored pinhole geometry needs it. Existing saved FOV choices are
+respected. This changes the view only, not wrist placement or reconstructed motion;
+unknown dimensions and unrectified lens distortion keep the ordinary default.
 The derived review video uses nominal 30 fps, with a measured maximum 1.13 ms difference
 from original timestamps; motion preserves the original sample times. This functional
 verification does not make the reconstruction accurate or collision-free.
@@ -168,7 +172,7 @@ and observation labels. Rotation steps above 90 degrees changed from 106 to 55 i
 `video_0`, from 30 to 28 in `segment_018`, and remained zero in `segment_037`.
 Some individual joints worsened and large prediction jumps remain. These are fitting
 checks, not 3D accuracy measurements. Reprocessing reuses cached neural observations
-and writes `raw-hands-v6.hmotion`, preserving previous fitted motion files.
+and writes `raw-hands-v7-camera.hmotion`, preserving previous fitted motion files.
 
 Canonical metacarpals use fixed template anatomy, labeled `Authored` while their hand
 is observed. They are neither measured joints nor inferred motion. Missing hands retain

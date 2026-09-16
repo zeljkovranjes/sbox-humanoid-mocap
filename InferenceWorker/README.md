@@ -179,12 +179,18 @@ Old cache directories remain intact. Target/correction changes and completed-cac
 replays do not load the neural models. Palm reprojection disagreement is reported as
 a derived diagnostic, separately from detector presence and any confidence fields.
 
-MediaPipe fitting writes `raw-hands-v6.hmotion` (or `raw-hands-v6-swapped.hmotion`).
+MediaPipe fitting writes `raw-hands-v7-camera.hmotion` (or `raw-hands-v7-camera-swapped.hmotion`).
 It labels the canonical metacarpals as authored rest anatomy when their hand is observed,
-so they no longer block contact search through otherwise observed fingers. Existing v5
-motion files remain intact. **Advanced → Process again** rebuilds these labels using
+so they no longer block contact search through otherwise observed fingers. Existing v5/v6
+motion files remain intact. **Advanced → Process again** rebuilds this metadata using
 cached observations without loading the neural models; **Apply adjustments** retains
 the currently selected source file.
+
+Hand motion now stores the pixel dimensions associated with its camera intrinsics.
+Native MANO fitting writes `raw-hands-v5-camera.hmotion`, preserving the previous
+`raw-hands.hmotion`. This metadata update reuses cached predictions and does not change
+bone motion. MediaPipe's camera describes its authored wrist plane and is explicitly
+uncalibrated. It does not estimate lens calibration or recover wrist depth.
 
 Fresh runs with the corrected video decoder recorded the following on the Ryzen 7
 7800X3D, 32 GB RAM, using four CPU inference threads and no GPU:
