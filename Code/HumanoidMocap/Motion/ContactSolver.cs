@@ -7,7 +7,7 @@ namespace HumanoidMocap.Motion;
 using Vector3 = System.Numerics.Vector3;
 
 public readonly record struct ContactSample(double Time,Vector3 Hand, XForm Object,
-    Vector3 ClosestSurfacePoint, float FingerClosure, bool Observed);
+    Vector3 ClosestSurfacePoint, float FingerClosure, bool Observed,Vector3? Wrist=null);
 
 public sealed class ContactSettings
 {
@@ -17,6 +17,7 @@ public sealed class ContactSettings
     public double MinimumPersistence { get; set; } = .12;
     public double ReleasePersistence { get; set; } = .08;
     public double BlendSeconds { get; set; } = .08;
+    public double MaximumSampleGap { get; set; } = .1;
 }
 
 /// <summary>Suggestions require an explicit object track and actual surface samples.
@@ -25,25 +26,34 @@ public static class ContactSolver
 {
     public static List<ContactInterval> Suggest(IReadOnlyList<ContactSample> samples,string hand,string prop,ContactSettings s)
     {
-        if(s.EnterDistance<=0 || s.ExitDistance<=s.EnterDistance || s.MinimumPersistence<0 || s.ReleasePersistence<0)
+        if(!float.IsFinite(s.EnterDistance+s.ExitDistance+s.MaximumRelativeSpeed)||!double.IsFinite(s.MinimumPersistence+s.ReleasePersistence+s.MaximumSampleGap)
+            ||s.EnterDistance<=0 || s.ExitDistance<=s.EnterDistance || s.MaximumRelativeSpeed<=0||s.MinimumPersistence<0 || s.ReleasePersistence<0||s.MaximumSampleGap<=0)
             throw new ArgumentException("Invalid contact hysteresis settings.");
         var result=new List<ContactInterval>();int candidate=-1,active=-1,release=-1;Vector3 local=default;
         for(var i=0;i<samples.Count;i++)
         {
             var x=samples[i];
             if(i>0 && x.Time<=samples[i-1].Time)throw new ArgumentException("Contact times must increase.");
+            // Loss of observations is not evidence of a continuing grip. Never bridge
+            // an occlusion or unsampled interval using temporal hysteresis.
+            if(!x.Observed||(i>0&&x.Time-samples[i-1].Time>s.MaximumSampleGap))
+            {
+                if(active>=0)Add(Math.Max(active,release>=0?release-1:i-1));
+                active=candidate=release=-1;
+                if(!x.Observed)continue;
+            }
             var inv=x.Object.Inverse();var p=XForm.Compose(inv,new XForm(x.Hand,Quaternion.Identity)).Pos;
-            var speed=i==0?float.PositiveInfinity:(p-XForm.Compose(samples[i-1].Object.Inverse(),new XForm(samples[i-1].Hand,Quaternion.Identity)).Pos).Length()/(float)(x.Time-samples[i-1].Time);
+            var speed=i==0||!samples[i-1].Observed||x.Time-samples[i-1].Time>s.MaximumSampleGap?float.PositiveInfinity:(p-XForm.Compose(samples[i-1].Object.Inverse(),new XForm(samples[i-1].Hand,Quaternion.Identity)).Pos).Length()/(float)(x.Time-samples[i-1].Time);
             var distance=Vector3.Distance(x.Hand,x.ClosestSurfacePoint);
             bool enter=x.Observed && distance<s.EnterDistance && speed<s.MaximumRelativeSpeed && x.FingerClosure>.25f;
-            bool stay=x.Observed && distance<s.ExitDistance && speed<s.MaximumRelativeSpeed*2;
+            bool stay=x.Observed && distance<s.ExitDistance && speed<s.MaximumRelativeSpeed*2&&x.FingerClosure>.15f;
             if(active<0)
             {
                 if(!enter){candidate=-1;continue;}
                 if(candidate<0)candidate=i;
                 if(x.Time-samples[candidate].Time>=s.MinimumPersistence)
                 {
-                    active=candidate;local=XForm.Compose(samples[active].Object.Inverse(),new XForm(samples[active].ClosestSurfacePoint,Quaternion.Identity)).Pos;
+                    active=candidate;local=XForm.Compose(samples[active].Object.Inverse(),new XForm(samples[active].Wrist??samples[active].ClosestSurfacePoint,Quaternion.Identity)).Pos;
                 }
             }
             else if(stay)release=-1;

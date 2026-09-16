@@ -232,6 +232,16 @@ public sealed class PropTrack
     public MotionSpace Space { get; set; }
     public List<MotionBone> Bones { get; set; } = new();
     public List<MotionFrame> Frames { get; set; } = new();
+    /// <summary>Actual rigid contact geometry in object-bone-local metre coordinates.
+    /// Not exported as character skin or reconstructed from hand motion.</summary>
+    public List<PropSurface> Surfaces { get; set; } = new();
+}
+public sealed class PropSurface
+{
+    public string Bone { get; set; } = "";
+    public string Source { get; set; } = "";
+    public float[][] Vertices { get; set; } = Array.Empty<float[]>();
+    public int[] Triangles { get; set; } = Array.Empty<int>();
 }
 public sealed class ContactInterval
 {

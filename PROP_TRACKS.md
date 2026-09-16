@@ -11,7 +11,8 @@ reconstruction, existing contacts and target adjustments. The prop take must cov
 entire capture range; missing motion is not extrapolated. Import one root per file, with
 articulated parts below it. Import independently moving detachable objects separately.
 Input FBX is limited to 64 MiB and animation sampling to four million bone transforms.
-The main **Cancel** button cancels sampling. Meshes and skin weights are not imported.
+The main **Cancel** button cancels sampling. Rigging/skin weights are not modified or
+exported. Eligible rigid mesh triangles are retained only as contact surfaces.
 
 Use **Add contact…** to choose a wrist, prop bone, video interval and object-local anchor.
 **Use wrist at interval midpoint** places a manual anchor from the nearest captured sample;
@@ -23,6 +24,30 @@ motion file. An edited interval must contain all existing sliding keys.
 
 You can also open a prepared `.hmotion` through **Advanced → Open motion…**. Neither path
 automatically tracks props from video or reconstructs an object's geometry.
+
+**Suggest contacts** is available when the imported prop includes contact surfaces.
+Include a triangulated, low-poly mesh in the FBX: either parent a rigid mesh to an
+animated bone, or weight every triangle's three vertices fully to the same bone.
+Mixed weights, nontriangular faces, additive skin, blend shapes and animated, mirrored or nonuniform bone scale
+are omitted rather than approximated. The import diagnostics report skipped faces.
+Contact geometry is limited to 100,000 vertices and 100,000 triangles across the capture.
+It is used for proximity tests; preview and exported FBX still contain prop armatures.
+Rigid skin bind conversion uses the transform relationship documented in Autodesk's
+[FBX SDK example](https://help.autodesk.com/cloudhelp/2020/ENU/FBX-API-Reference/cpp_ref/_view_scene_2_draw_scene_8cxx-example.html),
+with geometric transforms and fixed uniform bind scale included.
+
+Suggestions require an observed wrist and at least three observed finger chains. The
+solver tests palm-center proximity to actual triangles, geometric finger bend, relative
+motion, persistence and release hysteresis. Missing observations and gaps over 0.1 s break
+intervals. Near-equal distances to different objects/parts are left unconstrained and
+reported as ambiguous. Existing intervals, including disabled ones, are preserved.
+The search is cancellable and has a bounded work budget; it does not move any object.
+
+New intervals stay yellow until confirmed. Their object-local wrist anchors retain the
+initial wrist offset instead of placing the wrist itself on the prop surface. These are
+heuristics, not calibrated confidence or proof of a grip. They may miss open-handed
+contacts, sliding grasps or inaccurate hand/prop alignment. Contact surfaces are not a
+hand mesh, and this pass does not solve finger penetration or palm orientation.
 
 Use the First Person workspace with camera-relative hand capture. Add `objects` and
 `contacts` to the document. Each object needs a unique `id`, explicit `source`
@@ -82,9 +107,9 @@ the selected motion range; it reports gaps instead of dropping the objects silen
 
 Target prop export requires First Person hand capture with root-motion removal off.
 Captured-skeleton export retains objects in source coordinates. Body-prop constraints,
-automatic surface sampling/contact suggestions, palm/finger constraints, mesh collision
-and ContactOpt refinement are not integrated. The mathematical suggestion API still
-requires actual surface samples and user review; it is not an object tracker.
+palm/finger constraints, collision resolution and ContactOpt refinement are not integrated.
+Surface-based wrist suggestions require imported geometry and user review; they are not
+an object tracker.
 
 Verification used real MediaPipe hand reconstruction plus an explicitly authored moving
 four-bone test prop. Both hands followed their targets, the native preview drew the prop,
@@ -98,3 +123,12 @@ the animation, added a contact, saved/reopened its edits, and compiled/played co
 reopening. Prop positions in exported FBX matched preview placement within 0.00001 cm;
 this measures export consistency, not reconstruction accuracy. The original capture
 remained byte-for-byte unchanged. Both import/contact dialogs were visually reviewed.
+
+Surface suggestions were tested on controlled moving-object fixtures for positive grips,
+finger opening, missing observations, competing objects and preserved wrist offsets.
+The real 121-frame MediaPipe capture was also checked against the manually authored box:
+it produced zero suggestions because its palms were outside the surface distance limit.
+That search took about 0.021 s on the tested Ryzen 7 7800X3D. The native Citizen editor
+imported all 12 box triangles, ran the search and compiled/played the final 99-bone export.
+These checks establish the import/search/review path; they do not establish automatic
+grip accuracy on real object capture or provide a penetration benchmark.

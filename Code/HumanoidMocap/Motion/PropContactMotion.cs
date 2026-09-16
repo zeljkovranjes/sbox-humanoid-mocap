@@ -34,6 +34,7 @@ public sealed class PropContactMotion
         if(motion.Objects is null||motion.Objects.Count>64)throw new FormatException("At most 64 prop tracks are supported.");
         var objects=new Dictionary<string,PropTrack>(StringComparer.Ordinal);
         long samples=(long)motion.Bones.Count*motion.Frames.Count;
+        long surfaceVertices=0,surfaceTriangles=0;
         foreach(var prop in motion.Objects)
         {
             if(prop is null||string.IsNullOrWhiteSpace(prop.Id)||!objects.TryAdd(prop.Id,prop)
@@ -50,6 +51,16 @@ public sealed class PropContactMotion
                 throw new FormatException("Motion and props exceed the transform budget. Select a shorter range.");
             // Reuse the exact channel/hierarchy checks; this child document has no objects or contacts.
             new MotionDocument{SourceFps=motion.SourceFps,Bones=prop.Bones,Frames=prop.Frames,Space=prop.Space}.Validate();
+            if(prop.Surfaces is null||prop.Surfaces.Count>1024)throw new FormatException("Invalid prop contact surfaces.");
+            foreach(var surface in prop.Surfaces)
+            {
+                if(surface is null||string.IsNullOrWhiteSpace(surface.Source)||!prop.Bones.Any(b=>b.Name==surface.Bone)
+                    ||surface.Vertices is null||surface.Triangles is null||surface.Triangles.Length%3!=0
+                    ||surface.Vertices.Any(v=>v is null||v.Length!=3||v.Any(x=>!float.IsFinite(x)))
+                    ||surface.Triangles.Any(i=>i<0||i>=surface.Vertices.Length))throw new FormatException("Invalid prop contact geometry or bone binding.");
+                surfaceVertices+=surface.Vertices.Length;surfaceTriangles+=surface.Triangles.Length/3;
+                if(surfaceVertices>100000||surfaceTriangles>100000)throw new FormatException("Prop contact geometry exceeds 100,000 vertices/triangles. Use a simpler contact mesh.");
+            }
         }
         foreach(var contact in motion.Contacts)
         {

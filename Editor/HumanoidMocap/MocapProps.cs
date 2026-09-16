@@ -25,7 +25,7 @@ public sealed partial class RetargetWindow
         {
             var fps=(float)_rawMotion.SourceFps;
             var scene=await Task.Run(()=>{
-                if(new FileInfo(path).Length>64*1024*1024)throw new InvalidDataException("Prop FBX exceeds 64 MiB. Export only the armature and selected animation.");
+                if(new FileInfo(path).Length>64*1024*1024)throw new InvalidDataException("Prop FBX exceeds 64 MiB. Export only the selected prop, a simple contact mesh and its animation.");
                 return FbxImporter.Import(File.ReadAllBytes(path),new(){SampleFps=fps,MaximumTransformSamples=FbxAnimationWriter.MaximumTransformSamples,CancellationToken=token});
             },token);
             await EditorPipeline.SwitchToMainThread();token.ThrowIfCancellationRequested();
@@ -51,8 +51,11 @@ public sealed partial class RetargetWindow
             var saved=await Task.Run(()=>{
                 token.ThrowIfCancellationRequested();
                 var prop=PropTrackImport.Convert(scene,take,id,raw.Space,start,offset,rotation,scale,token);prop.ModelPath=Path.GetFullPath(sourcePath);
+                if(new FileInfo(sourcePath).Length>64*1024*1024)throw new InvalidDataException("Prop FBX exceeds 64 MiB.");
+                var surfaces=FbxPropSurfaces.Read(File.ReadAllBytes(sourcePath),scene,scale,token);prop.Surfaces=surfaces.Surfaces;
                 var composed=PropTrackImport.Add(raw,prop);composed.Contacts=contacts;
                 composed.Diagnostics.Add($"Prop '{id}' imported from {Path.GetFileName(sourcePath)} / {scene.Clips[take].Name}; placement and timing supplied by the user. Not video object tracking.");
+                composed.Diagnostics.Add($"Prop '{id}': {prop.Surfaces.Sum(s=>s.Triangles.Length/3)} rigid contact triangles imported; {surfaces.SkippedFaces} unsupported/nontriangular faces omitted. Contact geometry is used for suggestions, not exported as skin.");
                 composed.Validate();var edited=cleanup is null?composed:MotionCleanup.Apply(composed,cleanup);
                 token.ThrowIfCancellationRequested();
                 var folder=Path.GetDirectoryName(path);var stem=Path.GetFileNameWithoutExtension(path)+"-props-"+Guid.NewGuid().ToString("N")[..8];

@@ -388,6 +388,8 @@ public sealed partial class RetargetWindow
         actions.Add(new Button("Import prop FBX…","view_in_ar"){Enabled=supported,Clicked=PickPropAnimation,
             ToolTip="Import animated prop bones with explicit camera-space alignment into a separate capture."});
         actions.Add(new Button("Add contact…","add"){Enabled=supported&&_editedMotion.Objects.Count>0,Clicked=()=>OpenContactEditor()});
+        actions.Add(new Button("Suggest contacts","auto_fix_high"){Enabled=supported&&_editedMotion.Objects.Any(p=>p.Surfaces.Any(s=>s.Triangles.Length>0)),Clicked=()=>_=SuggestPropContactsAsync(),
+            ToolTip="Use imported rigid surfaces, finger bend and relative motion to propose intervals. Suggestions require review."});
         actions.AddStretchCell();
         if(_editedMotion is { Objects.Count: >0 })
             _contactRows.Add(new Label("Prop armatures · "+string.Join(", ",_editedMotion.Objects.Select(p=>$"{p.Id} ({p.Source})")),this){WordWrap=true});
