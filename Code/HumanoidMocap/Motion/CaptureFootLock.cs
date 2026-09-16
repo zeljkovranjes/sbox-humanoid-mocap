@@ -26,7 +26,7 @@ public static class CaptureFootLock
     {
         if(source.CaptureSpace!=MotionSpace.WorldRelative||source.CaptureStationaryJoints is not {Count:>0} probabilities||frames.Count==0)
             return new(0,0,0);
-        var scale=axis==TargetUpAxis.YUpCm?100f:39.3700787f;var rig=target.Skeleton;var fps=source.Clips[0].Fps;
+        var scale=axis==TargetUpAxis.ZUpEngine?39.3700787f:100f;var rig=target.Skeleton;var fps=source.Clips[0].Fps;
         var trajectories=new Dictionary<int,Vector3[]>();
         foreach(var role in new[]{BoneRole.FootL,BoneRole.FootR,BoneRole.ToeL,BoneRole.ToeR})
             if(target.BoneForRole(role) is int bone)trajectories.TryAdd(bone,new Vector3[frames.Count]);

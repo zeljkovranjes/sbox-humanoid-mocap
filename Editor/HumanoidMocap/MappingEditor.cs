@@ -72,8 +72,8 @@ public sealed class MappingEditor : Dialog
 
 		Layout.Add( new Label( this )
 		{
-			Text = "Assign a source bone to each humanoid role. Roles left at <none> are skipped "
-				+ "(missing fingers/toes are fine; the body and limb chains are required).",
+			Text = "Assign bones to their roles; leave absent bones at <none>. For hand capture, "
+				+ "map each wrist and its finger chains. Arms are optional; a torso and legs are not required.",
 			WordWrap = true,
 		} );
 

@@ -11,7 +11,7 @@ public readonly record struct CapturePlacement(float Units,Quaternion Rotation,V
 {
     public static CapturePlacement ForTarget(TargetUpAxis axis,TargetCorrectionSettings settings)
     {
-        var units=axis==TargetUpAxis.YUpCm?100f:39.3700787f;
+        var units=axis==TargetUpAxis.ZUpEngine?39.3700787f:100f;
         var axisRotation=axis==TargetUpAxis.YUpCm?Quaternion.Identity:Quaternion.CreateFromAxisAngle(Vector3.UnitX,MathF.PI/2);
         var camera=Quaternion.CreateFromYawPitchRoll(settings.CaptureCameraYawDegrees*MathF.PI/180,
             settings.CaptureCameraPitchDegrees*MathF.PI/180,0);

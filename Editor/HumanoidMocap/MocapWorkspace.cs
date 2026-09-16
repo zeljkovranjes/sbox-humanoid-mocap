@@ -396,7 +396,8 @@ public sealed partial class RetargetWindow
         string Coordinates(System.Numerics.Vector3 v)=>FormattableString.Invariant($"{v.X:0.######},{v.Y:0.######},{v.Z:0.######}");
         _shoulderL.Text=Coordinates(settings.LeftShoulder);_shoulderR.Text=Coordinates(settings.RightShoulder);
         _elbowL.Text=Coordinates(settings.LeftElbow);_elbowR.Text=Coordinates(settings.RightElbow);
-        _capturePosition.Text=Coordinates(settings.CaptureCameraPosition);_captureYaw.Text="180";_capturePitch.Text="0";
+        _capturePosition.Text=Coordinates(settings.CaptureCameraPosition);
+        _captureYaw.Text=settings.CaptureCameraYawDegrees.ToString("G9",CultureInfo.InvariantCulture);_capturePitch.Text="0";
         RestoreTargetAdjustments();
         RefreshWristOffsetRows();
     }

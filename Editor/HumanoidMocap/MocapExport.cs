@@ -66,7 +66,7 @@ public sealed partial class RetargetWindow
                 var combined=PropAnimation.Append(target.Rig.Skeleton,clip.SolvedFrames,sourceTimes,preview.Props,preview.Placement);
                 return FbxAnimationWriter.Write(combined.Skeleton, clip.ClipName, combined.Frames,
                     Enumerable.Range(0, clip.SolvedFrames.Count).Select(i => i / (double)clip.Fps).ToArray(), clip.Fps,
-                    target.UpAxis == TargetUpAxis.YUpCm ? 1 : 2, target.UpAxis == TargetUpAxis.YUpCm ? 1 : 2.54,
+                    target.UpAxis == TargetUpAxis.YUpCm ? 1 : 2, target.UpAxis == TargetUpAxis.ZUpEngine ? 2.54 : 1,
                     preview.Space + "; retargeted");
             });
             // Stage next to the destination. A failed write leaves any existing export intact.

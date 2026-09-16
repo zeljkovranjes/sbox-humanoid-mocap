@@ -491,9 +491,8 @@ public static class TargetPickers
 	/// fingers, one finger, a missing hand — unusable as a target (and, before the sbox
 	/// preset existed, even the citizen skeleton itself scored 5%). The solver skips
 	/// unmapped roles cleanly (the classic citizen ships without pinky roles), so a
-	/// best-effort map is ACCEPTED as long as it covers the structural minimum the
-	/// retarget needs — hips, both upper legs, and the upper-body evidence the character
-	/// frame is built from — and only genuine non-humanoids are rejected.
+	/// best-effort map is accepted when it covers the body structural minimum or usable
+	/// hand geometry. Hand capture can drive an arms/hands-only rig without a body.
 	/// </summary>
 	static MappingResult DetectHumanoid(
 		SkeletonModel skeleton, out string error, out MappingResult bestEffort )
@@ -509,7 +508,21 @@ public static class TargetPickers
 		if ( !report.NeedsUserDecision )
 			return map;
 
-		if ( HasStructuralMinimum( map ) )
+		// Full-body profile scoring penalizes missing hips and legs. For viewmodel
+		// rigs, retain exact finger aliases instead of falling back to generic
+		// numbering (e.g. s&box's proximal 0 must not become a metacarpal).
+		if ( !HasStructuralMinimum( map ) )
+		{
+			var handMap = HumanoidMocap.Motion.HandCaptureRetargeter.DetectTargetHandMapping( skeleton, out var ambiguous );
+			if ( handMap is not null ) return handMap;
+			if ( ambiguous )
+			{
+				error = "Hand presets disagree about this rig's bone roles. Review the wrist and finger mapping.";
+				return null;
+			}
+		}
+
+		if ( HasStructuralMinimum( map ) || HumanoidMocap.Motion.HandCaptureRetargeter.HasTargetHandGeometry( skeleton, map ) )
 		{
 			map.Notes.Add(
 				$"Target accepted best-effort (mapping confidence {map.Confidence * 100f:0}%): "
@@ -517,9 +530,9 @@ public static class TargetPickers
 			return map;
 		}
 
-		error = "Armature not auto-recognized as humanoid (mapping confidence "
-			+ $"{map.Confidence * 100f:0}%): could not locate hips, both upper legs and an "
-			+ "upper body from the bone names or topology.";
+		error = "Armature needs bone mapping (mapping confidence "
+			+ $"{map.Confidence * 100f:0}%): map a body, or at least one hand with finger "
+			+ "joints defining its palm and finger chains for hand capture.";
 		return null;
 	}
 

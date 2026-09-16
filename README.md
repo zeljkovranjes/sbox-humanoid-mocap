@@ -26,6 +26,8 @@ Keep only one copy of the library installed. Humanoid Retargeter can remain inst
 
 The character selector shows **Human** or **Citizen**. Citizen uses Terry's classic `models/citizen/citizen.vmdl` and its own proportions. Switching rebuilds the preview and target export from the same capture; it does not rerun reconstruction. Each target retains its saved adjustments.
 
+For your own FPS hands, choose **Advanced → Target → Custom FBX / GLB…** or **Custom VMDL…**. Hand capture accepts arms- or hands-only rigs without hips or legs. Map the wrists and finger chains; automatic matching uses recognized hand presets, with manual mapping for unfamiliar names. Existing arms use IK; detached hands receive wrist motion directly. Viewmodels without a head or hips use their authored origin as the assumed camera position and their left/right shoulder or wrist spacing to suggest facing. Review these editable assumptions. **Export…** writes that target's armature and animated bones.
+
 First-person preview hides the character's separate head mesh when supported, preventing it from clipping through the camera. Switching to third-person view restores it. This affects only preview visibility.
 
 For native hand capture, **Advanced → First Person → Recording FOV (°)** optionally supplies the video's horizontal lens angle. Leave it blank for the automatic assumption. Choose **Process again** to apply it; previous captures remain intact. This affects inferred depth and is separate from **Viewmodel FOV**, which only changes preview framing. See [capture instructions](CAPTURE.md) before adjusting it.

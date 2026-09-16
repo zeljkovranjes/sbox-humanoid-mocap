@@ -27,7 +27,7 @@ public static class FingerContactCorrection
     {
         if(!IsDistal(role)||rig.BoneForRole(role) is not int b||rig.TailWorldOf(b) is not Vector3 tail)return null;
         var local=XForm.Compose(rig.Skeleton.RestWorld[b].Inverse(),new(tail,Quaternion.Identity)).Pos;
-        return local/(axis==TargetUpAxis.YUpCm?100f:39.3700787f);
+        return local/(axis==TargetUpAxis.ZUpEngine?39.3700787f:100f);
     }
 
     public static void Apply(List<XForm[]> frames,TargetRig rig,TargetUpAxis axis,TargetCorrectionSettings settings,PropContactMotion contacts,float fps)

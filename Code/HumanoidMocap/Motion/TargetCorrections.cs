@@ -32,7 +32,7 @@ public sealed class TargetCorrectionSettings
 
     public static TargetCorrectionSettings ForRig(TargetRig rig,TargetUpAxis axis)
     {
-        var scale=axis==TargetUpAxis.YUpCm?100f:39.3700787f;
+        var scale=axis==TargetUpAxis.ZUpEngine?39.3700787f:100f;
         var rotation=axis==TargetUpAxis.YUpCm?Quaternion.Identity:Quaternion.CreateFromAxisAngle(Vector3.UnitX,-MathF.PI/2);
         Vector3 Position(BoneRole role,Vector3 fallback)=>rig.BoneForRole(role) is int b
             ?Vector3.Transform(rig.Skeleton.RestWorld[b].Pos/scale,rotation):fallback;
@@ -43,6 +43,36 @@ public sealed class TargetCorrectionSettings
         result.LeftElbow=result.LeftShoulder+new Vector3(.27f,-.35f,.15f)*height;
         result.RightElbow=result.RightShoulder+new Vector3(-.27f,-.35f,.15f)*height;
         result.CaptureCameraPosition=Position(BoneRole.Head,new(0,1.55f,0))+Vector3.UnitY*.1f*height;
+        // FPS viewmodels without a body use their authored origin as the assumed
+        // camera position. A full-body eye-height fallback would lift these wrists
+        // above the rig and exhaust arm reach before any captured movement.
+        if(rig.BoneForRole(BoneRole.Head) is null&&rig.BoneForRole(BoneRole.Hips) is null)
+        {
+            result.CaptureCameraPosition=Vector3.Zero;
+            // A viewmodel can face a different horizontal axis than a body rig.
+            // Its left/right shoulder line supplies lateral direction; detached
+            // hands can use their authored wrist spacing. This remains editable.
+            var leftRole=rig.BoneForRole(BoneRole.UpperArmL) is not null?BoneRole.UpperArmL:BoneRole.HandL;
+            var rightRole=rig.BoneForRole(BoneRole.UpperArmR) is not null?BoneRole.UpperArmR:BoneRole.HandR;
+            if(rig.BoneForRole(leftRole) is not null&&rig.BoneForRole(rightRole) is not null)
+            {
+                var lateral=Position(leftRole,Vector3.Zero)-Position(rightRole,Vector3.Zero);lateral.Y=0;
+                if(lateral.LengthSquared()>1e-8f)
+                {
+                    lateral=Vector3.Normalize(lateral);var forward=Vector3.Cross(lateral,Vector3.UnitY);
+                    result.CaptureCameraYawDegrees=MathF.Atan2(-forward.X,-forward.Z)*180/MathF.PI;
+                    float ArmLength(BoneRole upper,BoneRole lower,BoneRole hand)=>
+                        rig.BoneForRole(upper) is not null&&rig.BoneForRole(lower) is not null&&rig.BoneForRole(hand) is not null
+                        ?Vector3.Distance(Position(upper,Vector3.Zero),Position(lower,Vector3.Zero))+
+                            Vector3.Distance(Position(lower,Vector3.Zero),Position(hand,Vector3.Zero)):0;
+                    var armLength=Math.Max(ArmLength(BoneRole.UpperArmL,BoneRole.LowerArmL,BoneRole.HandL),
+                        ArmLength(BoneRole.UpperArmR,BoneRole.LowerArmR,BoneRole.HandR));
+                    var proportion=armLength>1e-4f?armLength/.6f:1f;
+                    result.LeftElbow=result.LeftShoulder+(lateral*.27f-Vector3.UnitY*.35f+forward*.15f)*proportion;
+                    result.RightElbow=result.RightShoulder+(-lateral*.27f-Vector3.UnitY*.35f+forward*.15f)*proportion;
+                }
+            }
+        }
         return result;
     }
 }
@@ -54,7 +84,7 @@ public static class TargetCorrections
     {
         var skeleton=rig.Skeleton;var world=new XForm[skeleton.Count];
         var left=new ArmConstraintSolver();var right=new ArmConstraintSolver();
-        var scale=axis==TargetUpAxis.YUpCm?100f:39.3700787f;
+        var scale=axis==TargetUpAxis.ZUpEngine?39.3700787f:100f;
         var conversion=axis==TargetUpAxis.YUpCm?Quaternion.Identity:Quaternion.CreateFromAxisAngle(Vector3.UnitX,MathF.PI/2);
         Vector3 Convert(Vector3 v)=>Vector3.Transform(v*scale,conversion);
         var up=axis==TargetUpAxis.YUpCm?Vector3.UnitY:Vector3.UnitZ;

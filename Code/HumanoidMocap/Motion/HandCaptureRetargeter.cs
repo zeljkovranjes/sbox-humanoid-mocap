@@ -28,6 +28,59 @@ public static class HandCaptureRetargeter
 
     sealed record Transfer(int Source,int Target,bool Left,Quaternion Offset);
 
+    /// <summary>Exact preset aliases for partial hand rigs, whose absent body roles
+    /// deliberately fail the full-humanoid confidence threshold. Tied, conflicting
+    /// profiles require manual mapping instead of guessing finger numbering.</summary>
+    public static MappingResult? DetectTargetHandMapping(HumanoidMocap.Skeleton.Skeleton skeleton)
+        =>DetectTargetHandMapping(skeleton,out _);
+
+    public static MappingResult? DetectTargetHandMapping(HumanoidMocap.Skeleton.Skeleton skeleton,out bool ambiguous)
+    {
+        ambiguous=false;
+        var candidates=ProfileLibrary.All.Select(p=>ProfileDetector.Apply(p,skeleton))
+            .Where(m=>HasTargetHandGeometry(skeleton,m))
+            .Select(m=>(Map:m,Count:m.RoleToBone.Keys.Count(r=>FingerSolver.IsFingerRole(r)||r is BoneRole.HandL or BoneRole.HandR)))
+            .OrderByDescending(c=>c.Count).ToArray();
+        if(candidates.Length==0)return null;
+        var best=candidates[0];
+        foreach(var candidate in candidates.Skip(1).TakeWhile(c=>c.Count==best.Count))
+            if(candidate.Map.RoleToBone.Count!=best.Map.RoleToBone.Count||
+                candidate.Map.RoleToBone.Any(p=>!best.Map.RoleToBone.TryGetValue(p.Key,out var b)||b!=p.Value))
+            {ambiguous=true;return null;}
+        best.Map.Notes.Add("Exact hand-profile aliases selected for a partial target; full-body mapping confidence is not applicable.");
+        return best.Map;
+    }
+
+    /// <summary>Whether a partial target has enough mapped rest geometry for hand
+    /// transfer. A torso and legs are unnecessary; each mapped hand needs a palm
+    /// plane and usable finger segments. This does not validate body retargeting.</summary>
+    public static bool HasTargetHandGeometry(HumanoidMocap.Skeleton.Skeleton skeleton,MappingResult mapping)
+    {
+        if(mapping.RoleToBone.Values.Any(i=>i<0||i>=skeleton.Count)||
+            mapping.RoleToBone.Values.Distinct().Count()!=mapping.RoleToBone.Count)return false;
+        var found=false;
+        try
+        {
+            foreach(var left in new[]{true,false})
+            {
+                var handRole=left?BoneRole.HandL:BoneRole.HandR;
+                if(!mapping.RoleToBone.TryGetValue(handRole,out var hand))continue;
+                found=true;
+                _=Frame(mapping,skeleton.RestWorld,handRole,left);
+                foreach(var (role,bone) in mapping.RoleToBone)
+                {
+                    if(!FingerSolver.IsFingerRole(role)||role.ToString().EndsWith("L",StringComparison.Ordinal)!=left)continue;
+                    var ancestor=skeleton[bone].ParentIndex;
+                    while(ancestor>=0&&ancestor!=hand)ancestor=skeleton[ancestor].ParentIndex;
+                    if(ancestor!=hand)return false;
+                    _=Frame(mapping,skeleton.RestWorld,role,left);
+                }
+            }
+        }
+        catch(ArgumentException){return false;}
+        return found;
+    }
+
     public static Clip Solve(SourceScene source,MappingResult mapping,TargetRig target,TargetUpAxis axis,
         TargetCorrectionSettings settings,int take,string name,bool fingers=true,Action<string>? diagnostic=null)
     {
@@ -114,7 +167,7 @@ public static class HandCaptureRetargeter
         if(diagnostic is not null)
         {
             var observed=0;var limited=0;var maximumCm=0f;
-            var toCm=axis==TargetUpAxis.YUpCm?1f:2.54f;
+            var toCm=axis==TargetUpAxis.ZUpEngine?2.54f:1f;
             for(var f=0;f<output.Frames.Count;f++)
             {
                 FkUtil.ToWorld(output.Frames[f],target.Skeleton,targetWorld);

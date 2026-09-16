@@ -307,3 +307,20 @@ This fixes preview/export disagreement, not reconstruction drift or intersection
 The inspected FPS frames still have pose errors and occlusion gaps. The receiving
 ModelDoc model can apply its own constraints to imported animation; Human's CopyPinky
 must be disabled on a project-owned model to preserve independent captured pinkies.
+
+Arms/hands-only target verification used s&box's shipped `first_person_arms_preview.fbx`
+and the existing 121-frame WildHands reconstruction of `video_0`. The picker now accepts
+its partial skeleton and uses the exact s&box finger aliases; the generic fallback had
+shifted zero-based phalanges by one segment. Z-up centimetre targets also retain their
+actual units through placement, contacts and FBX export. Previously that path used inch
+conversion, which the native export comparison rejected.
+
+The 70-bone skinned arms target passed native preview and compiled FBX playback. All 350
+sampled render-bone comparisons retained the baked pose; FBX reimport differed by at most
+0.000019 cm and quaternion-dot error 1.2e-7. A 44-bone detached-hand fixture extracted from
+that rig also retained all 121 samples through retarget/export/reimport, including motion
+on all 30 phalanges; its eight metacarpals stayed at rest. This detached fixture was an
+offline armature test, not a second skinned-model playback test. The 190 motion tests
+passed, including equivalent physical motion across Y-up cm, Z-up cm and engine inches.
+Visual review still showed reconstruction disagreement and crossed held poses during
+occlusion. These fixes establish usable target selection and export, not capture accuracy.
