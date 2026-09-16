@@ -39,15 +39,18 @@ public sealed partial class RetargetWindow
             JointEvidence.Unobserved=>"not observed",_=>"not captured"};
         var manual=preview.WristOffsets.Any(e=>WristPositionOffsets.Weight(e,time,start,end)>0);
         var reach=preview.Clip.Mapping?.Notes.FirstOrDefault(n=>n.StartsWith(HandCaptureRetargeter.ReachWarningPrefix,StringComparison.Ordinal));
-        var text=$"Left wrist: {State(left)}   ·   Right wrist: {State(right)}"+(manual?"   ·   Manual correction":"")+(reach is not null?"   ·   Clip: arm reach limited":"");
+        var missing=preview.Clip.Mapping?.Notes.FirstOrDefault(n=>n.StartsWith(HandCaptureRetargeter.MissingTargetTracksPrefix,StringComparison.Ordinal));
+        var text=$"Left wrist: {State(left)}   ·   Right wrist: {State(right)}"+(manual?"   ·   Manual correction":"")+(reach is not null?"   ·   Clip: arm reach limited":"")+
+            (missing is not null?"   ·   Target: unmapped joints":"");
         if(_trackingStatus.Text!=text)
         {
             _trackingStatus.Text=text;
-            _trackingStatus.SetStyles($"color: {(reach is null&&left==JointEvidence.Reconstructed&&right==JointEvidence.Reconstructed?Theme.TextLight:Theme.Yellow).Hex};");
+            _trackingStatus.SetStyles($"color: {(reach is null&&missing is null&&left==JointEvidence.Reconstructed&&right==JointEvidence.Reconstructed?Theme.TextLight:Theme.Yellow).Hex};");
         }
         _trackingStatus.ToolTip=$"Evidence at animation time {time:F3} s. Reconstructed means a model prediction, not measured ground truth. "+
             "Unobserved motion is not newly captured; a previous pose may be retained. Inferred gaps are interpolated. Hidden shoulders and elbows are estimated by IK. "+
-            "Manual and contact corrections do not turn missing observations into reconstructed motion."+(reach is not null?"\nClip-level check: "+reach:"");
+            "Manual and contact corrections do not turn missing observations into reconstructed motion."+(reach is not null?"\nClip-level check: "+reach:"")+
+            (missing is not null?"\nTarget compatibility: "+missing:"");
         _trackingStatus.Visible=true;
     }
 }

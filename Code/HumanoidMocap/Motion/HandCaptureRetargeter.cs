@@ -18,6 +18,7 @@ using Vector3 = System.Numerics.Vector3;
 public static class HandCaptureRetargeter
 {
     public const string ReachWarningPrefix="Target arm reach limited";
+    public const string MissingTargetTracksPrefix="Target hand mapping omits captured joints";
     public static bool Supports(MotionDocument document)=>document.Space==MotionSpace.CameraRelative&&
         document.Bones.Any(b=>b.Role is BoneRole.HandL or BoneRole.HandR)&&
         document.Bones.All(b=>b.Role is BoneRole.HandL or BoneRole.HandR||b.Role is { } role&&FingerSolver.IsFingerRole(role));
@@ -121,6 +122,29 @@ public static class HandCaptureRetargeter
             }
         }
         if(mappedHands.Count==0)throw new ArgumentException("Map at least one target hand and its finger joints.");
+        if(diagnostic is not null)
+        {
+            var omitted=new List<string>();
+            foreach(var left in new[]{true,false})
+            {
+                var suffix=left?"L":"R";var label=left?"left":"right";
+                bool Observed(BoneRole role)=>mapping.RoleToBone.TryGetValue(role,out var b)&&
+                    evidence.Any(frame=>frame[b]==JointEvidence.Reconstructed);
+                var handRole=left?BoneRole.HandL:BoneRole.HandR;
+                if(target.BoneForRole(handRole) is null)
+                {
+                    if(Observed(handRole))omitted.Add(label+" hand");
+                    continue;
+                }
+                if(!fingers)continue;
+                foreach(var finger in new[]{"Thumb","Index","Middle","Ring","Pinky"})
+                    if(mapping.RoleToBone.Keys.Any(role=>role.ToString().StartsWith(finger,StringComparison.Ordinal)&&
+                        role.ToString().EndsWith(suffix,StringComparison.Ordinal)&&target.BoneForRole(role) is null&&Observed(role)))
+                        omitted.Add(label+" "+finger.ToLowerInvariant());
+            }
+            if(omitted.Count>0)diagnostic(MissingTargetTracksPrefix+" in: "+string.Join(", ",omitted)+
+                ". Their motion cannot be included in this target's export. Map those joints or choose a compatible target; the original capture retains those tracks.");
+        }
         var capturePlacement=CapturePlacement.ForTarget(axis,settings);
         var placement=capturePlacement.Rotation;
         var sourceWorld=new XForm[source.Skeleton.Count];var targetWorld=new XForm[target.Skeleton.Count];

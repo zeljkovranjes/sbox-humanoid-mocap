@@ -28,6 +28,8 @@ The character selector shows **Human** or **Citizen**. Citizen uses Terry's clas
 
 For your own FPS hands, choose **Advanced → Target → Custom FBX / GLB…** or **Custom VMDL…**. Hand capture accepts arms- or hands-only rigs without hips or legs. Map the wrists and finger chains; automatic matching uses recognized hand presets, with manual mapping for unfamiliar names. Existing arms use IK; detached hands receive wrist motion directly. Viewmodels without a head or hips use their authored origin as the assumed camera position and their left/right shoulder or wrist spacing to suggest facing. Review these editable assumptions. **Export…** writes that target's armature and animated bones.
 
+The target must have the finger joints you want to export. Citizen's four-finger rig has no pinky chain; choose Human or a five-finger custom rig to retain pinky motion. The preview flags unmapped joints; hover its status text to see the missing hand or finger chains. The original capture keeps those tracks.
+
 First-person preview hides the character's separate head mesh when supported, preventing it from clipping through the camera. Switching to third-person view restores it. This affects only preview visibility.
 
 For native hand capture, **Advanced → First Person → Recording FOV (°)** optionally supplies the video's horizontal lens angle. Leave it blank for the automatic assumption. Choose **Process again** to apply it; previous captures remain intact. This affects inferred depth and is separate from **Viewmodel FOV**, which only changes preview framing. See [capture instructions](CAPTURE.md) before adjusting it.

@@ -25,6 +25,22 @@ WiLoR also completed the same clip and passed native preview/export/playback. It
 image-landmark agreement still did not resolve the visible placement/pose mismatch or
 shared tracking loss. Both native backends remain experimental.
 
+The complete 121-frame WildHands `video_0` capture was also checked through retargeting
+and FBX round-trip export on Human, Citizen, the engine's FPS arms FBX and a detached
+hands-only FBX fixture. Across 5,966 observed proximal/middle finger-segment comparisons,
+the largest direction change from reconstructed motion was below 0.001°. Local rotation
+channels survived FBX export within floating-point tolerance. This checks transfer of
+the predicted motion, not its agreement with the person in the video, terminal fingertip
+placement, or mesh contact. Citizen has four finger chains and cannot receive pinky
+motion. Missing target hand/finger mappings now produce a diagnostic; the raw capture
+retains all tracks.
+
+The native Citizen gate verified the visible unmapped-joint notice and its pinky
+details, then compiled and played the complete 121-frame armature-only FBX. Export
+round-trip position error was below 0.0001 cm. The compatible hands-only fixture
+produced no omission warning. Visual review still showed reconstructed hand-pose
+disagreement and full-body FPS preview clipping; these checks do not resolve them.
+
 | Backend | Status in Humanoid Mocap | Intended use and limits |
 | --- | --- | --- |
 | MediaPipe | Available, experimental C# implementation; 7.8 MB model | Lightweight hand landmarks and finger motion. Wrist depth and arm placement are estimated; this is not calibrated world tracking. |

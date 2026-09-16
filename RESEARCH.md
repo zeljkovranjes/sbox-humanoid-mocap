@@ -78,6 +78,26 @@ Further adoption needs more representative foot-contact footage and reference ev
 See [drift reduction](DRIFT_REDUCTION.md) for implemented techniques and measured outcomes,
 and [hand backends](HAND_BACKENDS.md) for available models and their current limitations.
 
+## Detector-guided wrist placement experiment
+
+A fixed-depth alternative to the earlier unconstrained translation fit was evaluated
+on the same 236 HOT3D hand observations for WildHands (840px preparation) and WiLoR.
+It adjusted camera X/Y against the detector's wrist and four knuckle pixels using a
+robust reprojection fit. Native depth, wrist rotation, finger rotations and shape were
+unchanged. Reference annotations were used only to evaluate the results.
+
+WildHands mean wrist disagreement increased from 153.7 to 160.3 mm and p95 from 198.5
+to 207.0 mm. Its mean wrist-velocity disagreement decreased from 0.225 to 0.205 m/s,
+but that did not compensate for the worse placement. WiLoR mean wrist disagreement
+decreased from 48.0 to 40.5 mm, while p95 increased from 93.9 to 95.7 mm and mean
+wrist-velocity disagreement increased from 0.140 to 0.149 m/s. Velocity comparisons
+use the same 231 consecutive observed pairs and supplied timestamps; lower speed by
+itself is not an accuracy measure. UmeTrack/MANO landmark definitions differ.
+
+This correction was not adopted. It illustrates why closer 2D agreement or lower
+motion noise alone is insufficient evidence of better 3D capture. It remains an
+isolated C# experiment; existing reconstruction and target motion are unchanged.
+
 ## Recording-camera estimation candidate
 
 The recording-FOV sensitivity results make automatic lens estimation worth evaluating.
