@@ -6,7 +6,13 @@ It is a dataset import workflow; normal phone/video uploads still use the select
 reconstruction model. Full VRS sequences, Quest cameras, ARCTIC and HOI4D are not
 supported by this importer.
 
-From the repository root, run:
+In the editor, choose **Advanced → Open motion…** and select the annotated `.tar`
+archive. The C# worker starts automatically, shows progress in the main window and
+opens the imported hand/object capture in First Person. **Cancel** stops the import;
+reopen the archive to restart. The previous capture remains available if import fails
+or is cancelled. No reconstruction models are downloaded for this workflow.
+
+For command-line use, run from the repository root:
 
 ```powershell
 dotnet run --project InferenceWorker -- import-hot3d hot3d-job.json
@@ -21,7 +27,8 @@ Use absolute paths in `hot3d-job.json`:
 }
 ```
 
-Open the reported `annotations.hmotion` using **Advanced → Open motion…**. Choose
+For a command-line import, open the reported `annotations.hmotion` using
+**Advanced → Open motion…**. Choose
 Human or Citizen, review the synchronized video, and export the target armature.
 No MANO files or neural checkpoints are needed for this import. The existing worker
 setup supplies the native OpenCV dependency and Windows H.264 encoder.
@@ -63,6 +70,9 @@ The 150-frame clip passed Human and Citizen preview, armature-only FBX export an
 compiled s&box playback. All six object roots were present in Citizen's preview and
 export, with matching sampled positions. Synchronized frames were visually reviewed.
 Target proportions still change hand-to-object contact; no automatic grip quality is claimed.
+The editor import path also passed missing-worker and cancellation checks while
+preserving the previous capture, followed by restart, cached reopening and Human FBX
+playback. No model download was triggered.
 
 On the tested Ryzen 7 7800X3D Windows PC, this 150-frame import took 13.35 seconds
 and peaked at approximately 490 MiB worker RAM. Decoded review timestamps differed

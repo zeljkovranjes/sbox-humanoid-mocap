@@ -4,6 +4,7 @@ Experimental local body and hand reconstruction. The worker is C# and calls nati
 
 The separate [`import-hot3d` command](../HOT3D.md) imports published hand/object
 annotations and produces a synchronized review video without running neural inference.
+The editor invokes it when **Advanced → Open motion…** opens an annotated HOT3D Aria archive.
 
 The editor starts this worker automatically for both workspaces and every available hand model. Select a workspace, upload a video, and inspect the result. **Advanced → Hand models…** changes the model used for subsequent FPS uploads. MediaPipe remains the lightweight default; its managed C# inference now runs in the separate worker too. ACE is not downloaded or executed.
 

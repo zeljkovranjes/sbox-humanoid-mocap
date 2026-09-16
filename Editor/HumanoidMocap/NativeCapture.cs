@@ -97,6 +97,12 @@ internal static class NativeCapture
             progress,token,command:"body-refine");
     }
 
+    public static async Task<string> ImportHot3dAsync(string archive,Action<string> progress,CancellationToken token)
+    {
+        var (worker,_)=await Prepare(progress,token);
+        return await Job(worker,"hot3d",jobs=>new{Archive=archive,Output=jobs},progress,token,command:"import-hot3d");
+    }
+
     public static async Task<string> LandmarksAsync(string video,string model,string output,double start,double? end,bool swapHands,Action<string> progress,CancellationToken token)
     {
         var template=EditorPipeline.FindLibraryAssetFile(EditorPipeline.TargetRigJsonRelative)

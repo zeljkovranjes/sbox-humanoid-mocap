@@ -130,9 +130,9 @@ public sealed partial class RetargetWindow
         captured.ToolTip="Skip target retargeting when exporting. Captured hands do not include estimated arms.";
         captured.Clicked=()=>{_exportCaptured=captured.Value;UpdateExportAvailability();};
         advancedTop.AddStretchCell();
-        advancedTop.Add(new Button("Open motion…","folder_open"){Clicked=()=>{
-            var file=EditorUtility.OpenFileDialog("Open motion","Humanoid Motion (*.hmotion)",null);
-            if(!string.IsNullOrEmpty(file))_=LoadMotionAsync(file);
+        advancedTop.Add(new Button("Open motion…","folder_open"){ToolTip="Open a saved .hmotion capture or import an annotated HOT3D Aria .tar clip.",Clicked=()=>{
+            var file=EditorUtility.OpenFileDialog("Open motion or HOT3D clip","Humanoid Motion or HOT3D (*.hmotion *.tar)",null);
+            if(!string.IsNullOrEmpty(file))_=OpenCaptureFileAsync(file);
         }});
         var range=_advancedPanel.Layout.AddRow();range.Spacing=8;
         _rangeStart=Field(range,"Start (s)","0");_rangeEnd=Field(range,"End (s)","");

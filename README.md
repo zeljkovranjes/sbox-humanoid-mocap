@@ -38,7 +38,7 @@ Use **Advanced → Hand models…** to choose MediaPipe, MobileHand, WildHands o
 
 All reconstruction runs locally in a separate C# worker. First-time setup requires the included worker source and .NET 10 SDK, or a configured prebuilt worker. Models download on first use for the selected backend. Cancellation preserves completed observations for retry. Exported animation playback needs neither the worker nor its models. See the [worker setup](InferenceWorker/README.md) and [capture instructions](CAPTURE.md).
 
-Published HOT3D hand/object annotations can also be [imported through the C# worker](HOT3D.md), then opened for preview and armature export. This separate dataset workflow does not run reconstruction on your footage.
+Published HOT3D hand/object annotations can also be [imported](HOT3D.md) by selecting an annotated Aria `.tar` clip through **Advanced → Open motion…**. The C# worker prepares its preview and armature tracks. This separate dataset workflow does not run reconstruction on your footage.
 
 Custom models need a rig and skin weights. Automatic mapping is not perfect; check the
 preview before exporting. This library exports animation and armatures; it does not
