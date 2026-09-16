@@ -117,6 +117,48 @@ Estimated shoulders and elbows are added on the selected target through IK. Capt
 export contains the hand source; ordinary export contains the preview rig and baked movement.
 Source observations are retained separately, so target and correction changes do not rerun inference.
 
+An additional local comparison ran all four available backends on the same 150-frame
+HOT3D Aria clip, `clip-001849`. Its published Fisheye624 calibration rectified the RGB
+images to a fixed, authored 640×640, 120-degree virtual camera. The camera view was not
+fitted to reference hands. All native models reused the same 236 detected hands out of
+300 reference hands; missing detections were not filled or reference-guided. Results
+were compared with UmeTrack annotations using 19 wrist-relative joints, translation
+alignment only, and no rotation or scale fitting. Native models used clip-average
+predicted shape as in production. Landmark definitions differ between representations.
+
+| Backend | Wrist-relative disagreement, mean / p95 | Absolute camera-wrist disagreement, mean / p95 |
+| --- | --- | --- |
+| MediaPipe | 84.1 / 141.7 mm | Not evaluated: assumed wrist plane |
+| MobileHand | 95.7 / 184.9 mm | 329.3 / 485.6 mm |
+| WildHands | 50.2 / 89.8 mm | 158.6 / 200.0 mm |
+| WiLoR | 30.8 / 51.1 mm | 48.0 / 93.9 mm |
+
+These are one-clip disagreements with published annotations, not dataset-wide accuracy
+or metrology. WiLoR gave the closest agreement here, with visibly imperfect fingers;
+WildHands still had substantial wrist-placement errors. MobileHand's smaller model did
+not provide comparable pose quality. No default model was changed on this evidence.
+
+On the Ryzen 7 7800X3D, four CPU inference threads, native model inference plus crop
+preparation took 2.37 s for MobileHand, 23.91 s for WildHands and 330.31 s for WiLoR.
+Peak process RAM was 0.59, 1.16 and 4.71 GB respectively. These runs reused detections;
+each additionally spent about 70–73 s rectifying source frames, and model loading took
+0.15, 1.76 and 6.42 s. They are measured stages, not fresh end-to-end times or minimum
+hardware requirements. Other editor/video work overlapped portions of the runs; GPU
+inference was not tested. Checkpoint sizes remain those in the backend table above.
+
+The full WildHands/Human and WiLoR/Citizen results passed native preview, armature-only
+FBX compilation and animated playback. Synchronized images were visually inspected;
+the wide-angle source also exposed clipping in the narrower default FPS preview.
+The derived review video uses nominal 30 fps, with a measured maximum 1.13 ms difference
+from original timestamps; motion preserves the original sample times. This functional
+verification does not make the reconstruction accurate or collision-free.
+
+The [sample archive](https://huggingface.co/datasets/bop-benchmark/hot3d/resolve/30fe9674782f32e1e5edba98476b6ff4300132c5/train_aria/clip-001849.tar)
+has SHA-256 `c3bfd5b26b1c80a4a8c038b1d26ef423464de0b12ee42c6adc67f0485dbd3775`.
+The reference reader follows hand-tracking-toolkit commit
+`950d64f7e8d2ba1fd38cd2ceede6608a8fa7f5aa`. Rectification, reference comparison, reports
+and footage remain local verification assets, outside the distributed library.
+
 MediaPipe finger fitting now carries the parent segment's orientation and applies the
 minimum swing needed to match each observed direction. This avoids the old palm-axis
 singularity when a finger points across the palm. Axial finger twist is estimated,

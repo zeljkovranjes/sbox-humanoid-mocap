@@ -17,6 +17,24 @@ recover world motion from camera-relative hands. MediaPipe still uses an assumed
 plane; native MANO backends still infer monocular depth. Confirmed contacts with explicit
 object tracks provide stronger anchors; see [prop tracks](PROP_TRACKS.md).
 
+Arm intersections are still a separate limitation. In the downloaded `video_0` excerpt,
+the synchronized preview at 2 seconds shows intersecting forearms while both hands are
+labeled `Unobserved` and retain their earlier poses. The MediaPipe backend puts both wrists
+on an assumed depth plane; this cannot represent the correct depth ordering of crossing
+arms. Independently solved target elbows do not enforce skin clearance. Smoothing does
+not recover those missing observations or resolve the depth ambiguity.
+
+A bounded, coupled elbow-swivel experiment preserved wrist poses, finger motion and
+bone lengths, but failed visual acceptance. Estimated capsule overlap remained in all
+41 originally overlapping Human frames and all 40 Citizen frames of the 121-frame
+excerpt. Maximum proxy penetration changed from 4.82 to 4.30 cm for Human and 3.62 to
+3.31 cm for Citizen, while the elbows visibly changed. Those radii are anatomical
+estimates, not measured skin surfaces. Native export and playback passed, but that did
+not resolve the intersections. This experiment is not enabled or shipped as a fix.
+Original observations and exports remain available; no missing motion is presented as
+recovered capture. See [hand backend comparisons](HAND_BACKENDS.md) for measured depth
+and pose limitations of the alternatives.
+
 Contact search now recognizes authored template metacarpals between observed wrists
 and fingers. Incorrect missing labels previously blocked these suggestions on the default
 MediaPipe skeleton. This repairs access to contact anchoring; it does not itself change
