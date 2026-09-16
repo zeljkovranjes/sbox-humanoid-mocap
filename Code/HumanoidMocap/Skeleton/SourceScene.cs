@@ -81,6 +81,8 @@ public sealed class SourceScene
     /// Evidence uses this skeleton's bone order and the first clip's sample grid.</summary>
     public Motion.MotionSpace? CaptureSpace { get; init; }
     public IReadOnlyList<Motion.JointEvidence[]>? CaptureEvidence { get; init; }
+    public Motion.PropContactMotion? CaptureContacts { get; init; }
+    public IReadOnlyDictionary<string,float[]>? CaptureStationaryJoints { get; init; }
 
     /// <summary>
     /// Alternate skeleton whose rest is the file's Pose/BindPose, offered by the FBX

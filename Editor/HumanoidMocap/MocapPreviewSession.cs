@@ -5,7 +5,8 @@ namespace HumanoidMocap.Editor;
 
 public sealed partial class RetargetWindow
 {
-    sealed record BakedPreview(ClipResult Clip,RetargetTargetSpec Target,string Space,int Revision,bool FirstPerson);
+    sealed record BakedPreview(ClipResult Clip,RetargetTargetSpec Target,string Space,int Revision,bool FirstPerson,
+        Motion.PropContactMotion Props,Motion.CapturePlacement Placement,bool SupportsProps);
     BakedPreview _bakedPreview;
     Task _mocapPreviewTask=Task.CompletedTask;
     int _previewRevision,_motionLoadRevision;

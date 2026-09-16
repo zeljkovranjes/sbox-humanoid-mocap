@@ -40,6 +40,9 @@ The default body path is camera-relative and uses an explicit identity camera-ro
 
 For footage recorded with a stationary camera, **Advanced → Third Person → Refine · stationary camera**
 applies the pinned upstream root/contact processing and two-iteration source-limb CCD.
+The resulting motion also retains the six stationary-joint probability tracks. The
+editor uses foot/toe tracks for final target-proportion anchoring when **Reduce foot drift**
+is enabled. These tracks are separate from pose confidence and object-contact reviews.
 It produces estimated world-relative motion under that explicit assumption. The button
 then restores the original capture. Moving-camera footage requires a different camera
 recovery path and must not use this option.
@@ -64,8 +67,9 @@ Cancellation leaves the original intact; rerunning finishes this inexpensive sta
 Missing or changed originals and changed cached results produce an error. Preserve
 these files when moving a project; the restore reference currently uses an absolute path.
 
-On the tested Ryzen 7 system, refining the full 312-frame tennis capture took 0.65 seconds
-and peaked at 240 MB worker RAM, excluding editor preview/export. This is one measured
+On the tested Ryzen 7 system, refinement version `gvhmr-stationary-contact-ccd-v5` processed
+the full 312-frame tennis capture in 0.73 seconds and peaked at 242 MB worker RAM,
+excluding editor preview/export. This is one measured
 CPU run, not a minimum requirement. Affected joints are labeled as IK-generated;
 static probabilities do not become per-joint confidence or observed object contacts.
 

@@ -23,6 +23,8 @@ public sealed partial class RetargetWindow
     async Task ReviewContactAsync(ContactInterval contact,ContactReview review)
     {
         if(_processing is not null)return;
+        if(review==ContactReview.Confirmed&&new PropContactMotion(_editedMotion).UnsupportedReason(contact) is {} reason)
+        {_captureStatus.Text=reason;return;}
         contact.Review=review;
         // Rebuild from observations so contact protection is applied before filtering.
         var source=_rawMotion.Copy();source.Contacts=_editedMotion.Copy().Contacts;
@@ -42,6 +44,7 @@ public sealed partial class RetargetWindow
         _elbowL.Text=V(c.LeftElbow);_elbowR.Text=V(c.RightElbow);
         _capturePosition.Text=V(c.CaptureCameraPosition);_captureYaw.Text=F(c.CaptureCameraYawDegrees);_capturePitch.Text=F(c.CaptureCameraPitchDegrees);
         _reach.Text=F(c.Reach);_ground.Text=F(c.GroundOffset);_facing.Text=F(c.FacingDegrees);
+        _stabilizeFeetControl.Value=c.StabilizeFeet;
         _rootMotion=edit.RootMotion;_inPlaceControl.Value=_rootMotion==RootMotionMode.InPlace;
         _fov.Text=F(edit.Fov);_viewPitch.Text=F(edit.ViewPitch);_viewNear.Text=F(edit.NearClip);
     }

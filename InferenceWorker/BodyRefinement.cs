@@ -14,7 +14,7 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v4";
+    public const string Version="gvhmr-stationary-contact-ccd-v5";
     public static string Run(BodyRefinementRequest request,CancellationToken cancellation,Action<string>? progress=null)
     {
         if(!request.AssumeStationaryCamera)throw new ArgumentException("This refinement requires an explicitly stationary camera. Moving-camera recovery is not implemented.");
@@ -57,6 +57,13 @@ public static class BodyRefinement
         progress?.Invoke("Refining source limb contacts");
         var refinedPose=pose with {BodyRotations=GvhmrLimbIk.Solve(skeleton,pose,correction.Root,correction.ContactTargets,cancellation)};
         var refined=BodyMotionBuilder.WorldRelative(skeleton,refinedPose,correction.Root,source,true);
+        for(var channel=0;channel<6;channel++)
+        {
+            int c=channel;
+            refined.StationaryJoints.Add(new(){Bone=refined.Bones[GvhmrContactProcessing.ContactJoints[c]].Name,
+                Source="GVHMR static-joint head; uncalibrated contact probability, not visibility or 3D confidence",
+                Probability=Enumerable.Range(0,pose.Frames).Select(f=>1/(1+MathF.Exp(-prediction.StaticConfidenceLogits[f*6+c]))).ToArray()});
+        }
         raw.OriginalReconstruction=new(){Path=Path.GetFullPath(request.Motion),Sha256=rawHash};
         refined.OriginalReconstruction=new(){Path=Path.GetFullPath(request.Motion),Sha256=rawHash};
         refined.ModelVersion+="; "+Version;

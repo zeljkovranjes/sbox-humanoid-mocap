@@ -60,7 +60,11 @@ public sealed partial class RetargetWindow
                 // Export the exact baked transforms shown in the viewport. Unapplied
                 // edits in Advanced must not silently change the exported animation.
                 var clip=preview.Clip;var target=preview.Target;
-                return FbxAnimationWriter.Write(target.Rig.Skeleton, clip.ClipName, clip.SolvedFrames,
+                if(preview.Props.Objects.Count>0&&!preview.SupportsProps)
+                    throw new InvalidOperationException("Target prop export currently needs First Person workspace, camera-relative hand capture and root-motion removal off. Export the captured skeleton to retain objects in source coordinates.");
+                var sourceTimes=Enumerable.Range(0,clip.SolvedFrames.Count).Select(i=>Math.Min(preview.Props.StartTime+i/(double)clip.Fps,preview.Props.EndTime)).ToArray();
+                var combined=PropAnimation.Append(target.Rig.Skeleton,clip.SolvedFrames,sourceTimes,preview.Props,preview.Placement);
+                return FbxAnimationWriter.Write(combined.Skeleton, clip.ClipName, combined.Frames,
                     Enumerable.Range(0, clip.SolvedFrames.Count).Select(i => i / (double)clip.Fps).ToArray(), clip.Fps,
                     target.UpAxis == TargetUpAxis.YUpCm ? 1 : 2, target.UpAxis == TargetUpAxis.YUpCm ? 1 : 2.54,
                     preview.Space + "; retargeted");

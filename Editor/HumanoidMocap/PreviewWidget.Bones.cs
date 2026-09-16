@@ -14,6 +14,7 @@ public sealed partial class PreviewWidget
 
     void DrawTargetBones()
     {
+        DrawPropBones();
         TargetBoneOverlayCount=0;
         if(_clip is not null&&!FirstPerson)
         {

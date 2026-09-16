@@ -26,7 +26,9 @@ Keep only one copy of the library installed. Humanoid Retargeter can remain inst
 
 The character selector shows **Human** or **Citizen**. Citizen uses Terry's classic `models/citizen/citizen.vmdl` and its own proportions. Switching rebuilds the preview and target export from the same capture; it does not rerun reconstruction. Each target retains its saved adjustments.
 
-For third-person recordings made with a stationary camera, **Advanced → Third Person → Refine · stationary camera** reuses saved predictions for root and limb-contact correction. It opens a separate result; the same button restores the original capture. Review the result before export. Target foot correction is applied during retargeting. **In place** removes horizontal travel.
+For third-person recordings made with a stationary camera, **Advanced → Third Person → Refine · stationary camera** reuses saved predictions for root and limb-contact correction. It opens a separate result; the same button restores the original capture. **Reduce foot drift** keeps predicted stationary ankles and toes anchored on the final target rig. Review the result before export. **In place** removes horizontal travel. See [drift reduction and measured limits](DRIFT_REDUCTION.md).
+
+FPS cleanup reduces small wrist-position fluctuations while preserving fast movement and captured finger detail. Motion files with explicit prop tracks can also apply confirmed wrist contacts, preview their armatures and include their animated bones in FBX. See [prop tracks](PROP_TRACKS.md) for the supported input and remaining limitations; hand reconstruction alone does not recover object motion.
 
 The default export uses the preview rig and applied corrections. **Advanced → Export captured skeleton** keeps the reconstruction's skeleton and sample timing. Both export bone positions and rotations. Keep the original video, `.hmotion` and `.hmotion.adjustments.json` files for reversible edits; confidence, observation labels and contact-review data are not FBX animation channels. Applied adjustments are remembered per target and workspace, and changes reuse cached reconstruction.
 

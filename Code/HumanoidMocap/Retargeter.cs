@@ -776,6 +776,8 @@ public static class Retargeter
     {
         var requested = request.Solve ?? new SolveOptions();
         var handCapture = Motion.HandCaptureRetargeter.Supports(scene, map);
+        if(!handCapture&&scene.CaptureContacts?.Contacts.Any(c=>c.Review==Motion.ContactReview.Confirmed&&!string.IsNullOrEmpty(c.Object))==true)
+            throw new NotSupportedException("Confirmed prop constraints currently require camera-relative hand capture. Disable those constraints to preview body motion; object tracks remain available in captured-skeleton export.");
         var captureClavicleDirections = !handCapture && scene.CaptureSpace is not null && requested.TransferModes is null;
         if (captureClavicleDirections)
         {
@@ -849,6 +851,11 @@ public static class Retargeter
         }
 
         // ---- root motion (see class remarks for the Extract ↔ ExtractMotion mapping) ----
+        if(request.FootPlantCleanup&&!handCapture&&(request.MocapCorrections?.StabilizeFeet??true))
+        {
+            var locking=Motion.CaptureFootLock.Apply(frames,scene,map,target.Rig,target.UpAxis);
+            if(locking.ConstrainedSamples>0)AddNote(report,$"Final target foot anchors: {locking.ConstrainedSamples} leg samples; maximum reach residual {locking.MaximumReachResidual:F4} target units. Backend static probabilities are contact suggestions, not measured ground truth.");
+        }
         ApplyRootMotion(request.RootMotion, frames, context, report);
 
         if (request.MocapCorrections is { } corrections)

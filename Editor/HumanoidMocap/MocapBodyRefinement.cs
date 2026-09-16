@@ -14,6 +14,8 @@ public sealed partial class RetargetWindow
     void RefreshBodyRefinementButton()
     {
         if(!_bodyRefinementButton.IsValid())return;
+        if(_stabilizeFeetControl.IsValid())
+            _stabilizeFeetControl.Enabled=_rawMotion is {Space:MotionSpace.WorldRelative,StationaryJoints.Count:>0};
         var restore=_rawMotion?.OriginalReconstruction is not null;
         _bodyRefinementButton.Text=restore?"Restore original capture":"Refine · stationary camera";
         _bodyRefinementButton.Enabled=restore||_rawMotion is {Space:MotionSpace.CameraRelative}&&_rawMotion.Backend.StartsWith("GVHMR",StringComparison.Ordinal);

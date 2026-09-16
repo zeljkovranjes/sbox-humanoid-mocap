@@ -7,7 +7,7 @@ using Vector3 = System.Numerics.Vector3;
 
 public sealed class CleanupSettings
 {
-    public float Root { get; set; } = .1f;
+    public float Root { get; set; } = .25f;
     public float Arms { get; set; } = .1f;
     public float Fingers { get; set; } = .025f;
     public double MaximumGapSeconds { get; set; } = .1;
@@ -19,7 +19,10 @@ public static class MotionCleanup
     public static MotionDocument Apply(MotionDocument raw, CleanupSettings settings)
     {
         raw.Validate();var output=raw.Copy();
-        if (settings.Root<0 || settings.Root>1 || settings.Arms<0 || settings.Arms>1 || settings.Fingers<0 || settings.Fingers>1
+        var handCapture=HandCaptureRetargeter.Supports(raw);
+        if (!float.IsFinite(settings.Root)||!float.IsFinite(settings.Arms)||!float.IsFinite(settings.Fingers)
+            ||!float.IsFinite(settings.PreserveAngularSpeed)||settings.PreserveAngularSpeed<0
+            ||settings.Root<0 || settings.Root>1 || settings.Arms<0 || settings.Arms>1 || settings.Fingers<0 || settings.Fingers>1
             || !double.IsFinite(settings.MaximumGapSeconds) || settings.MaximumGapSeconds<0)
             throw new ArgumentException("Invalid cleanup settings.");
         bool Protected(int i) => raw.Contacts.Any(c => c.Review != ContactReview.Disabled
@@ -60,7 +63,7 @@ public static class MotionCleanup
                 if(speed>settings.PreserveAngularSpeed)continue;
                 var amount=raw.Bones[j].Group=="fingers"?settings.Fingers:settings.Arms;
                 output.Frames[i].Rotations[j]=MotionDocument.A(Quaternion.Slerp(q,Quaternion.Slerp(q0,q1,t),amount));
-                if(raw.Bones[j].Parent<0)
+                if(raw.Bones[j].Parent<0&&!handCapture)
                 {
                     var p0=MotionDocument.V(a.Positions[j]);var p=MotionDocument.V(b.Positions[j]);var p1=MotionDocument.V(c.Positions[j]);
                     // An isolated spike is flagged by metrics, not silently erased as noise.
@@ -69,6 +72,7 @@ public static class MotionCleanup
                 }
             }
         }
+        if(handCapture)WristTrajectoryCleanup.Apply(raw,output,settings.Root,Protected);
         for(var j=0;j<raw.Bones.Count;j++)
             for(var i=1;i<output.Frames.Count;i++)
                 if(Quaternion.Dot(MotionDocument.Q(output.Frames[i-1].Rotations[j]),MotionDocument.Q(output.Frames[i].Rotations[j]))<0)

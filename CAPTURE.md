@@ -113,7 +113,7 @@ editor verification overlapped part of the run.
 GVHMR also processed all 312 frames of `tennis.mp4` (10.41 seconds between its first
 and last sample). CPU reconstruction took about 20 minutes and peaked at 5.82 GB
 worker RAM. The complete motion was checked on Human and Citizen proportions; the
-full Human animation and the first-second Citizen slice passed native FBX compilation
+full Human and Citizen animations passed native FBX compilation
 and animated playback in s&box. Synchronized source/target frames were visually reviewed.
 These checks do not establish full-length 3D accuracy.
 
@@ -130,14 +130,17 @@ stationary joints, not observed grips or proof of correct world-space motion. Ta
 proportions can change contacts after source refinement. No additional generic body
 smoothing is enabled automatically.
 
-On this tennis clip, the refined Human output's largest foot-joint step during those
-same model-predicted static intervals was 0.90 cm; Citizen's was 1.24 cm. This compares
-the camera-relative default with the stationary-camera refinement, not two calibrated
-world reconstructions. Residual drift and inaccurate heights remain. The fast right
-forearm peak remained at frame 134 (about 4.49 seconds). Final target contact correction
-keeps limb lengths fixed instead of stretching toward unreachable inferred contacts.
+With **Reduce foot drift** enabled, final target ankle/toe anchors now use the retained
+GVHMR stationary-joint predictions. On this tennis clip, average foot-joint movement
+during those same predicted intervals fell from 0.210 to 0.009 cm per frame on Human,
+and from 0.248 to 0.007 cm on Citizen. Largest steps fell from 0.90 to 0.61 cm and from
+1.24 to 0.50 cm respectively. This comparison uses the same stationary-camera motion
+before and after target anchoring, not the camera-relative default. Residual drift and
+inaccurate heights remain. The fast right forearm peak remained at frame 134 (about
+4.49 seconds). Final target correction keeps limb lengths fixed instead of stretching.
 The complete refined clip passed native FBX compilation and animated playback on both
 Human and Citizen; restoring the original and reopening the cached refinement also passed.
+See [drift reduction](DRIFT_REDUCTION.md) for FPS cleanup, comparison metrics and limits.
 
 Review these examples critically. After the correction, the plate-handling clip had
 77 left-hand and 78 right-hand observed frames out of 121. The cupboard clip had

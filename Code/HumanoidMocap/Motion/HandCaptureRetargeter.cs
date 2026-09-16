@@ -57,16 +57,13 @@ public static class HandCaptureRetargeter
             }
         }
         if(mappedHands.Count==0)throw new ArgumentException("Map at least one target hand and its finger joints.");
-        var units=axis==TargetUpAxis.YUpCm?100f:39.3700787f;
-        var axisRotation=axis==TargetUpAxis.YUpCm?Quaternion.Identity:Quaternion.CreateFromAxisAngle(Vector3.UnitX,MathF.PI/2);
-        var cameraRotation=Quaternion.CreateFromYawPitchRoll(settings.CaptureCameraYawDegrees*MathF.PI/180,
-            settings.CaptureCameraPitchDegrees*MathF.PI/180,0);
-        var placement=Quaternion.Normalize(axisRotation*cameraRotation);
-        var offsetPosition=Vector3.Transform(settings.CaptureCameraPosition*units,axisRotation);
+        var capturePlacement=CapturePlacement.ForTarget(axis,settings);
+        var placement=capturePlacement.Rotation;
         var sourceWorld=new XForm[source.Skeleton.Count];var targetWorld=new XForm[target.Skeleton.Count];
         var previous=target.Skeleton.Bones.Select(b=>b.RestLocal).ToArray();
         var seen=new HashSet<bool>();var targets=new List<Dictionary<BoneRole,XForm>>();
         var output=new Clip(name,input.Fps,input.Looping);
+        var contactSettings=new ContactSettings();
         for(var f=0;f<input.Frames.Count;f++)
         {
             FkUtil.ToWorld(input.Frames[f],source.Skeleton,sourceWorld);
@@ -78,7 +75,11 @@ public static class HandCaptureRetargeter
             var frame=previous.ToArray();var wristTargets=new Dictionary<BoneRole,XForm>();
             foreach(var (left,hand) in mappedHands)if(seen.Contains(left))
             {
-                var position=Vector3.Transform(sourceWorld[hand.Source].Pos*(units/100),placement)+offsetPosition;
+                var capturedPosition=sourceWorld[hand.Source].Pos/100;
+                if(source.CaptureContacts is { } contacts)
+                    capturedPosition=contacts.ApplyWrist(source.Skeleton[hand.Source].Name,capturedPosition,
+                        Math.Min(contacts.StartTime+f/(double)input.Fps,contacts.EndTime),contactSettings);
+                var position=capturePlacement.Transform(new XForm(capturedPosition,Quaternion.Identity)).Pos;
                 wristTargets[left?BoneRole.HandL:BoneRole.HandR]=new(position,desired[hand.Target]);
             }
             for(var i=0;i<frame.Length;i++)

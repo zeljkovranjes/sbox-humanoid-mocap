@@ -67,11 +67,28 @@ public static class ContactSolver
         Vector3? movingLocalTarget=null)
     {
         if(contact.Review!=ContactReview.Confirmed || time<contact.Start || time>contact.End)return freeHand;
-        var local=contact.Sliding && movingLocalTarget is { } moving?moving:MotionDocument.V(contact.LocalTarget);
+        var local=contact.Sliding && movingLocalTarget is { } moving?moving:LocalTarget(contact,time);
         var target=XForm.Compose(authoritativeObject,new XForm(local,Quaternion.Identity)).Pos;
+        return Vector3.Lerp(freeHand,target,Weight(contact,time,settings));
+    }
+
+    public static float Weight(ContactInterval contact,double time,ContactSettings settings)
+    {
+        if(contact.Review!=ContactReview.Confirmed||time<contact.Start||time>contact.End)return 0;
         var fade=Math.Max(settings.BlendSeconds,1e-5);
         var t=(float)Math.Clamp(Math.Min((time-contact.Start)/fade,(contact.End-time)/fade),0,1);
-        t=t*t*(3-2*t);
-        return Vector3.Lerp(freeHand,target,t);
+        return t*t*(3-2*t);
+    }
+
+    public static Vector3 LocalTarget(ContactInterval contact,double time)
+    {
+        if(!contact.Sliding)return MotionDocument.V(contact.LocalTarget);
+        var keys=contact.TargetKeys;
+        if(keys.Count<2)throw new ArgumentException("Sliding contacts need object-local target keys.");
+        if(time<=keys[0].Time)return MotionDocument.V(keys[0].Position);
+        for(var i=1;i<keys.Count;i++)if(time<=keys[i].Time)
+            return Vector3.Lerp(MotionDocument.V(keys[i-1].Position),MotionDocument.V(keys[i].Position),
+                (float)((time-keys[i-1].Time)/(keys[i].Time-keys[i-1].Time)));
+        return MotionDocument.V(keys[^1].Position);
     }
 }

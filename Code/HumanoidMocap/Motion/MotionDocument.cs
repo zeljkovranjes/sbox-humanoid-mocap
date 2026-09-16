@@ -12,8 +12,8 @@ namespace HumanoidMocap.Motion;
 using Vector3 = System.Numerics.Vector3;
 
 public enum MotionSpace { CameraRelative, WorldRelative }
-public enum JointEvidence { Reconstructed, InferredGap, GeneratedIk, Unobserved }
-public enum ObjectMotionSource { Tracked, ImportedAnimation, CalibratedMarker, Manual }
+public enum JointEvidence { Reconstructed, InferredGap, GeneratedIk, Unobserved, Authored }
+public enum ObjectMotionSource { Unspecified = -1, Tracked, ImportedAnimation, CalibratedMarker, Manual }
 public enum ContactReview { Suggested, Confirmed, Disabled }
 
 /// <summary>Immutable source data by convention. Corrections produce a new document.</summary>
@@ -36,6 +36,9 @@ public sealed class MotionDocument
     public List<CameraObservation> Cameras { get; set; } = new();
     public List<PropTrack> Objects { get; set; } = new();
     public List<ContactInterval> Contacts { get; set; } = new();
+    /// <summary>Backend stationary-joint probabilities, not visibility or 3D accuracy.
+    /// Values follow Frames and remain separate from reviewed object contacts.</summary>
+    public List<StationaryJointTrack> StationaryJoints { get; set; } = new();
     public List<MotionCorrection> Corrections { get; set; } = new();
     public List<string> Diagnostics { get; set; } = new();
 
@@ -84,13 +87,33 @@ public sealed class MotionDocument
             for (var j = 0; j < Bones.Count; j++)
             {
                 CheckVector(f.Positions[j], 3); CheckRotation(f.Rotations[j]);
+                if(!Enum.IsDefined(typeof(JointEvidence),f.Evidence[j]))throw new FormatException("Unknown joint evidence label.");
                 if (f.Confidence?[j] is float c && (!float.IsFinite(c) || c < 0 || c > 1))
                     throw new FormatException("Invalid backend confidence.");
             }
         }
         foreach (var c in Contacts)
+        {
             if (c.Start < Frames[0].Time || c.End > Frames[^1].Time || c.End < c.Start || !double.IsFinite(c.Start+c.End))
                 throw new FormatException("Contact interval is outside the clip.");
+            CheckVector(c.LocalTarget,3);
+            if (!Enum.IsDefined(typeof(ContactReview),c.Review)) throw new FormatException("Unknown contact review state.");
+            if(c.TargetKeys is null)throw new FormatException("Contact target keys cannot be null.");
+            double previousKey=double.NegativeInfinity;
+            foreach(var key in c.TargetKeys)
+            {
+                if(!double.IsFinite(key.Time)||key.Time<=previousKey||key.Time<c.Start||key.Time>c.End)
+                    throw new FormatException("Sliding contact keys must increase within the contact interval.");
+                CheckVector(key.Position,3);previousKey=key.Time;
+            }
+        }
+        PropContactMotion.ValidateObjects(this);
+        if(StationaryJoints is null||StationaryJoints.Count>Bones.Count)throw new FormatException("Invalid stationary-joint tracks.");
+        var stationaryNames=new HashSet<string>();
+        foreach(var track in StationaryJoints)
+            if(track is null||!stationaryNames.Add(track.Bone)||!names.Contains(track.Bone)||string.IsNullOrWhiteSpace(track.Source)
+                ||track.Probability is null||track.Probability.Length!=Frames.Count||track.Probability.Any(p=>!float.IsFinite(p)||p<0||p>1))
+                throw new FormatException("Stationary-joint probabilities must identify their source and match the motion frames.");
     }
     static void CheckVector(float[] v, int n)
     {
@@ -147,6 +170,14 @@ public sealed class MotionDocument
         return new SourceScene(skeleton,new[]{new Clip(Name,fps,false,frames,(float)SourceFps)},100,notes:notes)
         {
             AuthoredMapping=mapping, CaptureSpace=Space, CaptureEvidence=evidence,
+            CaptureContacts=new PropContactMotion(this),
+            CaptureStationaryJoints=StationaryJoints.ToDictionary(s=>s.Bone,s=>Enumerable.Range(0,count).Select(i=>{
+                var time=Math.Min(Frames[0].Time+i/(double)fps,Frames[^1].Time);
+                var lo=0;var hi=Frames.Count-1;
+                while(lo<hi){var mid=(lo+hi)/2;if(Frames[mid].Time<time)lo=mid+1;else hi=mid;}
+                // Conservative resampling: both bracketing observations must agree.
+                return Frames[lo].Time==time||lo==0?s.Probability[lo]:Math.Min(s.Probability[lo-1],s.Probability[lo]);
+            }).ToArray()),
             // A camera-space translation is not an authored offset from the model's
             // rest ground. Keeping it as one makes the target hover and start metres
             // away from the preview origin. The existing placement-free solve removes
@@ -194,8 +225,10 @@ public sealed class PropTrack
 {
     public string Id { get; set; } = "";
     public string ModelPath { get; set; } = "";
+    /// <summary>Optional earlier object whose root parents this object's root. A detached
+    /// object uses its own independent root track with no ParentObject.</summary>
     public string? ParentObject { get; set; }
-    public ObjectMotionSource Source { get; set; }
+    public ObjectMotionSource Source { get; set; } = ObjectMotionSource.Unspecified;
     public MotionSpace Space { get; set; }
     public List<MotionBone> Bones { get; set; } = new();
     public List<MotionFrame> Frames { get; set; } = new();
@@ -209,8 +242,22 @@ public sealed class ContactInterval
     public double End { get; set; }
     public float[] LocalTarget { get; set; } = new float[3];
     public bool Sliding { get; set; }
+    /// <summary>Object-bone-local metre positions at source-video timestamps. Required
+    /// for a sliding constraint; not inferred from the hand model.</summary>
+    public List<ContactTargetKey> TargetKeys { get; set; } = new();
     public ContactReview Review { get; set; }
     public string Reason { get; set; } = "";
+}
+public sealed class ContactTargetKey
+{
+    public double Time { get; set; }
+    public float[] Position { get; set; } = new float[3];
+}
+public sealed class StationaryJointTrack
+{
+    public string Bone { get; set; } = "";
+    public string Source { get; set; } = "";
+    public float[] Probability { get; set; } = Array.Empty<float>();
 }
 public sealed class MotionCorrection
 {

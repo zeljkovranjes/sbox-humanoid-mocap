@@ -31,6 +31,7 @@ public sealed partial class RetargetWindow
     bool _swapHands;
     Checkbox _swapHandsControl;
     Checkbox _inPlaceControl;
+    Checkbox _stabilizeFeetControl;
     bool _showTargetBones=true;
     CancellationTokenSource _processing;
     SegmentedControl _workspacePicker;
@@ -158,12 +159,17 @@ public sealed partial class RetargetWindow
         _firstOptions.ToolTip="Shoulders and hidden elbows are estimated. These controls apply to target arm correction when hand tracks are present.";
 
         _thirdOptions=_advancedPanel.Layout.Add(new Group(this){Title="Third Person · ground and facing",Icon="directions_walk"});
-        _thirdOptions.Layout=Layout.Row();_thirdOptions.Layout.Margin=new Sandbox.UI.Margin(14,30,14,12);_thirdOptions.Layout.Spacing=24;
-        _ground=Field(_thirdOptions.Layout,"Ground offset (m)","0");_facing=Field(_thirdOptions.Layout,"Facing (degrees)","0");
-        var inPlace=_inPlaceControl=_thirdOptions.Layout.Add(new Checkbox("In place"));
+        _thirdOptions.Layout=Layout.Column();_thirdOptions.Layout.Margin=new Sandbox.UI.Margin(14,30,14,12);_thirdOptions.Layout.Spacing=10;
+        var groundOptions=_thirdOptions.Layout.AddRow();groundOptions.Spacing=24;
+        _ground=Field(groundOptions,"Ground offset (m)","0");_facing=Field(groundOptions,"Facing (degrees)","0");
+        var inPlace=_inPlaceControl=groundOptions.Add(new Checkbox("In place"));
         inPlace.ToolTip="Remove horizontal travel from the baked animation. Camera-relative capture remains camera-relative.";
         inPlace.Clicked=()=>{_rootMotion=inPlace.Value?HumanoidMocap.Cleanup.RootMotionMode.InPlace:HumanoidMocap.Cleanup.RootMotionMode.Off;_=RefreshMocapPreviewAsync();};
-        _bodyRefinementButton=_thirdOptions.Layout.Add(new Button("Refine · stationary camera","auto_fix_high")
+        var contactOptions=_thirdOptions.Layout.AddRow();contactOptions.Spacing=12;
+        _stabilizeFeetControl=contactOptions.Add(new Checkbox("Reduce foot drift"){Value=true,Enabled=false,
+            ToolTip="Keep predicted stationary ankles and toes anchored on the final target rig. Applies to world-relative captures with backend stationary-joint probabilities. Preserves toe-only pivots and bone lengths; predictions still need review."});
+        _stabilizeFeetControl.Clicked=()=>_=RefreshMocapPreviewAsync();
+        _bodyRefinementButton=contactOptions.Add(new Button("Refine · stationary camera","auto_fix_high")
         {
             Enabled=false,
             ToolTip="Use only when the recording camera stayed still. Reuse saved GVHMR predictions to refine root and limb contacts. Keeps the original motion and opens a separate result; review before exporting.",
@@ -173,10 +179,10 @@ public sealed partial class RetargetWindow
 
 
         var cleanup=_advancedPanel.Layout.AddRow();cleanup.Spacing=8;
-        _rootSmooth=Field(cleanup,"Root cleanup","0.10");_armSmooth=Field(cleanup,"Arms","0.10");_fingerSmooth=Field(cleanup,"Fingers","0.025");
+        _rootSmooth=Field(cleanup,"Root cleanup","0.25");_armSmooth=Field(cleanup,"Arms","0.10");_fingerSmooth=Field(cleanup,"Fingers","0.025");
         cleanup.Add(new Button("Apply adjustments","check"){Clicked=()=>_=ProcessMotionAsync()});
         var contacts=_advancedPanel.Layout.Add(new Group(this){Title="Contact review",Icon="touch_app"});
-        contacts.Layout=Layout.Column();contacts.Layout.Margin=new Sandbox.UI.Margin(8,26,8,8);_contactRows=contacts.Layout;
+        contacts.Layout=Layout.Column();contacts.Layout.Margin=new Sandbox.UI.Margin(8,38,8,8);_contactRows=contacts.Layout;
         _motionDetails=_advancedPanel.Layout.Add(new Label(this){WordWrap=true});
         RefreshContacts();
     }
@@ -291,11 +297,15 @@ public sealed partial class RetargetWindow
             _mocapPreview.FramingHands=handCoverage.Where(x=>x.Count>0&&x.Count>=strongest*.5f).Select(x=>x.Role).ToArray();
             _mocapPreview.ViewmodelNearClipCm=edit.NearClip;
             if(HandCaptureRetargeter.Supports(motion))_mocapPreview.CaptureView=corrections;
+            var props=new PropContactMotion(motion);var propPlacement=CapturePlacement.ForTarget(spec.UpAxis,corrections);
+            var supportsProps=HandCaptureRetargeter.Supports(motion)&&corrections.FirstPerson&&rootMotion==HumanoidMocap.Cleanup.RootMotionMode.Off
+                &&motion.Objects.All(p=>p.Space==motion.Space);
+            if(supportsProps){_mocapPreview.CaptureProps=props;_mocapPreview.PropPlacement=propPlacement;}
             _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
             Update();
             _previewFps=clip.Fps;_mocapPreview.SetClip(clip);_mocapPreview.ResetView();SynchronizePreview();
             _mocapPreview.Show();_targetHost.Update();
-            _bakedPreview=new BakedPreview(clip,spec,motion.Space.ToString(),revision,corrections.FirstPerson);
+            _bakedPreview=new BakedPreview(clip,spec,motion.Space.ToString(),revision,corrections.FirstPerson,props,propPlacement,supportsProps);
             SaveAppliedAdjustments(session,targetKey,edit,cleanup,motion);
         }
         catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid()&&revision==_previewRevision)_captureStatus.Text=e.Message;}
@@ -312,7 +322,7 @@ public sealed partial class RetargetWindow
         SetCaptureBusy(true);
         try
         {
-            var settings=new CleanupSettings{Root=Number(_rootSmooth,.1f),Arms=Number(_armSmooth,.1f),Fingers=Number(_fingerSmooth,.025f)};
+            var settings=new CleanupSettings{Root=Number(_rootSmooth,.25f),Arms=Number(_armSmooth,.1f),Fingers=Number(_fingerSmooth,.025f)};
             var raw=_rawMotion;var contacts=_editedMotion.Copy().Contacts;var session=_editSession;
             var doc=await Task.Run(()=>{token.ThrowIfCancellationRequested();var copy=raw.Copy();copy.Contacts=contacts;var edited=MotionCleanup.Apply(copy,settings);token.ThrowIfCancellationRequested();return edited;},token);
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid())return;token.ThrowIfCancellationRequested();
@@ -345,6 +355,7 @@ public sealed partial class RetargetWindow
         _ground.Text="0";_facing.Text="0";_reach.Text="0.995";
         _fov.Text="75";_viewPitch.Text="0";_viewNear.Text="15";
         _rootMotion=HumanoidMocap.Cleanup.RootMotionMode.Off;_inPlaceControl.Value=false;
+        _stabilizeFeetControl.Value=true;
         var settings=TargetCorrectionSettings.ForRig(_target.Spec.Rig,_target.Spec.UpAxis);
         // These editable values also feed the solver; retain sub-millimetre rig
         // precision instead of shortening the shoulder span through display rounding.
@@ -360,6 +371,7 @@ public sealed partial class RetargetWindow
         FirstPerson=_firstPerson,LeftShoulder=Vector(_shoulderL),RightShoulder=Vector(_shoulderR),
         LeftElbow=Vector(_elbowL),RightElbow=Vector(_elbowR),Reach=Number(_reach,.995f),
         GroundOffset=Number(_ground,0),FacingDegrees=Number(_facing,0),
+        StabilizeFeet=_stabilizeFeetControl.Value,
         CaptureCameraPosition=Vector(_capturePosition),CaptureCameraYawDegrees=Number(_captureYaw,180),CaptureCameraPitchDegrees=Number(_capturePitch,0)
     };
     static System.Numerics.Vector3 Vector(LineEdit edit)
@@ -371,6 +383,8 @@ public sealed partial class RetargetWindow
     void RefreshContacts()
     {
         _contactRows.Clear(true);
+        if(_editedMotion is { Objects.Count: >0 })
+            _contactRows.Add(new Label("Prop armatures · "+string.Join(", ",_editedMotion.Objects.Select(p=>$"{p.Id} ({p.Source})")),this){WordWrap=true});
         if(_editedMotion is null || _editedMotion.Contacts.Count==0)
         {
             _contactRows.Add(new Label("No contact suggestions. A hand track alone does not recover prop motion.",this));return;
@@ -380,7 +394,13 @@ public sealed partial class RetargetWindow
             var row=_contactRows.AddRow();row.Spacing=8;
             var label=row.Add(new Label($"{contact.Start:F2}–{contact.End:F2}s · {contact.Bone} → {contact.Object} · {contact.Review}",this),1);
             label.SetStyles($"color: {(contact.Review==ContactReview.Suggested?Theme.Yellow:Theme.TextLight).Hex};");
+            var reason=new PropContactMotion(_editedMotion).UnsupportedReason(contact);
+            label.ToolTip=reason??contact.Reason+" Wrist position only; wrist attitude and captured fingers are preserved. Reach limits may leave a residual gap.";
+            row.Add(new IconButton("play_arrow",()=>{
+                var range=PlaybackRange;SeekPlaybackFraction(range.Last>range.Start?(float)(((contact.Start+contact.End)*.5-range.Start)/(range.Last-range.Start)):0);
+            },this){FixedSize=24,IconSize=16,ToolTip="Review the middle of this interval"});
             var confirm=row.Add(new Button("Confirm","check"));confirm.Clicked=()=>_=ReviewContactAsync(contact,ContactReview.Confirmed);
+            confirm.Enabled=reason is null;confirm.ToolTip=reason??"Apply the object-local wrist target to the target arm solve.";
             var disable=row.Add(new Button("Disable","block"));disable.Clicked=()=>_=ReviewContactAsync(contact,ContactReview.Disabled);
         }
     }
