@@ -176,9 +176,7 @@ public sealed class MotionDocument
                 frame[index]=new XForm(
                 Vector3.Lerp(V(a.Positions[j]),V(b.Positions[j]),t)*100,
                 Quaternion.Slerp(Q(a.Rotations[j]),Q(b.Rotations[j]),t));
-                frameEvidence[index]=t<=0?a.Evidence[j]:t>=1?b.Evidence[j]:
-                    a.Evidence[j]==JointEvidence.Unobserved||b.Evidence[j]==JointEvidence.Unobserved?JointEvidence.Unobserved:
-                    a.Evidence[j]==b.Evidence[j]?a.Evidence[j]:JointEvidence.InferredGap;
+                frameEvidence[index]=MotionEvidence.Blend(a.Evidence[j],b.Evidence[j],t);
             }
             frames.Add(frame);evidence.Add(frameEvidence);
         }

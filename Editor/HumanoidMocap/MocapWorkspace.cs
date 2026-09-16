@@ -95,6 +95,7 @@ public sealed partial class RetargetWindow
         _targetHost=animationPanel.Layout.Add(new Widget(animationPanel),1);_targetHost.Layout=Layout.Column();
         _targetHost.Layout.Add(new Label("Preparing animation…",_targetHost){Alignment=TextFlag.Center},1);
 
+        _trackingStatus=Layout.Add(new Label("",this){Visible=false,FixedHeight=18});
         _transportBar=Layout.Add(new Widget(this){Visible=false});_transportBar.Layout=Layout.Row();
         var transport=_transportBar.Layout;transport.Spacing=8;
         var play=_playButton=transport.Add(new Button("","play_arrow"){FixedWidth=28,ToolTip="Play / pause",Clicked=TogglePlayback});
@@ -278,7 +279,7 @@ public sealed partial class RetargetWindow
     async Task BuildMocapPreviewAsync(int revision)
     {
         if(_editedMotion is null || _target is null)return;
-        _previewPending=true;_bakedPreview=null;UpdateExportAvailability();
+        _previewPending=true;_bakedPreview=null;UpdateTrackingStatus();UpdateExportAvailability();
         try
         {
             if(_fbxPreviewTask is not null)await _fbxPreviewTask;
@@ -311,9 +312,10 @@ public sealed partial class RetargetWindow
             if(supportsProps){_mocapPreview.CaptureProps=props;_mocapPreview.PropPlacement=propPlacement;_mocapPreview.ContactTargetKey=corrections.ContactTargetKey;}
             _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
             Update();
-            _previewFps=clip.Fps;_mocapPreview.SetClip(clip);_mocapPreview.ResetView();SynchronizePreview();
+            _previewFps=clip.Fps;_mocapPreview.SetClip(clip);_mocapPreview.ResetView();
             _mocapPreview.Show();_targetHost.Update();
-            _bakedPreview=new BakedPreview(clip,spec,motion.Space.ToString(),revision,corrections.FirstPerson,props,propPlacement,supportsProps);
+            _bakedPreview=new BakedPreview(clip,spec,motion.Space.ToString(),revision,corrections.FirstPerson,props,propPlacement,supportsProps,motion,corrections.WristOffsets);
+            SynchronizePreview();
             RefreshContacts();
             SaveAppliedAdjustments(session,targetKey,edit,cleanup,motion);
         }

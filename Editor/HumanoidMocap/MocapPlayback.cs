@@ -68,5 +68,6 @@ public sealed partial class RetargetWindow
         var time=_video?.FrameTime??_playhead;
         _mocapPreview.Scrub((int)Math.Round((time-_editedMotion.Frames[0].Time)*_previewFps));
         _mocapPreview.ApplyCurrentFrame();
+        UpdateTrackingStatus();
     }
 }

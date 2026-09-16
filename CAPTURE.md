@@ -73,6 +73,13 @@ are estimated with IK; the body backend does not provide detailed finger capture
 Props visible in the video are not automatically tracked. Inspect contacts manually
 before using the motion with a weapon or another object.
 
+Hand captures show each wrist's evidence below the preview for the frame actually
+displayed. **Not observed** warns that the pose is not newly captured; an earlier pose
+may be retained. **Inferred gap** identifies interpolated motion. **Reconstructed**
+means a model prediction, not verified accuracy. Active manual wrist offsets are marked
+separately and do not clear missing-data warnings. These labels describe wrist tracks;
+they do not certify finger accuracy or the estimated shoulders and elbows.
+
 If the performer lowers their hands but the target raises its arms, check camera
 placement. Hand-only reconstruction cannot tell whether the camera was level or looking
 down. Under **Advanced → First Person**, **Looking down** applies a 45-degree downward
