@@ -11,7 +11,7 @@ namespace HumanoidMocap.Inference;
 
 /// <summary>Reads tensor data from the pinned PyTorch ZIP checkpoint format without Python,
 /// importing modules, invoking pickle callables, or deserializing executable objects.</summary>
-public sealed class TorchCheckpoint : IDisposable
+public sealed partial class TorchCheckpoint : IDisposable
 {
     public sealed record TensorInfo(string Name,string Storage,string Dtype,long StorageLength,long Offset,int[] Shape,long[] Stride);
     sealed record Symbol(string Module,string Name);
@@ -117,7 +117,8 @@ public sealed class TorchCheckpoint : IDisposable
         readonly Dictionary<int,object?> memo=new();
         static readonly object Mark=new();
         int operations;
-        public DataReader(byte[] bytes){reader=new BinaryReader(new MemoryStream(bytes),Encoding.UTF8);}
+        public int Position=>checked((int)reader.BaseStream.Position);
+        public DataReader(byte[] bytes,int offset=0){reader=new BinaryReader(new MemoryStream(bytes),Encoding.UTF8);reader.BaseStream.Position=offset;}
         object? Pop(){if(stack.Count==0)throw new InvalidDataException("Empty pickle stack.");var value=stack[^1];stack.RemoveAt(stack.Count-1);return value;}
         object? Peek()=>stack.Count==0?throw new InvalidDataException("Empty pickle stack."):stack[^1];
         object?[] MarkItems()
@@ -139,7 +140,7 @@ public sealed class TorchCheckpoint : IDisposable
             var normalized=key switch{string s=>(object)s,int i=>(long)i,long l=>l,_=>throw new InvalidDataException("Only string and integer dictionary keys are supported.")};
             dictionary[normalized]=value;
         }
-        public object? Read()
+        public object? Read(bool requireEnd=true)
         {
             while(reader.BaseStream.Position<reader.BaseStream.Length)
             {
@@ -148,7 +149,7 @@ public sealed class TorchCheckpoint : IDisposable
                 switch(op)
                 {
                     case 0x80:var protocol=reader.ReadByte();if(protocol>5)throw new NotSupportedException("Pickle protocol "+protocol);break;
-                    case (byte)'.':if(stack.Count!=1||reader.BaseStream.Position!=reader.BaseStream.Length)throw new InvalidDataException("Invalid pickle termination.");return Pop();
+                    case (byte)'.':if(stack.Count!=1||(requireEnd&&reader.BaseStream.Position!=reader.BaseStream.Length))throw new InvalidDataException("Invalid pickle termination.");return Pop();
                     case (byte)'(':stack.Add(Mark);break;
                     case (byte)')':stack.Add(System.Array.Empty<object?>());break;
                     case (byte)'}':stack.Add(new Dictionary<object,object?>());break;
@@ -182,6 +183,7 @@ public sealed class TorchCheckpoint : IDisposable
                         var storage=Tuple(Pop());
                         if(storage.Length<5||storage[0] as string!="storage"||storage[1] is not Symbol type||type.Module!="torch"||storage[2] is not string storageKey)
                             throw new InvalidDataException("Unsupported persistent pickle reference.");
+                        if(storage.Length>5&&storage[5] is not null)throw new NotSupportedException("Legacy storage aliases are not supported.");
                         stack.Add(new StorageRef(storageKey,type.Name,Integer(storage[4])));break;
                     case (byte)'R':
                         var arguments=Tuple(Pop());var symbol=Pop() as Symbol??throw new InvalidDataException("Unsupported pickle callable.");

@@ -91,3 +91,10 @@ also remain in some predictions. No model
 here has been verified to match ACE's accuracy. Contact with plates, containers or
 utensils is not an automatic prop track or a solved grip. Reconstruction, temporal
 synchronization and successful export do not establish correct 3D motion.
+
+MobileHand is another lightweight option under **Advanced → Hand models…**. All three
+hand samples completed its C# inference, cleanup, target preview, armature-only export
+and native s&box playback checks. It shares MediaPipe's crop detector, so the missing-hand
+counts above also apply. Its small checkpoint does not solve those detection failures.
+The sampled overlays showed finger misalignment, and measured pose/depth jumps remain
+large. Use it as an experimental alternative and inspect the result before exporting.

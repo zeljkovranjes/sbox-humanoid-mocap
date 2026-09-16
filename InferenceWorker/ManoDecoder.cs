@@ -15,19 +15,20 @@ public sealed class ManoDecoder
     public sealed record DecodedHand(Vector3[] Joints,Vector3[] Vertices,Vector3[] RestJoints,
         Quaternion[] LocalRotations,Vector3[] Landmarks);
     /// <summary>The caller verifies the pinned checkpoint hash before constructing this decoder.</summary>
-    public ManoDecoder(TorchCheckpoint checkpoint,string prefix)
+    public ManoDecoder(TorchCheckpoint checkpoint,string prefix,bool mobileHand=false)
     {
         float[] Read(string name,int count)
         {
-            var data=checkpoint.ReadFloat(prefix+name);
+            var key=mobileHand?name switch{"v_template"=>"V_","shapedirs"=>"S_","posedirs"=>"P_","J_regressor"=>"J_","lbs_weights"=>"W_","parents"=>"K_",_=>name}:name;
+            var data=checkpoint.ReadFloat(prefix+key);
             if(data.Length!=count||data.Any(v=>!float.IsFinite(v)))throw new InvalidDataException("Invalid MANO buffer: "+name);
             return data;
         }
         template=Read("v_template",VertexCount*3);shapeDirections=Read("shapedirs",VertexCount*3*10);
         poseDirections=Read("posedirs",135*VertexCount*3);regressor=Read("J_regressor",JointCount*VertexCount);
-        skinWeights=Read("lbs_weights",VertexCount*JointCount);poseMean=Read("pose_mean",48);
+        skinWeights=Read("lbs_weights",VertexCount*JointCount);poseMean=mobileHand?new float[48]:Read("pose_mean",48);
         parents=Read("parents",JointCount).Select(v=>checked((int)v)).ToArray();
-        tips=Read(checkpoint.Tensors.ContainsKey(prefix+"extra_joints_idxs")?"extra_joints_idxs":"vertex_joint_selector.extra_joints_idxs",5).Select(v=>checked((int)v)).ToArray();
+        tips=Read(mobileHand?"fingertip_vert":checkpoint.Tensors.ContainsKey(prefix+"extra_joints_idxs")?"extra_joints_idxs":"vertex_joint_selector.extra_joints_idxs",5).Select(v=>checked((int)v)).ToArray();
         if(parents[0]!=-1||parents.Skip(1).Where((p,i)=>p<0||p>i).Any()||tips.Any(i=>i<0||i>=VertexCount))
             throw new InvalidDataException("Invalid MANO hierarchy or fingertip indices.");
     }

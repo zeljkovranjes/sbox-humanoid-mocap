@@ -6,7 +6,7 @@ using HumanoidMocap.Motion;
 namespace HumanoidMocap.Worker;
 
 public sealed record ManoHandSample(string Side,float[] RotationMatrices,float[] Shape,float[] WeakCamera,
-    GvhmrDecoder.Box Crop,float DetectorPresence,float DetectorHandedness,string CropSource="MediaPipe palm detector");
+    GvhmrDecoder.Box Crop,float DetectorPresence,float DetectorHandedness,string CropSource="MediaPipe palm detector",float[]? NativeParameters=null);
 public sealed record ManoFrameSample(double Time,List<ManoHandSample> Hands);
 
 /// <summary>Preserves native MANO articulation and camera-space wrist translation.
@@ -18,12 +18,13 @@ public static class ManoMotionBuilder
     public static MotionDocument Build(IReadOnlyList<ManoFrameSample> samples,string backend,string checkpointPath,
         string name,string video,string sourceHash,double fps,WildHandsCrop.Camera camera,int width,int height,CancellationToken cancellation=default)
     {
-        if(backend is not ("wildhands" or "wilor"))throw new ArgumentException("Unsupported MANO motion backend.");
+        if(backend is not ("mobilehand" or "wildhands" or "wilor"))throw new ArgumentException("Unsupported MANO motion backend.");
         if(samples.Count==0||!samples.Any(f=>f.Hands.Count>0))throw new InvalidDataException("No reconstructed hands. Raw observations were retained.");
-        var wild=backend=="wildhands";using var checkpoint=new TorchCheckpoint(checkpointPath);
+        var wild=backend=="wildhands";var mobile=backend=="mobilehand";using var checkpoint=mobile?null:new TorchCheckpoint(checkpointPath);
+        var mobileDecoder=mobile?MobileHandModel.ReadDecoder(checkpointPath,cancellation):null;
         var document=new MotionDocument{Name=name,SourceVideo=video,SourceSha256=sourceHash,SourceFps=fps,
-            Backend=wild?"WildHands / C# native CPU / MediaPipe crops":"WiLoR / C# native CPU / MediaPipe crops",
-            ModelVersion=wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256,
+            Backend=mobile?"MobileHand / C# native CPU / MediaPipe crops":wild?"WildHands / C# native CPU / MediaPipe crops":"WiLoR / C# native CPU / MediaPipe crops",
+            ModelVersion=mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256,
             Space=MotionSpace.CameraRelative,MetricScaleCalibrated=false};
         var cameraToDocument=Quaternion.CreateFromAxisAngle(Vector3.UnitX,MathF.PI);
         var decoders=new ManoDecoder[2];var betas=new float[2][];var rest=new ManoDecoder.DecodedHand[2];
@@ -31,7 +32,7 @@ public static class ManoMotionBuilder
         for(var sideIndex=0;sideIndex<2;sideIndex++)
         {
             var side=sideIndex==0?"L":"R";
-            decoders[sideIndex]=new(checkpoint,wild?"model.mano_"+side.ToLowerInvariant()+".mano.":"mano.");
+            decoders[sideIndex]=mobileDecoder??new(checkpoint!,wild?"model.mano_"+side.ToLowerInvariant()+".mano.":"mano.");
             var observed=samples.SelectMany(f=>f.Hands).Where(h=>h.Side==side).ToArray();
             betas[sideIndex]=Enumerable.Range(0,10).Select(i=>observed.Length==0?0f:observed.Average(h=>h.Shape[i])).ToArray();
             rest[sideIndex]=decoders[sideIndex].Decode(identity,betas[sideIndex],false,cancellation);
@@ -60,6 +61,18 @@ public static class ManoMotionBuilder
                 {
                     var f=(camera.Fx+camera.Fy)/2;
                     translation=new(weak[1],weak[2],2*f/(Math.Max(width,height)*Math.Max(.1f,weak[0])+1e-9f));
+                }
+                else if(mobile)
+                {
+                    // Upstream projects millimetres directly into 224px crop
+                    // coordinates. Depth is inferred from this weak perspective
+                    // scale and estimated intrinsics, not measured world motion.
+                    if(weak[0]<=0)throw new InvalidDataException("Invalid MobileHand projection scale.");
+                    var pixelScale=1000*weak[0]*observed.Crop.Size/224;
+                    var z=(camera.Fx+camera.Fy)/(2*pixelScale);
+                    var x=observed.Crop.CenterX+sign*(weak[1]-112)*observed.Crop.Size/224;
+                    var y=observed.Crop.CenterY+(weak[2]-112)*observed.Crop.Size/224;
+                    translation=new((x-camera.Cx)*z/camera.Fx,(y-camera.Cy)*z/camera.Fy,z);
                 }
                 else
                 {
@@ -94,6 +107,7 @@ public static class ManoMotionBuilder
             "A mean predicted hand shape fixes bone lengths within this clip. Original per-frame shape predictions remain in the raw cache.",
             "These C# model ports remain experimental. Independent image-network reference parity and ground-truth accuracy are not established."
         });
+        if(mobile)document.Diagnostics.Add("MobileHand is a small single-image model. Sample videos showed large rotation and estimated-depth jumps; no temporal or occlusion accuracy is established. Original 39-parameter predictions remain in the raw cache.");
         document.Validate();return document;
     }
 }

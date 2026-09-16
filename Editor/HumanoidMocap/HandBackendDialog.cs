@@ -16,6 +16,7 @@ public sealed partial class RetargetWindow
         readonly Backend[] _backends =
         {
             new("mediapipe","MediaPipe","Light",Theme.Green,"Available · experimental C#","7.8 MB","Hand landmarks and finger motion","Model prepared automatically","Wrist depth and hidden arm joints are estimated."),
+            new("mobilehand","MobileHand","Light*",Theme.Green,"Experimental C# / native CPU","15.2 MB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Small image model. Tests show pose jumps and unstable depth. Occluded hands depend on the crop detector. Review carefully before export."),
             new("wildhands","WildHands","Medium*",Color.Lerp(Theme.Blue,Theme.Text,.4f),"Experimental C# / native CPU","855 MB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Designed for egocentric footage. Estimated intrinsics can shift the reconstructed hand."),
             new("wilor","WiLoR","Heavy*",Theme.Yellow,"Experimental C# / native CPU","2.56 GB + 7.8 MB crop detector","Wrist and finger rotations, hand shape","C# worker prepared on first use","Large transformer model. Depth remains dependent on camera assumptions."),
             new("ace","ACE-Ego-Hand","Very heavy*",Theme.Red,"Optional · integration pending · untested","Not measured","Temporal hand reconstruction","Wan backbone and hand model assets","Optional integration. Its model has not been run on this PC. Selecting this entry only shows information.")
@@ -113,7 +114,7 @@ public sealed partial class RetargetWindow
                 automatic.Clicked=()=>{_selectModel(new("mediapipe"));Close();};
                 controls.AddStretchCell();
             }
-            else if(backend.Id is "wildhands" or "wilor")
+            else if(backend.Id is "mobilehand" or "wildhands" or "wilor")
             {
                 var use=content.Add(new Button.Primary("Use "+backend.Name){Icon="check"});
                 use.ToolTip="Use this model on the next upload. Missing weights download locally on first use; existing reconstruction is preserved.";

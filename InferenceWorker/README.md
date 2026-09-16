@@ -2,7 +2,7 @@
 
 Experimental local body and hand reconstruction. The worker is C# and calls native LibTorch and OpenCV directly. It does not run Python. Baked animations do not depend on the worker.
 
-The editor starts this worker automatically for Third Person, or for the optional WildHands and WiLoR hand models. Select a workspace, upload a video, and inspect the result. **Advanced → Hand models…** changes the model used for subsequent FPS uploads. MediaPipe remains the lightweight default and runs directly in C# in the editor. ACE is not downloaded or executed.
+The editor starts this worker automatically for Third Person, or for the optional MobileHand, WildHands and WiLoR hand models. Select a workspace, upload a video, and inspect the result. **Advanced → Hand models…** changes the model used for subsequent FPS uploads. MediaPipe remains the lightweight default and runs directly in C# in the editor. ACE is not downloaded or executed.
 
 First-time native worker setup requires .NET 10 SDK and the complete repository checkout. The editor publishes the included worker into `%LOCALAPPDATA%/sbox-humanoid-mocap/worker/<source fingerprint>`. Changes to its C# sources or pinned dependencies automatically select a new build; an interrupted build is retried. To use a prebuilt worker, set `HUMANOID_MOCAP_WORKER` to its executable. Explicitly configured builds are maintained by their owner. `HUMANOID_MOCAP_MODELS` optionally selects a shared model folder. Models are downloaded only for the selected backend and verified against pinned hashes.
 
@@ -53,9 +53,20 @@ dotnet run --project InferenceWorker -- download-hand-models models wildhands
 dotnet run --project InferenceWorker -- hand-capture hand-job.json
 ```
 
-Use `wilor` instead of `wildhands` for WiLoR. A hand job contains `Video`, `Models`, `Output`, `Start`, `End`, `Backend` and a `Camera` object with `Fx`, `Fy`, `Cx`, `Cy` and `Calibrated`. Focal lengths and principal point are in pixels. Editor jobs estimate a centered pinhole camera from image dimensions and set `Calibrated` to false. This is not lens calibration. Supply measured parameters through the CLI when available.
+Use `mobilehand` or `wilor` instead of `wildhands` for those models. A hand job contains `Video`, `Models`, `Output`, `Start`, `End`, `Backend` and a `Camera` object with `Fx`, `Fy`, `Cx`, `Cy` and `Calibrated`. Focal lengths and principal point are in pixels. Editor jobs estimate a centered pinhole camera from image dimensions and set `Calibrated` to false. This is not lens calibration. Supply measured parameters through the CLI when available.
 
-WildHands downloads 855,094,722 bytes and WiLoR downloads 2,564,989,533 bytes, plus the shared 7,819,105-byte MediaPipe crop detector. No separate MANO file is needed by these ports: the pinned checkpoints contain the model buffers used by the C# decoder. These files remain local and are not committed. The crop detector runs fresh landmark inference; missing observations remain marked as missing. The ports use MediaPipe crops rather than the original demos' detectors, so upstream accuracy results do not establish this pipeline's accuracy.
+MobileHand downloads 15,152,098 bytes, WildHands 855,094,722 bytes and WiLoR 2,564,989,533 bytes, plus the shared 7,819,105-byte MediaPipe crop detector. No separate MANO file is needed by these ports: the pinned checkpoints contain the model buffers used by the C# decoder. These files remain local and are not committed. The crop detector runs fresh landmark inference; missing observations remain marked as missing. The ports use MediaPipe crops rather than the original demos' detectors, so upstream accuracy results do not establish this pipeline's accuracy.
+
+MobileHand's pinned FreiHAND checkpoint has SHA-256
+`8587d8aae909c77fa07f382f6648eae4e366b3b4755aa993ca7711bfb35904cf`.
+Its 277 tensors are read without executable pickle loading. On the same Ryzen 7,
+the complete `video_0`, `segment_018` and `segment_037` samples took 16.74, 15.23
+and 16.41 seconds of crop detection plus hand inference, respectively. Peak whole-worker
+RAM was 1.04, 1.41 and 1.43 GB; initialization, video decoding, retargeting and downloads
+are excluded from those timings. No GPU was used. All 361 frames were retained.
+Large pose/depth jumps remain; these are throughput measurements, not evidence of
+accurate capture or minimum hardware requirements. The model's original weak camera
+uses millimetres projected into 224-pixel crops; depth is estimated from its scale.
 
 On the same Ryzen 7 system, 15 frames of `segment_037.mp4` took 10.8 seconds in WildHands inference with 1.38 GB peak worker RAM, and 31.2 seconds in WiLoR inference with 4.50 GB peak worker RAM. Inference timings exclude initial download/checkpoint loading; RAM includes the complete worker process. Native GPU inference has not been tested. Both produced moving armature-only FBX animations that compiled and played in s&box. These are small functional examples, not ground-truth accuracy or minimum-hardware measurements.
 
@@ -66,3 +77,9 @@ WiLoR recorded 87.23 seconds and 3.84 GB. These timings include crop detection a
 hand inference, and exclude initialization, decoding and retargeting. Both fresh jobs passed native target preview,
 arm-length checks, armature-only FBX export and compiled animation playback. The
 detector implementation version is part of the job cache key and motion provenance.
+
+With the subsequent CPU crop/video-tracking update (`managed-hands-v7-video-tracking`),
+the same 30-frame interval recorded 9.70 seconds / 1.47 GB for WildHands and
+82.85 seconds / 5.35 GB for WiLoR. One frame lacked one hand. Both passed native
+preview/export/playback checks again. These are individual runs, not controlled
+cross-model speed or quality benchmarks.

@@ -16,10 +16,13 @@ public static class HandModelDownloads
     static readonly Asset Wilor=new("wilor/wilor_final.ckpt",
         "https://huggingface.co/spaces/rolpotamias/WiLoR/resolve/99fe3d7acff8104ecca1055df7467709506c2fa6/pretrained_models/wilor_final.ckpt",
         2564989533,"3e97aafc7dd08d883a4cc5a027df61fdb6fda6136dbd1319405413862ada6bb2");
+    static readonly Asset MobileHand=new("mobilehand/hmr_model_freihand_auc.pth",
+        "https://raw.githubusercontent.com/gmntu/mobilehand/51c112364013b803c38955b55a1572b0d402894c/model/hmr_model_freihand_auc.pth",
+        15152098,MobileHandModel.CheckpointSha256);
 
     public static async Task Ensure(string folder,string backend,CancellationToken token)
     {
-        var model=backend switch{"wildhands"=>WildHands,"wilor"=>Wilor,_=>throw new NotSupportedException("Select WildHands or WiLoR. ACE is not downloaded or loaded by this worker.")};
+        var model=backend switch{"mobilehand"=>MobileHand,"wildhands"=>WildHands,"wilor"=>Wilor,_=>throw new NotSupportedException("Select MobileHand, WildHands or WiLoR. ACE is not downloaded or loaded by this worker.")};
         using var http=new HttpClient{Timeout=TimeSpan.FromHours(1)};
         foreach(var asset in new[]{Detector,model})
         {

@@ -81,7 +81,7 @@ internal static class NativeCapture
 
     public static async Task<string> HandsAsync(string video,string backend,double start,double end,int width,int height,Action<string> progress,CancellationToken token)
     {
-        if(backend is not ("wildhands" or "wilor"))throw new NotSupportedException("Choose MediaPipe, WildHands or WiLoR. ACE is not loaded automatically.");
+        if(backend is not ("mobilehand" or "wildhands" or "wilor"))throw new NotSupportedException("Choose MediaPipe, MobileHand, WildHands or WiLoR. ACE is not loaded automatically.");
         var (worker,models)=await Prepare(progress,token);
         await RunProcess(worker,new[]{"download-hand-models",models,backend},progress,token);
         // Estimated pinhole intrinsics; these are neither calibrated nor world-space recovery.

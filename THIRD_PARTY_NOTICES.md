@@ -1,5 +1,14 @@
 # Source provenance
 
+The C# MobileHand network, 23-angle pose basis and MANO buffer conventions follow
+[gmntu/mobilehand](https://github.com/gmntu/mobilehand) at
+`51c112364013b803c38955b55a1572b0d402894c`, by Lim Guan Ming, Jatesiktat Prayook
+and Ang Wei Tech (ICONIP 2020). The checkout has no top-level license file.
+Its MobileNetV3 source credits d-li14/mobilenetv3.pytorch and rwightman/gen-efficientnet-pytorch.
+The pretrained FreiHAND checkpoint is downloaded separately from that pinned revision;
+neither its weights nor MANO buffers are committed. The legacy data reader follows
+PyTorch 1.5.1's documented serialization structure and never executes pickle callables.
+
 The core retargeting formats, skeleton/mapping/cleanup/export implementation, editor widgets, settings and verification patterns were copied and adapted from the user's local `humanoid-retargeter` at commit `69ccfcd76f6aecca443f055be912ac3831a64003`. Namespaces, registrations, resource paths and package identifiers were changed to avoid collisions. The original repository was not modified.
 
 The editor uses exposed s&box APIs and the native Group, Button, Theme, SegmentedControl and VideoWidget conventions inspected in Facepunch/sbox-public at `95eb0e4c1409d684de8bec636732c0548b7733fe`. It does not package engine-internal assemblies or pretend internal APIs are public.

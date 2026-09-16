@@ -32,7 +32,7 @@ public static class HandCapture
     }
     public static string Run(HandCaptureRequest request,CancellationToken cancellation=default,Action<string>? progress=null)
     {
-        if(request.Backend is not ("wildhands" or "wilor"))throw new NotSupportedException("This native hand job currently supports WildHands and WiLoR. ACE is never selected automatically.");
+        if(request.Backend is not ("mobilehand" or "wildhands" or "wilor"))throw new NotSupportedException("Choose MobileHand, WildHands or WiLoR. ACE is never selected automatically.");
         if(!double.IsFinite(request.Start)||!double.IsFinite(request.End)||request.Start<0||request.End<=request.Start)
             throw new ArgumentException("Select a nonempty video range.");
         if(request.Camera is null||request.Camera.Fx<=0||request.Camera.Fy<=0||!new[]{request.Camera.Fx,request.Camera.Fy,request.Camera.Cx,request.Camera.Cy}.All(float.IsFinite))
@@ -40,11 +40,12 @@ public static class HandCapture
         var metadata=Mp4Metadata.Read(request.Video);
         var times=metadata.Times.Where(t=>t>=request.Start&&t<request.End).ToArray();
         if(times.Length is <1 or >1800)throw new ArgumentException("Choose between 1 and 1800 frames; the end time is exclusive.");
-        var wild=request.Backend=="wildhands";var checkpointPath=Path.Combine(request.Models,wild?"wildhands/wildhands.ckpt":"wilor/wilor_final.ckpt");
+        var wild=request.Backend=="wildhands";var mobile=request.Backend=="mobilehand";
+        var checkpointPath=Path.Combine(request.Models,mobile?"mobilehand/hmr_model_freihand_auc.pth":wild?"wildhands/wildhands.ckpt":"wilor/wilor_final.ckpt");
         var detectorPath=Path.Combine(request.Models,"hand_landmarker.task");
         string Hash(string path){using var input=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant();}
         cancellation.ThrowIfCancellationRequested();var sourceHash=Hash(request.Video);var detectorHash=Hash(detectorPath);
-        var modelHash=wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256;
+        var modelHash=mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256;
         // Verify cached jobs too; a different file must not masquerade as pinned weights.
         if(Hash(checkpointPath)!=modelHash)throw new InvalidDataException("Hand model checksum mismatch.");
         var keyData=JsonSerializer.Serialize(new{pipeline="native-mano-v3-tracked-crops",detectorImplementation=ManagedHands.ImplementationVersion,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
@@ -68,7 +69,8 @@ public static class HandCapture
                 progress?.Invoke("Loading "+request.Backend+" and MediaPipe crop detector");
                 var detector=new ManagedHands(File.ReadAllBytes(detectorPath));
                 using var wildModel=wild?new WildHandsModel(checkpointPath,cancellation):null;
-                using var wilorModel=wild?null:new WilorModel(checkpointPath,cancellation);
+                using var wilorModel=!wild&&!mobile?new WilorModel(checkpointPath,cancellation):null;
+                using var mobileModel=mobile?new MobileHandModel(checkpointPath,cancellation):null;
                 using var decoder=new WindowsVideoDecoder(request.Video);
                 for(var i=state.Frames.Count;i<times.Length;i++)
                 {
@@ -92,6 +94,14 @@ public static class HandCapture
                                 new((box.Left+box.Right)/2,(box.Top+box.Bottom)/2,Math.Max(box.Right-box.Left,box.Bottom-box.Top)),observed.Presence,observed.Handedness,
                                 observed.Tracked?"MediaPipe tracked landmark ROI":"MediaPipe palm detector"));
                         }
+                    }
+                    else if(mobile)foreach(var observed in observations)
+                    {
+                        var crop=MobileHandCrop.Prepare(frame,Bounds(observed),observed.Side=="R");
+                        var hand=mobileModel!.Run(crop.Image,cancellation);
+                        if(hand.WeakCamera[0]<=0)throw new InvalidDataException("MobileHand predicted a nonpositive projection scale. Raw completed frames were preserved.");
+                        reconstructed.Add(new(observed.Side,hand.RotationMatrices,hand.Shape,hand.WeakCamera,crop.Box,observed.Presence,observed.Handedness,
+                            observed.Tracked?"MediaPipe tracked landmark ROI":"MediaPipe palm detector",hand.Parameters));
                     }
                     else if(!wild)foreach(var observed in observations)
                     {

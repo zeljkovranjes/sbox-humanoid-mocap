@@ -177,7 +177,7 @@ public sealed partial class RetargetWindow
     internal void SelectHandModel(HandModelChoice choice)
     {
         if(_processing is not null){_captureStatus.Text="Finish or cancel the active capture before changing models.";return;}
-        if(choice.Backend is not ("mediapipe" or "wildhands" or "wilor"))throw new NotSupportedException("This hand backend is not available.");
+        if(choice.Backend is not ("mediapipe" or "mobilehand" or "wildhands" or "wilor"))throw new NotSupportedException("This hand backend is not available.");
         _handBackend=choice.Backend;_handModelPath=choice.ModelPath;
         _swapHandsControl.Enabled=_firstPerson&&_handBackend=="mediapipe";
     }

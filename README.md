@@ -42,7 +42,9 @@ immediately. Uploads are local, limited to 2 GiB per file, and preserve previous
 Guest Wi-Fi isolation or a firewall can block the connection.
 
 This is an experimental development build. MediaPipe is the default lightweight hand
-backend; WildHands and WiLoR are optional C# native CPU choices under Advanced. ACE-Ego-Hand is an optional planned backend, not a requirement; its C#
+backend; MobileHand, WildHands and WiLoR are optional C# native CPU choices under Advanced.
+MobileHand has a smaller checkpoint but still shows pose and depth jumps in testing.
+ACE-Ego-Hand is an optional planned backend, not a requirement; its C#
 integration is not implemented. See [hand backend options](HAND_BACKENDS.md) for the
 lighter reconstruction candidates and their current status. The [C# body worker](InferenceWorker/README.md)
 provides Third Person camera-relative GVHMR motion. Initial worker setup needs the

@@ -2,19 +2,30 @@
 
 MediaPipe remains the lightweight option. ACE-Ego-Hand is optional and must not become
 a prerequisite for video import, hand reconstruction, preview or animation playback.
-Open **Advanced → Hand models…** to select MediaPipe, WildHands or WiLoR for the next
+Open **Advanced → Hand models…** to select MediaPipe, MobileHand, WildHands or WiLoR for the next
 FPS upload. Each selection prepares its model automatically on first use. Existing
 reconstruction is preserved. ACE remains an informational optional entry and is never
-selected, downloaded or loaded automatically. The badges are **Light** (MediaPipe), **Medium*** (WildHands), **Heavy*** (WiLoR)
+selected, downloaded or loaded automatically. The badges are **Light** (MediaPipe), **Light*** (MobileHand), **Medium*** (WildHands), **Heavy*** (WiLoR)
 and **Very heavy*** (ACE). An asterisk means the processing weight is an architectural
 estimate, not a local memory measurement or accuracy rating.
 
 | Backend | Status in Humanoid Mocap | Intended use and limits |
 | --- | --- | --- |
 | MediaPipe | Available, experimental C# implementation; 7.8 MB model | Lightweight hand landmarks and finger motion. Wrist depth and arm placement are estimated; this is not calibrated world tracking. |
+| MobileHand | Available, experimental C# native CPU port; 15.2 MB checkpoint | Small MobileNetV3 hand-angle model. Real sample tests show substantial pose/depth jumps; not an accuracy replacement for ACE. |
 | WildHands | Available, experimental C# native CPU port; 855 MB checkpoint | Egocentric wrist/finger rotations and shape. Uses MediaPipe hand crops and estimated camera intrinsics; review wrist depth and visibility. |
 | WiLoR | Available, experimental C# native CPU port; 2.56 GB checkpoint | Wrist/finger rotations and shape with a larger transformer. Uses MediaPipe hand crops rather than the original detector. |
 | ACE-Ego-Hand | Optional future backend; not integrated | Offline bimanual reconstruction through occlusion using the much larger Wan video backbone. Downloads and model loading must be opt-in. |
+
+MobileHand follows the [released FreiHAND implementation](https://github.com/gmntu/mobilehand/tree/51c112364013b803c38955b55a1572b0d402894c).
+Its original 39 parameters, including 23 joint angles, are preserved in the reconstruction
+cache. C# reads its legacy checkpoint as data only; no Python or pickle callable executes.
+The video integration uses a square MediaPipe crop with 1.5× padding and reflected left
+hands. This is our crop policy, not verified parity with an upstream video tracker.
+The three downloaded hand clips completed real inference, but local rotation steps reached
+170–179 degrees and estimated wrist speeds reached 12–46 m/s. Visual review also showed
+misaligned fingers. Conservative cleanup did not remove these failures. MediaPipe stays
+the default, and no accuracy equivalence with larger models is claimed.
 
 The ACE K-free checkpoint was verified against its published SHA-256 and all 844
 projector, ray-head and backbone-delta tensors were read through the C# checkpoint
