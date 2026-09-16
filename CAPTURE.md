@@ -168,6 +168,11 @@ and 270° display rotation without changing compressed footage. A portrait copy 
 passed automatic reconstruction, synchronized preview and native FBX playback in s&box.
 These are orientation fixtures, not a physical iPhone/Android recording or connection test.
 
-Visual review of the cooking sample with Citizen also exposed clipped body geometry
-appearing beside the hands in the first-person camera. This preview issue remains open;
-successful bone export and compiled playback do not establish a clean first-person view.
+Visual review of the cooking sample with Citizen exposed the head intersecting the
+first-person camera and appearing as a floating fragment beside the hands. First-person
+preview now hides a model's separate Head body group when that group supports an empty
+choice, and restores its previous selection in third-person view. Native before/after
+renders confirmed removal of the Citizen fragment. Both Citizen and Human passed
+visibility restoration checks without changing the sampled hand pose, other mesh groups
+or raw capture. Their 120-frame armature exports also compiled and played in s&box.
+Custom models without that body-group structure retain their original visibility.

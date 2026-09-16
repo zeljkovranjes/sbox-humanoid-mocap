@@ -283,6 +283,7 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 			{
 				_sceneModel = new SceneModel( world, model, Transform.Zero );
 				_sceneModel.UseAnimGraph = false;
+				ConfigureHeadVisibility();
 				BuildBoneMap( model );
 			}
 		}
@@ -1124,7 +1125,6 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 		Camera.WorldRotation = Rotation.LookAt( -dir, Vector3.Up );
 	}
 
-	public bool FirstPerson { get; set; }
 	public float ViewmodelFov { get; set; } = 75;
 	public float ViewmodelPitch { get; set; } = 35;
 	public float ViewmodelNearClipCm { get; set; } = 15;
