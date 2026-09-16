@@ -47,11 +47,40 @@ The editor supports up to 4,096 manually added keys per contact.
 For a rigid grip, enable **Hold wrist orientation relative to prop**, then use
 **Use wrist at interval midpoint** to capture the orientation anchor as well. Save and
 confirm after review. The wrist follows the chosen object's articulated bone rotation;
-local finger articulation remains captured. This can reduce rotational slip when an
+local finger articulation remains captured unless explicitly constrained below. This can reduce rotational slip when an
 aligned prop track is available. Leave it off for a hand turning freely against a prop.
 Switching the wrist or prop bone requires placing the orientation anchor again. Clearing
 the option and saving restores captured wrist rotation. Existing contacts keep their
 previous position-only behavior.
+
+**Finger contact points…** in the contact dialog adds optional corrections on the selected
+target rig. Choose a finger and an editable distal-bone-local point in metres. **Use bone
+endpoint** fills the rig's endpoint metadata where available; it is a placement guide,
+not a measured fingertip pad or skin surface. Custom rigs without this metadata need an
+explicit point. **Use preview point** places an object-local target from the baked preview
+at the selected video time. This is manual authoring, not inferred finger contact.
+
+Apply the point to the contact draft, then save the parent contact. Pink preview markers
+show finger points; yellow target markers need review and turn green after confirmation.
+The connecting line shows residual error. Inspect them against the source video and mesh.
+Each confirmed point applies a bounded hinge correction to its proximal, middle and distal
+joints after arm IK. The default limit is 25° per joint relative to the captured target pose,
+editable up to 45°. This is a correction bound, not a measured anatomical joint limit.
+Bone lengths, wrist pose and unselected fingers stay unchanged. Contact fades apply before
+and after the interval; no smoothing follows the constraints.
+
+Finger targets move with their prop bone. With a sliding wrist contact, they also follow
+the change in its object-local key position from the point's placement time. Targets are
+stored for the selected rig geometry, mapping and output workspace. Switching to another
+rig keeps those entries but does not apply them; author and review points for that target
+separately. Contact review shows how many entries match the current target. Remove one
+through the finger dialog or use **Clear points** to remove all target entries from the
+draft. Cancel restores the saved contact. A contact supports up to ten target-specific
+finger entries; large correction jobs report a work-budget error instead of running unbounded.
+
+The point solver can reduce a local gap, but does not model the hand's skin, solve all
+finger collisions, guarantee a correct grip, or recover missing finger observations.
+It may reach its correction bound and leave a gap. It does not move the authoritative prop.
 
 You can also open a prepared `.hmotion` through **Advanced → Open motion…**. Neither path
 automatically tracks props from video or reconstructs an object's geometry.
@@ -123,7 +152,7 @@ object root. For example, adapt the names and times below to your actual tracks:
 **Contact review** can seek to the middle of an interval, confirm it or disable it.
 Suggested intervals remain yellow and do not constrain the wrist. Confirmation applies
 an 80 ms smooth activation/release. The target arm solver preserves captured wrist orientation
-unless a reviewed orientation anchor is set, and preserves finger articulation and limb lengths.
+unless a reviewed orientation anchor is set, and preserves unconstrained finger articulation and limb lengths.
 Unreachable targets leave a gap rather than
 stretching an arm. Object tracks remain authoritative when both hands touch the same prop.
 Overlapping contacts blend their goals independently of list order.
@@ -150,7 +179,8 @@ the selected motion range; it reports gaps instead of dropping the objects silen
 
 Target prop export requires First Person hand capture with root-motion removal off.
 Captured-skeleton export retains objects in source coordinates. Body-prop constraints,
-palm/finger constraints, collision resolution and ContactOpt refinement are not integrated.
+full palm/skin collision constraints and ContactOpt refinement are not integrated. Optional
+authored finger-point constraints use the limited geometric solver described above.
 Surface-based wrist suggestions require imported geometry and user review; they are not
 an object tracker.
 
@@ -214,3 +244,15 @@ were reach-limited, leaving up to 7.36 cm of target gap while retaining arm leng
 Those frames matched the closest allowed reach position within 0.0001 cm. This measures
 solver/export consistency on a controlled fixture, not real capture accuracy. Review
 placement and reach when a hand cannot follow its prop; smoothing cannot fix that gap.
+
+The optional finger-point solver was checked on the same real hand reconstruction and
+authored control plane. On Human, mean index-point gap across 79 fully active frames
+fell from 2.39 to 1.15 cm. On Citizen with the 2 cm authored slide, it fell from 3.75 to
+2.07 cm. No active-frame gap increased beyond 0.001 cm numerical tolerance. Per-joint corrections stayed
+within 25°; local bone positions, wrists and unselected bones stayed unchanged. Point
+placement, Suggested save/reopen, confirmation and visible markers passed in the native
+editor. These are controlled point-target residuals, not skin penetration, grip accuracy
+or measured 3D reconstruction error. The targets remain intentionally approximate.
+Both 120-frame target animations compiled and played in s&box after armature-only FBX
+export. Numerical tests also cover contact fades, missing prop observations, mismatched
+target keys, overlapping goals, sliding offsets and preservation of unselected bones.

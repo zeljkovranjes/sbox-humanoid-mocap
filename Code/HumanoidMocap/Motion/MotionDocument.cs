@@ -100,6 +100,19 @@ public sealed class MotionDocument
             if(c.LocalRotation is not null)CheckRotation(c.LocalRotation);
             if (!Enum.IsDefined(typeof(ContactReview),c.Review)) throw new FormatException("Unknown contact review state.");
             if(c.TargetKeys is null)throw new FormatException("Contact target keys cannot be null.");
+            if(c.FingerTargets is null||c.FingerTargets.Count>10)throw new FormatException("At most ten finger targets are supported per contact.");
+            var fingerBindings=new HashSet<string>();
+            foreach(var finger in c.FingerTargets)
+            {
+                if(finger is null||!FingerContactCorrection.IsDistal(finger.Role)||string.IsNullOrWhiteSpace(finger.TargetKey)
+                    ||!fingerBindings.Add(finger.TargetKey+"/"+finger.Role)||!float.IsFinite(finger.MaximumDegrees)||finger.MaximumDegrees<=0||finger.MaximumDegrees>45)
+                    throw new FormatException("Finger targets need a unique distal role, target-rig key and correction limit in (0,45] degrees.");
+                CheckVector(finger.LocalPoint,3);CheckVector(finger.LocalTarget,3);
+                if(finger.SlideOrigin is not null)CheckVector(finger.SlideOrigin,3);
+                var hand=Bones.FirstOrDefault(b=>b.Name==c.Bone)?.Role;
+                if(hand is not (BoneRole.HandL or BoneRole.HandR)||finger.Role.ToString().EndsWith("L",StringComparison.Ordinal)!=(hand==BoneRole.HandL))
+                    throw new FormatException("Finger target must belong to the contact's hand.");
+            }
             double previousKey=double.NegativeInfinity;
             foreach(var key in c.TargetKeys)
             {
@@ -259,6 +272,7 @@ public sealed class ContactInterval
     /// <summary>Object-bone-local metre positions at source-video timestamps. Required
     /// for a sliding constraint; not inferred from the hand model.</summary>
     public List<ContactTargetKey> TargetKeys { get; set; } = new();
+    public List<FingerContactTarget> FingerTargets { get; set; } = new();
     public ContactReview Review { get; set; }
     public string Reason { get; set; } = "";
 }
@@ -266,6 +280,20 @@ public sealed class ContactTargetKey
 {
     public double Time { get; set; }
     public float[] Position { get; set; } = new float[3];
+}
+
+/// <summary>Explicit target-rig finger point, not a reconstructed skin surface.
+/// Metre offsets are relative to the distal bone and the contact's object bone.</summary>
+public sealed class FingerContactTarget
+{
+    public BoneRole Role { get; set; }
+    public string TargetKey { get; set; } = "";
+    public float[] LocalPoint { get; set; } = new float[3];
+    public float[] LocalTarget { get; set; } = new float[3];
+    public float MaximumDegrees { get; set; } = 25;
+    /// <summary>Parent wrist target at placement time. Sliding keys translate the
+    /// finger target by the same change in object-local wrist position.</summary>
+    public float[]? SlideOrigin { get; set; }
 }
 public sealed class StationaryJointTrack
 {

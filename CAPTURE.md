@@ -167,3 +167,7 @@ independent decoder. Metadata-only copies of the cooking clip exercised 0°, 90�
 and 270° display rotation without changing compressed footage. A portrait copy also
 passed automatic reconstruction, synchronized preview and native FBX playback in s&box.
 These are orientation fixtures, not a physical iPhone/Android recording or connection test.
+
+Visual review of the cooking sample with Citizen also exposed clipped body geometry
+appearing beside the hands in the first-person camera. This preview issue remains open;
+successful bone export and compiled playback do not establish a clean first-person view.

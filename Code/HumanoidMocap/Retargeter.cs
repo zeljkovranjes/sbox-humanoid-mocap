@@ -866,6 +866,8 @@ public static class Retargeter
         }
 
         if (handCapture) AddNote(report, "Camera-relative hand capture uses editable camera placement and target-proportion arm IK. Shoulders and elbows are estimated; unreachable wrists are clamped without stretching bones. Unobserved hands hold their last pose.");
+        if(handCapture&&scene.CaptureContacts?.Contacts.Any(c=>c.FingerTargets.Count>0)==true)
+            AddNote(report,"Authored finger points apply bounded hinge corrections after arm IK only on their matching target rig and confirmed intervals. Other fingers retain captured articulation. Points are not measured skin surfaces; residual gaps and penetration may remain.");
 
         // ---- IK helper bones (root_IK, IK targets, ikrule) need real baked channels ----
         if (context.HasIkBakedBones)

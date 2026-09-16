@@ -98,6 +98,7 @@ public static class HandCaptureRetargeter
             output.Frames.Add(frame);targets.Add(wristTargets);previous=frame;
         }
         TargetCorrections.Apply(output.Frames,target,axis,settings,targets);
+        if(source.CaptureContacts is {} finalContacts)FingerContactCorrection.Apply(output.Frames,target,axis,settings,finalContacts,input.Fps);
         return output;
     }
 

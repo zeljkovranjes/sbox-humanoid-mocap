@@ -29,6 +29,12 @@ smooth activation/release as position contacts. The whole hand rotates together 
 final arm IK, preserving local finger articulation and bone lengths. It is opt-in per
 contact and does not estimate object motion or repair an inaccurate captured grip.
 
+Optional, reviewed finger points add bounded target-rig hinge corrections after arm IK.
+They follow the authoritative prop and any parent sliding keys, with smooth contact fades.
+They preserve bone lengths and unselected finger motion; other target rigs ignore points
+until their own placement is authored. These are editable geometric constraints, not skin
+collision solving or additional reconstructed observations. See [prop tracks](PROP_TRACKS.md).
+
 Third Person first preserves GVHMR's source temporal/contact processing. For an explicitly
 stationary recording camera, **Refine · stationary camera** produces a separate estimated
 world-relative result. Its `stationaryJoints` retain the model's contact probabilities,

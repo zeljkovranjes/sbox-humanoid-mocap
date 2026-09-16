@@ -12,6 +12,8 @@ using Vector3 = System.Numerics.Vector3;
 public sealed class TargetCorrectionSettings
 {
     public bool FirstPerson { get; set; }
+    /// <summary>Identifies the selected target geometry for explicitly authored finger contacts.</summary>
+    public string ContactTargetKey { get; set; } = "";
     public Vector3 LeftShoulder { get; set; } = new(.18f,1.45f,0);
     public Vector3 RightShoulder { get; set; } = new(-.18f,1.45f,0);
     public Vector3 LeftElbow { get; set; } = new(.45f,1.1f,.15f);

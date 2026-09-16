@@ -306,12 +306,13 @@ public sealed partial class RetargetWindow
             var props=new PropContactMotion(motion);var propPlacement=CapturePlacement.ForTarget(spec.UpAxis,corrections);
             var supportsProps=HandCaptureRetargeter.Supports(motion)&&corrections.FirstPerson&&rootMotion==HumanoidMocap.Cleanup.RootMotionMode.Off
                 &&motion.Objects.All(p=>p.Space==motion.Space);
-            if(supportsProps){_mocapPreview.CaptureProps=props;_mocapPreview.PropPlacement=propPlacement;}
+            if(supportsProps){_mocapPreview.CaptureProps=props;_mocapPreview.PropPlacement=propPlacement;_mocapPreview.ContactTargetKey=corrections.ContactTargetKey;}
             _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
             Update();
             _previewFps=clip.Fps;_mocapPreview.SetClip(clip);_mocapPreview.ResetView();SynchronizePreview();
             _mocapPreview.Show();_targetHost.Update();
             _bakedPreview=new BakedPreview(clip,spec,motion.Space.ToString(),revision,corrections.FirstPerson,props,propPlacement,supportsProps);
+            RefreshContacts();
             SaveAppliedAdjustments(session,targetKey,edit,cleanup,motion);
         }
         catch(Exception e){await EditorPipeline.SwitchToMainThread();if(this.IsValid()&&revision==_previewRevision)_captureStatus.Text=e.Message;}
@@ -375,6 +376,7 @@ public sealed partial class RetargetWindow
     TargetCorrectionSettings CaptureTargetCorrections() => new()
     {
         FirstPerson=_firstPerson,LeftShoulder=Vector(_shoulderL),RightShoulder=Vector(_shoulderR),
+        ContactTargetKey=_target is null?"":MocapAdjustmentStore.TargetKey(_target.Spec,_firstPerson),
         LeftElbow=Vector(_elbowL),RightElbow=Vector(_elbowR),Reach=Number(_reach,.995f),
         GroundOffset=Number(_ground,0),FacingDegrees=Number(_facing,0),
         StabilizeFeet=_stabilizeFeetControl.Value,
@@ -408,9 +410,14 @@ public sealed partial class RetargetWindow
         {
             var row=_contactRows.AddRow();row.Spacing=8;
             var label=row.Add(new Label($"{contact.Start:F2}–{contact.End:F2}s · {contact.Bone} → {contact.Object} · {contact.Review}"+(contact.LocalRotation is null?"":" · Rotation held"),this),1);
+            if(contact.FingerTargets.Count>0)
+            {
+                var key=_target is null?"":MocapAdjustmentStore.TargetKey(_target.Spec,_firstPerson);
+                label.Text+=$" · Finger points {contact.FingerTargets.Count(t=>t.TargetKey==key)}/{contact.FingerTargets.Count} for this target";
+            }
             label.SetStyles($"color: {(contact.Review==ContactReview.Suggested?Theme.Yellow:Theme.TextLight).Hex};");
             var reason=new PropContactMotion(_editedMotion).UnsupportedReason(contact);
-            label.ToolTip=reason??contact.Reason+(contact.LocalRotation is null?" Wrist position only; captured wrist rotation is preserved.":" Wrist position and orientation follow the prop bone.")+" Captured finger articulation is preserved. Reach limits may leave a residual gap.";
+            label.ToolTip=reason??contact.Reason+(contact.LocalRotation is null?" Wrist position only; captured wrist rotation is preserved.":" Wrist position and orientation follow the prop bone.")+" Unconstrained fingers keep captured articulation. Optional finger points apply bounded hinge corrections on their authored target only. Pink markers show finger points, yellow/green markers their reviewed targets. Reach limits may leave a residual gap.";
             row.Add(new IconButton("play_arrow",()=>{
                 var range=PlaybackRange;SeekPlaybackFraction(range.Last>range.Start?(float)(((contact.Start+contact.End)*.5-range.Start)/(range.Last-range.Start)):0);
             },this){FixedSize=24,IconSize=16,ToolTip="Review the middle of this interval"});
