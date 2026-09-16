@@ -1,0 +1,106 @@
+{
+  "v": 1,
+  "name": "fight_night",
+  "namespace_patterns": [],
+  "aliases": {
+    "Hips": [
+      "Hips"
+    ],
+    "Spine0": [
+      "Spine"
+    ],
+    "Spine1": [
+      "Spine1"
+    ],
+    "Spine2": [
+      "Spine2"
+    ],
+    "Spine3": [
+      "Spine3"
+    ],
+    "Neck": [
+      "Neck"
+    ],
+    "Head": [
+      "Head"
+    ],
+    "ClavicleL": [
+      "LeftShoulder"
+    ],
+    "ClavicleR": [
+      "RightShoulder"
+    ],
+    "UpperArmL": [
+      "LeftArm"
+    ],
+    "UpperArmR": [
+      "RightArm"
+    ],
+    "LowerArmL": [
+      "LeftForeArm"
+    ],
+    "LowerArmR": [
+      "RightForeArm"
+    ],
+    "HandL": [
+      "LeftHand"
+    ],
+    "HandR": [
+      "RightHand"
+    ],
+    "UpperLegL": [
+      "LeftUpLeg"
+    ],
+    "UpperLegR": [
+      "RightUpLeg"
+    ],
+    "LowerLegL": [
+      "LeftLeg"
+    ],
+    "LowerLegR": [
+      "RightLeg"
+    ],
+    "FootL": [
+      "LeftFoot"
+    ],
+    "FootR": [
+      "RightFoot"
+    ],
+    "ToeL": [
+      "LeftToeBase"
+    ],
+    "ToeR": [
+      "RightToeBase"
+    ],
+    "ThumbProxL": [
+      "LeftHandThumb1"
+    ],
+    "ThumbMidL": [
+      "LeftHandThumb2"
+    ],
+    "ThumbProxR": [
+      "RightHandThumb1"
+    ],
+    "ThumbMidR": [
+      "RightHandThumb2"
+    ],
+    "MiddleMetaL": [
+      "LeftInHandMiddle"
+    ],
+    "MiddleProxL": [
+      "LeftHandMiddle1"
+    ],
+    "MiddleMidL": [
+      "LeftHandMiddle2"
+    ],
+    "MiddleMetaR": [
+      "RightInHandMiddle"
+    ],
+    "MiddleProxR": [
+      "RightHandMiddle1"
+    ],
+    "MiddleMidR": [
+      "RightHandMiddle2"
+    ]
+  }
+}

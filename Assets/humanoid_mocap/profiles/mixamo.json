@@ -1,0 +1,166 @@
+{
+  "v": 1,
+  "name": "mixamo",
+  "namespace_patterns": [
+    "^mixamorig[0-9]*:",
+    "^mixamorig[0-9]*_"
+  ],
+  "aliases": {
+    "Hips": [
+      "Hips"
+    ],
+    "Spine0": [
+      "Spine"
+    ],
+    "Spine1": [
+      "Spine1"
+    ],
+    "Spine2": [
+      "Spine2"
+    ],
+    "Neck": [
+      "Neck"
+    ],
+    "Head": [
+      "Head"
+    ],
+    "ClavicleL": [
+      "LeftShoulder"
+    ],
+    "ClavicleR": [
+      "RightShoulder"
+    ],
+    "UpperArmL": [
+      "LeftArm"
+    ],
+    "UpperArmR": [
+      "RightArm"
+    ],
+    "LowerArmL": [
+      "LeftForeArm"
+    ],
+    "LowerArmR": [
+      "RightForeArm"
+    ],
+    "HandL": [
+      "LeftHand"
+    ],
+    "HandR": [
+      "RightHand"
+    ],
+    "UpperLegL": [
+      "LeftUpLeg"
+    ],
+    "UpperLegR": [
+      "RightUpLeg"
+    ],
+    "LowerLegL": [
+      "LeftLeg"
+    ],
+    "LowerLegR": [
+      "RightLeg"
+    ],
+    "FootL": [
+      "LeftFoot"
+    ],
+    "FootR": [
+      "RightFoot"
+    ],
+    "ToeL": [
+      "LeftToeBase"
+    ],
+    "ToeR": [
+      "RightToeBase"
+    ],
+    "ThumbProxL": [
+      "LeftHandThumb1"
+    ],
+    "ThumbMidL": [
+      "LeftHandThumb2"
+    ],
+    "ThumbDistL": [
+      "LeftHandThumb3"
+    ],
+    "ThumbProxR": [
+      "RightHandThumb1"
+    ],
+    "ThumbMidR": [
+      "RightHandThumb2"
+    ],
+    "ThumbDistR": [
+      "RightHandThumb3"
+    ],
+    "IndexProxL": [
+      "LeftHandIndex1"
+    ],
+    "IndexMidL": [
+      "LeftHandIndex2"
+    ],
+    "IndexDistL": [
+      "LeftHandIndex3"
+    ],
+    "IndexProxR": [
+      "RightHandIndex1"
+    ],
+    "IndexMidR": [
+      "RightHandIndex2"
+    ],
+    "IndexDistR": [
+      "RightHandIndex3"
+    ],
+    "MiddleProxL": [
+      "LeftHandMiddle1"
+    ],
+    "MiddleMidL": [
+      "LeftHandMiddle2"
+    ],
+    "MiddleDistL": [
+      "LeftHandMiddle3"
+    ],
+    "MiddleProxR": [
+      "RightHandMiddle1"
+    ],
+    "MiddleMidR": [
+      "RightHandMiddle2"
+    ],
+    "MiddleDistR": [
+      "RightHandMiddle3"
+    ],
+    "RingProxL": [
+      "LeftHandRing1"
+    ],
+    "RingMidL": [
+      "LeftHandRing2"
+    ],
+    "RingDistL": [
+      "LeftHandRing3"
+    ],
+    "RingProxR": [
+      "RightHandRing1"
+    ],
+    "RingMidR": [
+      "RightHandRing2"
+    ],
+    "RingDistR": [
+      "RightHandRing3"
+    ],
+    "PinkyProxL": [
+      "LeftHandPinky1"
+    ],
+    "PinkyMidL": [
+      "LeftHandPinky2"
+    ],
+    "PinkyDistL": [
+      "LeftHandPinky3"
+    ],
+    "PinkyProxR": [
+      "RightHandPinky1"
+    ],
+    "PinkyMidR": [
+      "RightHandPinky2"
+    ],
+    "PinkyDistR": [
+      "RightHandPinky3"
+    ]
+  }
+}

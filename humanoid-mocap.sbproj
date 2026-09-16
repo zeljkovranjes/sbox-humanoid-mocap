@@ -1,0 +1,13 @@
+{
+  "Title": "Humanoid Mocap",
+  "Type": "library",
+  "Org": "notpointless",
+  "Ident": "chomnr_humanoid_mocap",
+  "Schema": 1,
+  "IncludeSourceFiles": false,
+  "PackageReferences": [],
+  "Metadata": {
+    "Summary": "Local video reconstruction, editable humanoid motion and s&box animation export.",
+    "WebsiteUrl": "https://github.com/zeljkovranjes/sbox-humanoid-mocap"
+  }
+}

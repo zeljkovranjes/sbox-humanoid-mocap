@@ -1,0 +1,164 @@
+{
+  "v": 1,
+  "name": "daz_poser",
+  "namespace_patterns": [],
+  "aliases": {
+    "Hips": [
+      "hip"
+    ],
+    "Spine0": [
+      "abdomen"
+    ],
+    "Spine1": [
+      "abdomen2",
+      "chest"
+    ],
+    "Spine2": [
+      "chest"
+    ],
+    "Neck": [
+      "neck"
+    ],
+    "Head": [
+      "head"
+    ],
+    "ClavicleL": [
+      "lCollar"
+    ],
+    "ClavicleR": [
+      "rCollar"
+    ],
+    "UpperArmL": [
+      "lShldr"
+    ],
+    "UpperArmR": [
+      "rShldr"
+    ],
+    "LowerArmL": [
+      "lForeArm"
+    ],
+    "LowerArmR": [
+      "rForeArm"
+    ],
+    "HandL": [
+      "lHand"
+    ],
+    "HandR": [
+      "rHand"
+    ],
+    "UpperLegL": [
+      "lThigh"
+    ],
+    "UpperLegR": [
+      "rThigh"
+    ],
+    "LowerLegL": [
+      "lShin"
+    ],
+    "LowerLegR": [
+      "rShin"
+    ],
+    "FootL": [
+      "lFoot"
+    ],
+    "FootR": [
+      "rFoot"
+    ],
+    "ToeL": [
+      "lToe"
+    ],
+    "ToeR": [
+      "rToe"
+    ],
+    "ThumbProxL": [
+      "lThumb1"
+    ],
+    "ThumbMidL": [
+      "lThumb2"
+    ],
+    "ThumbDistL": [
+      "lThumb3"
+    ],
+    "ThumbProxR": [
+      "rThumb1"
+    ],
+    "ThumbMidR": [
+      "rThumb2"
+    ],
+    "ThumbDistR": [
+      "rThumb3"
+    ],
+    "IndexProxL": [
+      "lIndex1"
+    ],
+    "IndexMidL": [
+      "lIndex2"
+    ],
+    "IndexDistL": [
+      "lIndex3"
+    ],
+    "IndexProxR": [
+      "rIndex1"
+    ],
+    "IndexMidR": [
+      "rIndex2"
+    ],
+    "IndexDistR": [
+      "rIndex3"
+    ],
+    "MiddleProxL": [
+      "lMid1"
+    ],
+    "MiddleMidL": [
+      "lMid2"
+    ],
+    "MiddleDistL": [
+      "lMid3"
+    ],
+    "MiddleProxR": [
+      "rMid1"
+    ],
+    "MiddleMidR": [
+      "rMid2"
+    ],
+    "MiddleDistR": [
+      "rMid3"
+    ],
+    "RingProxL": [
+      "lRing1"
+    ],
+    "RingMidL": [
+      "lRing2"
+    ],
+    "RingDistL": [
+      "lRing3"
+    ],
+    "RingProxR": [
+      "rRing1"
+    ],
+    "RingMidR": [
+      "rRing2"
+    ],
+    "RingDistR": [
+      "rRing3"
+    ],
+    "PinkyProxL": [
+      "lPinky1"
+    ],
+    "PinkyMidL": [
+      "lPinky2"
+    ],
+    "PinkyDistL": [
+      "lPinky3"
+    ],
+    "PinkyProxR": [
+      "rPinky1"
+    ],
+    "PinkyMidR": [
+      "rPinky2"
+    ],
+    "PinkyDistR": [
+      "rPinky3"
+    ]
+  }
+}

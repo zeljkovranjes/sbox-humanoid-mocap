@@ -1,0 +1,163 @@
+{
+  "v": 1,
+  "name": "vrm",
+  "namespace_patterns": [],
+  "aliases": {
+    "Hips": [
+      "J_Bip_C_Hips"
+    ],
+    "Spine0": [
+      "J_Bip_C_Spine"
+    ],
+    "Spine1": [
+      "J_Bip_C_Chest"
+    ],
+    "Spine2": [
+      "J_Bip_C_UpperChest"
+    ],
+    "Neck": [
+      "J_Bip_C_Neck"
+    ],
+    "Head": [
+      "J_Bip_C_Head"
+    ],
+    "ClavicleL": [
+      "J_Bip_L_Shoulder"
+    ],
+    "ClavicleR": [
+      "J_Bip_R_Shoulder"
+    ],
+    "UpperArmL": [
+      "J_Bip_L_UpperArm"
+    ],
+    "UpperArmR": [
+      "J_Bip_R_UpperArm"
+    ],
+    "LowerArmL": [
+      "J_Bip_L_LowerArm"
+    ],
+    "LowerArmR": [
+      "J_Bip_R_LowerArm"
+    ],
+    "HandL": [
+      "J_Bip_L_Hand"
+    ],
+    "HandR": [
+      "J_Bip_R_Hand"
+    ],
+    "UpperLegL": [
+      "J_Bip_L_UpperLeg"
+    ],
+    "UpperLegR": [
+      "J_Bip_R_UpperLeg"
+    ],
+    "LowerLegL": [
+      "J_Bip_L_LowerLeg"
+    ],
+    "LowerLegR": [
+      "J_Bip_R_LowerLeg"
+    ],
+    "FootL": [
+      "J_Bip_L_Foot"
+    ],
+    "FootR": [
+      "J_Bip_R_Foot"
+    ],
+    "ToeL": [
+      "J_Bip_L_ToeBase"
+    ],
+    "ToeR": [
+      "J_Bip_R_ToeBase"
+    ],
+    "ThumbProxL": [
+      "J_Bip_L_Thumb1"
+    ],
+    "ThumbMidL": [
+      "J_Bip_L_Thumb2"
+    ],
+    "ThumbDistL": [
+      "J_Bip_L_Thumb3"
+    ],
+    "ThumbProxR": [
+      "J_Bip_R_Thumb1"
+    ],
+    "ThumbMidR": [
+      "J_Bip_R_Thumb2"
+    ],
+    "ThumbDistR": [
+      "J_Bip_R_Thumb3"
+    ],
+    "IndexProxL": [
+      "J_Bip_L_Index1"
+    ],
+    "IndexMidL": [
+      "J_Bip_L_Index2"
+    ],
+    "IndexDistL": [
+      "J_Bip_L_Index3"
+    ],
+    "IndexProxR": [
+      "J_Bip_R_Index1"
+    ],
+    "IndexMidR": [
+      "J_Bip_R_Index2"
+    ],
+    "IndexDistR": [
+      "J_Bip_R_Index3"
+    ],
+    "MiddleProxL": [
+      "J_Bip_L_Middle1"
+    ],
+    "MiddleMidL": [
+      "J_Bip_L_Middle2"
+    ],
+    "MiddleDistL": [
+      "J_Bip_L_Middle3"
+    ],
+    "MiddleProxR": [
+      "J_Bip_R_Middle1"
+    ],
+    "MiddleMidR": [
+      "J_Bip_R_Middle2"
+    ],
+    "MiddleDistR": [
+      "J_Bip_R_Middle3"
+    ],
+    "RingProxL": [
+      "J_Bip_L_Ring1"
+    ],
+    "RingMidL": [
+      "J_Bip_L_Ring2"
+    ],
+    "RingDistL": [
+      "J_Bip_L_Ring3"
+    ],
+    "RingProxR": [
+      "J_Bip_R_Ring1"
+    ],
+    "RingMidR": [
+      "J_Bip_R_Ring2"
+    ],
+    "RingDistR": [
+      "J_Bip_R_Ring3"
+    ],
+    "PinkyProxL": [
+      "J_Bip_L_Little1"
+    ],
+    "PinkyMidL": [
+      "J_Bip_L_Little2"
+    ],
+    "PinkyDistL": [
+      "J_Bip_L_Little3"
+    ],
+    "PinkyProxR": [
+      "J_Bip_R_Little1"
+    ],
+    "PinkyMidR": [
+      "J_Bip_R_Little2"
+    ],
+    "PinkyDistR": [
+      "J_Bip_R_Little3"
+    ]
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "v": 1,
+  "name": "rokoko_bvh",
+  "namespace_patterns": [],
+  "aliases": {
+    "Hips": [
+      "Hips"
+    ],
+    "Spine0": [
+      "Spine",
+      "Spine1"
+    ],
+    "Spine1": [
+      "Spine1",
+      "Spine2"
+    ],
+    "Spine2": [
+      "Spine2",
+      "Spine3"
+    ],
+    "Spine3": [
+      "Spine3",
+      "Spine4"
+    ],
+    "Spine4": [
+      "Spine4"
+    ],
+    "Neck": [
+      "Neck",
+      "Neck1"
+    ],
+    "Head": [
+      "Head"
+    ],
+    "ClavicleL": [
+      "LeftShoulder",
+      "LeftCollar"
+    ],
+    "ClavicleR": [
+      "RightShoulder",
+      "RightCollar"
+    ],
+    "UpperArmL": [
+      "LeftArm",
+      "LeftUpperArm"
+    ],
+    "UpperArmR": [
+      "RightArm",
+      "RightUpperArm"
+    ],
+    "LowerArmL": [
+      "LeftForeArm",
+      "LeftLowerArm"
+    ],
+    "LowerArmR": [
+      "RightForeArm",
+      "RightLowerArm"
+    ],
+    "HandL": [
+      "LeftHand"
+    ],
+    "HandR": [
+      "RightHand"
+    ],
+    "UpperLegL": [
+      "LeftUpLeg",
+      "LeftThigh",
+      "LeftUpperLeg"
+    ],
+    "UpperLegR": [
+      "RightUpLeg",
+      "RightThigh",
+      "RightUpperLeg"
+    ],
+    "LowerLegL": [
+      "LeftLeg",
+      "LeftShin",
+      "LeftLowerLeg"
+    ],
+    "LowerLegR": [
+      "RightLeg",
+      "RightShin",
+      "RightLowerLeg"
+    ],
+    "FootL": [
+      "LeftFoot"
+    ],
+    "FootR": [
+      "RightFoot"
+    ],
+    "ToeL": [
+      "LeftToe",
+      "LeftToeBase"
+    ],
+    "ToeR": [
+      "RightToe",
+      "RightToeBase"
+    ]
+  }
+}

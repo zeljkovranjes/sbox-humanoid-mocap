@@ -1,0 +1,76 @@
+{
+  "v": 1,
+  "name": "xsens_mvn",
+  "namespace_patterns": [],
+  "aliases": {
+    "Hips": [
+      "Pelvis"
+    ],
+    "Spine0": [
+      "L5"
+    ],
+    "Spine1": [
+      "L3"
+    ],
+    "Spine2": [
+      "T12"
+    ],
+    "Spine3": [
+      "T8"
+    ],
+    "Neck": [
+      "Neck"
+    ],
+    "Head": [
+      "Head"
+    ],
+    "ClavicleL": [
+      "LeftShoulder"
+    ],
+    "ClavicleR": [
+      "RightShoulder"
+    ],
+    "UpperArmL": [
+      "LeftUpperArm"
+    ],
+    "UpperArmR": [
+      "RightUpperArm"
+    ],
+    "LowerArmL": [
+      "LeftForeArm"
+    ],
+    "LowerArmR": [
+      "RightForeArm"
+    ],
+    "HandL": [
+      "LeftHand"
+    ],
+    "HandR": [
+      "RightHand"
+    ],
+    "UpperLegL": [
+      "LeftUpperLeg"
+    ],
+    "UpperLegR": [
+      "RightUpperLeg"
+    ],
+    "LowerLegL": [
+      "LeftLowerLeg"
+    ],
+    "LowerLegR": [
+      "RightLowerLeg"
+    ],
+    "FootL": [
+      "LeftFoot"
+    ],
+    "FootR": [
+      "RightFoot"
+    ],
+    "ToeL": [
+      "LeftToe"
+    ],
+    "ToeR": [
+      "RightToe"
+    ]
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "v": 1,
+  "name": "classic_bvh",
+  "namespace_patterns": [],
+  "aliases": {
+    "Hips": [
+      "Hips"
+    ],
+    "Spine0": [
+      "Chest"
+    ],
+    "Spine1": [
+      "Chest2"
+    ],
+    "Spine2": [
+      "Chest3"
+    ],
+    "Spine3": [
+      "Chest4"
+    ],
+    "Neck": [
+      "Neck"
+    ],
+    "Head": [
+      "Head"
+    ],
+    "ClavicleL": [
+      "LeftCollar"
+    ],
+    "ClavicleR": [
+      "RightCollar"
+    ],
+    "UpperArmL": [
+      "LeftShoulder"
+    ],
+    "UpperArmR": [
+      "RightShoulder"
+    ],
+    "LowerArmL": [
+      "LeftElbow"
+    ],
+    "LowerArmR": [
+      "RightElbow"
+    ],
+    "HandL": [
+      "LeftWrist"
+    ],
+    "HandR": [
+      "RightWrist"
+    ],
+    "UpperLegL": [
+      "LeftHip"
+    ],
+    "UpperLegR": [
+      "RightHip"
+    ],
+    "LowerLegL": [
+      "LeftKnee"
+    ],
+    "LowerLegR": [
+      "RightKnee"
+    ],
+    "FootL": [
+      "LeftAnkle"
+    ],
+    "FootR": [
+      "RightAnkle"
+    ],
+    "ToeL": [
+      "LeftToe"
+    ],
+    "ToeR": [
+      "RightToe"
+    ]
+  }
+}

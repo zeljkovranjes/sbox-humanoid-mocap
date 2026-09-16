@@ -1,0 +1,172 @@
+{
+  "v": 1,
+  "name": "valvebiped",
+  "namespace_patterns": [
+    "^ValveBiped\\.Bip01_"
+  ],
+  "aliases": {
+    "Hips": [
+      "Pelvis"
+    ],
+    "Spine0": [
+      "Spine"
+    ],
+    "Spine1": [
+      "Spine1"
+    ],
+    "Spine2": [
+      "Spine2"
+    ],
+    "Spine3": [
+      "Spine3",
+      "Spine4"
+    ],
+    "Spine4": [
+      "Spine4"
+    ],
+    "Neck": [
+      "Neck1"
+    ],
+    "Head": [
+      "Head1"
+    ],
+    "ClavicleL": [
+      "L_Clavicle"
+    ],
+    "ClavicleR": [
+      "R_Clavicle"
+    ],
+    "UpperArmL": [
+      "L_UpperArm"
+    ],
+    "UpperArmR": [
+      "R_UpperArm"
+    ],
+    "LowerArmL": [
+      "L_Forearm"
+    ],
+    "LowerArmR": [
+      "R_Forearm"
+    ],
+    "HandL": [
+      "L_Hand"
+    ],
+    "HandR": [
+      "R_Hand"
+    ],
+    "UpperLegL": [
+      "L_Thigh"
+    ],
+    "UpperLegR": [
+      "R_Thigh"
+    ],
+    "LowerLegL": [
+      "L_Calf"
+    ],
+    "LowerLegR": [
+      "R_Calf"
+    ],
+    "FootL": [
+      "L_Foot"
+    ],
+    "FootR": [
+      "R_Foot"
+    ],
+    "ToeL": [
+      "L_Toe0"
+    ],
+    "ToeR": [
+      "R_Toe0"
+    ],
+    "ThumbProxL": [
+      "L_Finger0"
+    ],
+    "ThumbMidL": [
+      "L_Finger01"
+    ],
+    "ThumbDistL": [
+      "L_Finger02"
+    ],
+    "ThumbProxR": [
+      "R_Finger0"
+    ],
+    "ThumbMidR": [
+      "R_Finger01"
+    ],
+    "ThumbDistR": [
+      "R_Finger02"
+    ],
+    "IndexProxL": [
+      "L_Finger1"
+    ],
+    "IndexMidL": [
+      "L_Finger11"
+    ],
+    "IndexDistL": [
+      "L_Finger12"
+    ],
+    "IndexProxR": [
+      "R_Finger1"
+    ],
+    "IndexMidR": [
+      "R_Finger11"
+    ],
+    "IndexDistR": [
+      "R_Finger12"
+    ],
+    "MiddleProxL": [
+      "L_Finger2"
+    ],
+    "MiddleMidL": [
+      "L_Finger21"
+    ],
+    "MiddleDistL": [
+      "L_Finger22"
+    ],
+    "MiddleProxR": [
+      "R_Finger2"
+    ],
+    "MiddleMidR": [
+      "R_Finger21"
+    ],
+    "MiddleDistR": [
+      "R_Finger22"
+    ],
+    "RingProxL": [
+      "L_Finger3"
+    ],
+    "RingMidL": [
+      "L_Finger31"
+    ],
+    "RingDistL": [
+      "L_Finger32"
+    ],
+    "RingProxR": [
+      "R_Finger3"
+    ],
+    "RingMidR": [
+      "R_Finger31"
+    ],
+    "RingDistR": [
+      "R_Finger32"
+    ],
+    "PinkyProxL": [
+      "L_Finger4"
+    ],
+    "PinkyMidL": [
+      "L_Finger41"
+    ],
+    "PinkyDistL": [
+      "L_Finger42"
+    ],
+    "PinkyProxR": [
+      "R_Finger4"
+    ],
+    "PinkyMidR": [
+      "R_Finger41"
+    ],
+    "PinkyDistR": [
+      "R_Finger42"
+    ]
+  }
+}

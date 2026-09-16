@@ -1,0 +1,163 @@
+{
+  "v": 1,
+  "name": "auto_rig_pro",
+  "namespace_patterns": [],
+  "aliases": {
+    "Hips": [
+      "root.x"
+    ],
+    "Spine0": [
+      "spine_01.x"
+    ],
+    "Spine1": [
+      "spine_02.x"
+    ],
+    "Spine2": [
+      "spine_03.x"
+    ],
+    "Neck": [
+      "neck.x"
+    ],
+    "Head": [
+      "head.x"
+    ],
+    "ClavicleL": [
+      "shoulder.l"
+    ],
+    "ClavicleR": [
+      "shoulder.r"
+    ],
+    "UpperArmL": [
+      "arm_stretch.l"
+    ],
+    "UpperArmR": [
+      "arm_stretch.r"
+    ],
+    "LowerArmL": [
+      "forearm_stretch.l"
+    ],
+    "LowerArmR": [
+      "forearm_stretch.r"
+    ],
+    "HandL": [
+      "hand.l"
+    ],
+    "HandR": [
+      "hand.r"
+    ],
+    "UpperLegL": [
+      "thigh_stretch.l"
+    ],
+    "UpperLegR": [
+      "thigh_stretch.r"
+    ],
+    "LowerLegL": [
+      "leg_stretch.l"
+    ],
+    "LowerLegR": [
+      "leg_stretch.r"
+    ],
+    "FootL": [
+      "foot.l"
+    ],
+    "FootR": [
+      "foot.r"
+    ],
+    "ToeL": [
+      "toes_01.l"
+    ],
+    "ToeR": [
+      "toes_01.r"
+    ],
+    "ThumbProxL": [
+      "c_thumb1.l"
+    ],
+    "ThumbMidL": [
+      "c_thumb2.l"
+    ],
+    "ThumbDistL": [
+      "c_thumb3.l"
+    ],
+    "ThumbProxR": [
+      "c_thumb1.r"
+    ],
+    "ThumbMidR": [
+      "c_thumb2.r"
+    ],
+    "ThumbDistR": [
+      "c_thumb3.r"
+    ],
+    "IndexProxL": [
+      "c_index1.l"
+    ],
+    "IndexMidL": [
+      "c_index2.l"
+    ],
+    "IndexDistL": [
+      "c_index3.l"
+    ],
+    "IndexProxR": [
+      "c_index1.r"
+    ],
+    "IndexMidR": [
+      "c_index2.r"
+    ],
+    "IndexDistR": [
+      "c_index3.r"
+    ],
+    "MiddleProxL": [
+      "c_middle1.l"
+    ],
+    "MiddleMidL": [
+      "c_middle2.l"
+    ],
+    "MiddleDistL": [
+      "c_middle3.l"
+    ],
+    "MiddleProxR": [
+      "c_middle1.r"
+    ],
+    "MiddleMidR": [
+      "c_middle2.r"
+    ],
+    "MiddleDistR": [
+      "c_middle3.r"
+    ],
+    "RingProxL": [
+      "c_ring1.l"
+    ],
+    "RingMidL": [
+      "c_ring2.l"
+    ],
+    "RingDistL": [
+      "c_ring3.l"
+    ],
+    "RingProxR": [
+      "c_ring1.r"
+    ],
+    "RingMidR": [
+      "c_ring2.r"
+    ],
+    "RingDistR": [
+      "c_ring3.r"
+    ],
+    "PinkyProxL": [
+      "c_pinky1.l"
+    ],
+    "PinkyMidL": [
+      "c_pinky2.l"
+    ],
+    "PinkyDistL": [
+      "c_pinky3.l"
+    ],
+    "PinkyProxR": [
+      "c_pinky1.r"
+    ],
+    "PinkyMidR": [
+      "c_pinky2.r"
+    ],
+    "PinkyDistR": [
+      "c_pinky3.r"
+    ]
+  }
+}

@@ -1,0 +1,193 @@
+{
+  "v": 1,
+  "name": "ue_mannequin",
+  "namespace_patterns": [],
+  "aliases": {
+    "Hips": [
+      "pelvis"
+    ],
+    "Spine0": [
+      "spine_01"
+    ],
+    "Spine1": [
+      "spine_02"
+    ],
+    "Spine2": [
+      "spine_03"
+    ],
+    "Spine3": [
+      "spine_04"
+    ],
+    "Spine4": [
+      "spine_05"
+    ],
+    "Neck": [
+      "neck_01"
+    ],
+    "Head": [
+      "head"
+    ],
+    "ClavicleL": [
+      "clavicle_l"
+    ],
+    "ClavicleR": [
+      "clavicle_r"
+    ],
+    "UpperArmL": [
+      "upperarm_l"
+    ],
+    "UpperArmR": [
+      "upperarm_r"
+    ],
+    "LowerArmL": [
+      "lowerarm_l"
+    ],
+    "LowerArmR": [
+      "lowerarm_r"
+    ],
+    "HandL": [
+      "hand_l"
+    ],
+    "HandR": [
+      "hand_r"
+    ],
+    "UpperLegL": [
+      "thigh_l"
+    ],
+    "UpperLegR": [
+      "thigh_r"
+    ],
+    "LowerLegL": [
+      "calf_l"
+    ],
+    "LowerLegR": [
+      "calf_r"
+    ],
+    "FootL": [
+      "foot_l"
+    ],
+    "FootR": [
+      "foot_r"
+    ],
+    "ToeL": [
+      "ball_l"
+    ],
+    "ToeR": [
+      "ball_r"
+    ],
+    "ThumbProxL": [
+      "thumb_01_l"
+    ],
+    "ThumbMidL": [
+      "thumb_02_l"
+    ],
+    "ThumbDistL": [
+      "thumb_03_l"
+    ],
+    "ThumbProxR": [
+      "thumb_01_r"
+    ],
+    "ThumbMidR": [
+      "thumb_02_r"
+    ],
+    "ThumbDistR": [
+      "thumb_03_r"
+    ],
+    "IndexMetaL": [
+      "index_metacarpal_l"
+    ],
+    "IndexProxL": [
+      "index_01_l"
+    ],
+    "IndexMidL": [
+      "index_02_l"
+    ],
+    "IndexDistL": [
+      "index_03_l"
+    ],
+    "IndexMetaR": [
+      "index_metacarpal_r"
+    ],
+    "IndexProxR": [
+      "index_01_r"
+    ],
+    "IndexMidR": [
+      "index_02_r"
+    ],
+    "IndexDistR": [
+      "index_03_r"
+    ],
+    "MiddleMetaL": [
+      "middle_metacarpal_l"
+    ],
+    "MiddleProxL": [
+      "middle_01_l"
+    ],
+    "MiddleMidL": [
+      "middle_02_l"
+    ],
+    "MiddleDistL": [
+      "middle_03_l"
+    ],
+    "MiddleMetaR": [
+      "middle_metacarpal_r"
+    ],
+    "MiddleProxR": [
+      "middle_01_r"
+    ],
+    "MiddleMidR": [
+      "middle_02_r"
+    ],
+    "MiddleDistR": [
+      "middle_03_r"
+    ],
+    "RingMetaL": [
+      "ring_metacarpal_l"
+    ],
+    "RingProxL": [
+      "ring_01_l"
+    ],
+    "RingMidL": [
+      "ring_02_l"
+    ],
+    "RingDistL": [
+      "ring_03_l"
+    ],
+    "RingMetaR": [
+      "ring_metacarpal_r"
+    ],
+    "RingProxR": [
+      "ring_01_r"
+    ],
+    "RingMidR": [
+      "ring_02_r"
+    ],
+    "RingDistR": [
+      "ring_03_r"
+    ],
+    "PinkyMetaL": [
+      "pinky_metacarpal_l"
+    ],
+    "PinkyProxL": [
+      "pinky_01_l"
+    ],
+    "PinkyMidL": [
+      "pinky_02_l"
+    ],
+    "PinkyDistL": [
+      "pinky_03_l"
+    ],
+    "PinkyMetaR": [
+      "pinky_metacarpal_r"
+    ],
+    "PinkyProxR": [
+      "pinky_01_r"
+    ],
+    "PinkyMidR": [
+      "pinky_02_r"
+    ],
+    "PinkyDistR": [
+      "pinky_03_r"
+    ]
+  }
+}
