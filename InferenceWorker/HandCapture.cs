@@ -49,7 +49,8 @@ public static class HandCapture
         var modelHash=mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256;
         // Verify cached jobs too; a different file must not masquerade as pinned weights.
         if(Hash(checkpointPath)!=modelHash)throw new InvalidDataException("Hand model checksum mismatch.");
-        var keyData=JsonSerializer.Serialize(new{pipeline=ImplementationVersion,decoder=WindowsVideoDecoder.ImplementationVersion,detectorImplementation=ManagedHands.ImplementationVersion,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
+        var implementation=ImplementationVersion+(wild?"; "+WildHandsCrop.ImplementationVersion:"");
+        var keyData=JsonSerializer.Serialize(new{pipeline=implementation,decoder=WindowsVideoDecoder.ImplementationVersion,detectorImplementation=ManagedHands.ImplementationVersion,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyData))).ToLowerInvariant();
         var directory=Path.Combine(Path.GetFullPath(request.Output),key);Directory.CreateDirectory(directory);
         using var jobLock=new FileStream(Path.Combine(directory,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -120,7 +121,7 @@ public static class HandCapture
             cancellation.ThrowIfCancellationRequested();
             var motion=ManoMotionBuilder.Build(state.Frames,request.Backend,checkpointPath,Path.GetFileNameWithoutExtension(request.Video),
                 Path.GetFullPath(request.Video),sourceHash,metadata.FrameRate,request.Camera,metadata.Width,metadata.Height,cancellation);
-            motion.ModelVersion+="; "+ImplementationVersion+"; crop detector "+ManagedHands.ImplementationVersion+"; "+WindowsVideoDecoder.ImplementationVersion;
+            motion.ModelVersion+="; "+implementation+"; crop detector "+ManagedHands.ImplementationVersion+"; "+WindowsVideoDecoder.ImplementationVersion;
             var motionPath=Path.Combine(directory,"raw-hands-v5-camera.hmotion");Atomic(motionPath,motion.ToJson());
             state.Error=null;Save("complete");return motionPath;
         }

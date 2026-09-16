@@ -60,6 +60,29 @@ features, separate iterative hand heads, and MANO decoding. Its official
 See the [paper and project](https://ap229997.github.io/projects/hands/) and
 [pinned demo source](https://github.com/ap229997/hands/tree/f99dfea0d1fce970aed2d31d1018eda280e05f47).
 
+WildHands now follows the demo's initial 840-pixel square preparation before the
+224-pixel dataset crop and blur. Previously this first resize was omitted, changing
+the effective image filter. Boxes and intrinsics follow both transforms; no frames
+are dropped. Twelve crop checks on the three supplied videos matched the isolated
+preparation reference, including off-center intrinsics and missing-hand inputs.
+This is preprocessing verification, not independent parity for the complete network.
+
+On the calibrated HOT3D `001849` view with the same 236 detected hands, this change
+reduced mean wrist-relative landmark disagreement from 50.2 to 43.5 mm and p95 from
+89.8 to 78.6 mm. Mean camera-wrist disagreement changed from 158.6 to 153.7 mm.
+Temporal results were mixed: mean wrist-relative velocity disagreement decreased
+slightly, while p95 increased from 472 to 486 mm/s. UmeTrack/MANO landmark definitions
+differ; these are one-clip reference comparisons, not dataset-wide accuracy claims.
+
+The complete `video_0` editor run retained 121 frames and 157 observed hand instances,
+then passed target preview, armature export and compiled FBX playback. With the same
+600 px **assumed** focal length, median palm reprojection disagreement stayed at
+162.8 px and p95 increased from 210 to 221 px. Visible pose errors and tracking loss
+remain. CPU detection/inference took 28.27 s with 1.70 GB peak worker RAM on the Ryzen
+7 7800X3D, four threads; setup, decode, retarget and export are excluded. The new
+`wildhands-demo840-v1` cache version preserves previous results. Use **Process again**
+to apply it; repeated jobs reuse predictions, and WiLoR/MobileHand cache keys are unchanged.
+
 Fast-HaMeR is another research candidate. The authors report roughly 35% of HaMeR's
 model size, 1.5 times faster inference and a 0.4 mm accuracy difference on HO3D-v2.
 Those numbers do not establish comparable egocentric video or occlusion performance.
