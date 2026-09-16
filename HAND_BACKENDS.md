@@ -85,3 +85,14 @@ rotations to fixed canonical finger lengths and assumes wrist depth on an image 
 Estimated shoulders and elbows are added on the selected target through IK. Captured-skeleton
 export contains the hand source; ordinary export contains the preview rig and baked movement.
 Source observations are retained separately, so target and correction changes do not rerun inference.
+
+MediaPipe finger fitting now carries the parent segment's orientation and applies the
+minimum swing needed to match each observed direction. This avoids the old palm-axis
+singularity when a finger points across the palm. Axial finger twist is estimated,
+not measured by the landmarks. Replaying all three saved samples preserved 5,370
+segment directions within 0.00027 degrees, along with wrist transforms, timestamps
+and observation labels. Rotation steps above 90 degrees changed from 106 to 55 in
+`video_0`, from 30 to 28 in `segment_018`, and remained zero in `segment_037`.
+Some individual joints worsened and large prediction jumps remain. These are fitting
+checks, not 3D accuracy measurements. Reprocessing reuses cached neural observations
+and writes `raw-hands-v5.hmotion`, preserving the previous fitted motion file.

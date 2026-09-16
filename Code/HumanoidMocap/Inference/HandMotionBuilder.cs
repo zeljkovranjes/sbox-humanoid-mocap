@@ -31,7 +31,7 @@ public sealed class HandMotionBuilder
             rig.RoleOf(b.Index) is { } role&&FingerSolver.IsFingerRole(role)).Select(b=>b.Index).ToArray();
         documentIndices=sourceBones.Select((source,index)=>(source,index)).ToDictionary(x=>x.source,x=>x.index);
         Document=new MotionDocument{Name=name,SourceVideo=video,SourceSha256=hash,SourceFps=fps,
-            Backend="MediaPipe hands / experimental managed C#",ModelVersion="hand_landmarker/float16/1; hand-forest-v1",
+            Backend="MediaPipe hands / experimental managed C#",ModelVersion="hand_landmarker/float16/1; hand-forest-v2-parent-swing",
             Space=MotionSpace.CameraRelative,MetricScaleCalibrated=false};
         foreach(var source in sourceBones)
         {
@@ -45,6 +45,7 @@ public sealed class HandMotionBuilder
         }
         Document.Diagnostics.AddRange(new[]{"Experimental landmark reconstruction. Model-port parity has not been established.",
             "Hand-relative 3D landmarks are reconstructed; rotations are fitted to a fixed canonical hand skeleton.",
+            "Finger segment directions follow the landmarks. Axial twist is unmeasured and estimated by minimal swing relative to the parent segment; it is not captured finger torsion.",
             "Camera-relative wrist translation uses an assumed image plane, not measured depth or camera motion.",
             "The source contains no shoulders or elbows. Target arm IK is estimated after reconstruction.",
             "Unobserved hands hold their last pose and remain labeled unobserved. No per-joint confidence is supplied."});
@@ -80,6 +81,7 @@ public sealed class HandMotionBuilder
             frame.Evidence[handIndex]=JointEvidence.Reconstructed;
             foreach(var (finger,start) in new[]{("Thumb",1),("Index",5),("Middle",9),("Ring",13),("Pinky",17)})
             {
+                var parentDelta=Quaternion.Normalize(desired[handIndex]*Quaternion.Inverse(rest[hand].Rot));
                 var segments=new[]{"Prox","Mid","Dist"};
                 for(var k=0;k<3;k++)
                 {
@@ -88,10 +90,18 @@ public sealed class HandMotionBuilder
                     if(k<2&&rig.BoneForRole(Role(finger+segments[k+1])) is int next)direction=rest[next].Pos-rest[bone].Pos;
                     else if(k>0&&rig.BoneForRole(Role(finger+segments[k-1])) is int parent)direction=rest[bone].Pos-rest[parent].Pos;
                     else continue;
-                    if(!TryBasis(direction,restAcross,out var sourceFrame)||!TryBasis(points[start+k+1]-points[start+k],across,out var capturedFrame))continue;
+                    var capturedDirection=points[start+k+1]-points[start+k];
+                    if(!Finite(direction)||!Finite(capturedDirection)||direction.LengthSquared()<1e-10f||capturedDirection.LengthSquared()<1e-10f)break;
+                    // A segment direction does not measure roll. Carry its parent's
+                    // frame and apply only the swing needed to match the observation.
+                    // Independent palm-axis bases become singular when a finger
+                    // points across the palm and can add a spurious 180-degree twist.
+                    var predictedDirection=Vector3.Transform(direction,parentDelta);
+                    var delta=Quaternion.Normalize(MathQ.FromTo(predictedDirection,capturedDirection)*parentDelta);
                     var joint=documentIndices[bone];
-                    desired[joint]=Quaternion.Normalize(capturedFrame*Quaternion.Inverse(sourceFrame)*rest[bone].Rot);
+                    desired[joint]=Quaternion.Normalize(delta*rest[bone].Rot);
                     frame.Evidence[joint]=JointEvidence.Reconstructed;
+                    parentDelta=delta;
                 }
             }
         }

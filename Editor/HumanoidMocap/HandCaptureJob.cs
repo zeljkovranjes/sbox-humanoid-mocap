@@ -101,7 +101,7 @@ public static class HandCaptureJob
             builder.Document.ModelVersion+="; "+ManagedHands.ImplementationVersion;
             foreach(var frame in raw){token.ThrowIfCancellationRequested();builder.Add(frame.Time,frame.Width,frame.Height,frame.Hands.Select(h=>h.ToObservation()).ToArray());}
             builder.Document.Validate();
-            var path=Path.Combine(directory,swapHands?"raw-hands-v4-swapped.hmotion":"raw-hands-v4.hmotion");
+            var path=Path.Combine(directory,swapHands?"raw-hands-v5-swapped.hmotion":"raw-hands-v5.hmotion");
             File.WriteAllText(path,builder.Document.ToJson());Save("complete");return path;
         }
         finally{SingleJob.Release();}
