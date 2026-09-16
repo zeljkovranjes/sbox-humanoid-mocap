@@ -80,8 +80,7 @@ public static class BodyMotionBuilder
             "Camera-relative reconstruction with identity camera-angular-velocity conditioning assumption; camera motion has not been recovered.",
             "Focal length is estimated, not calibrated. Monocular body shape and scale are model estimates.",
             "Raw body output: upstream source contact/limb IK has not yet been applied. No world root-motion claim.",
-            "GVHMR provides no detailed finger capture or per-joint 3D confidence. Raw 2D heatmap scores remain in reconstruction state.",
-            "The selected person crop is manual and constant over this range. Check that the person stays inside it."
+            "GVHMR provides no detailed finger capture or per-joint 3D confidence. Raw 2D heatmap scores remain in reconstruction state."
         });
         document.Validate();return document;
     }

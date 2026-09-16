@@ -7,7 +7,7 @@ using HumanoidMocap.Inference;
 
 namespace HumanoidMocap.Worker;
 
-public sealed record BodyCaptureRequest(string Video,string Models,string Output,double Start,double End,GvhmrDecoder.Box PersonCrop);
+public sealed record BodyCaptureRequest(string Video,string Models,string Output,double Start,double End,GvhmrDecoder.Box? PersonCrop=null);
 public static class BodyCapture
 {
     sealed class FrameState
@@ -15,6 +15,8 @@ public static class BodyCapture
         public double Time { get; set; }
         public float[]? Observations { get; set; }
         public float[]? ImageFeatures { get; set; }
+        public PersonDetector.Detection[]? Detections { get; set; }
+        public PersonCropTrack.Sample? Person { get; set; }
     }
     sealed class State
     {
@@ -32,7 +34,7 @@ public static class BodyCapture
         if(count<1||count>1800)throw new ArgumentException("Select between one and 1,800 frames.");
         using var video=File.OpenRead(request.Video);var sourceSha=Convert.ToHexString(SHA256.HashData(video));
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{
-            version="gvhmr-csharp-camera-raw-v1",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,
+            version="gvhmr-csharp-person-crop-v2",detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,
             temporal=GvhmrTemporalNetwork.CheckpointSha256,hmr="2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",pose="50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc"
         }))));
         var folder=Path.Combine(request.Output,key);Directory.CreateDirectory(folder);var statePath=Path.Combine(folder,"reconstruction.json");
@@ -41,7 +43,7 @@ public static class BodyCapture
         if(state is null||state.Key!=key||state.Frames.Count>count)throw new InvalidDataException("Invalid reconstruction checkpoint.");
         void Save(string status)
         {
-            state.Status=status;state.PeakRamBytes=Process.GetCurrentProcess().PeakWorkingSet64;
+            state.Status=status;state.PeakRamBytes=Math.Max(state.PeakRamBytes,Process.GetCurrentProcess().PeakWorkingSet64);
             File.WriteAllText(statePath+".partial",JsonSerializer.Serialize(state));File.Move(statePath+".partial",statePath,true);progress?.Invoke(status);
         }
         void Visit(Action<DecodedVideoFrame,int> process)
@@ -60,14 +62,36 @@ public static class BodyCapture
         try
         {
             state.Error=null;Save("preparing");var watch=Stopwatch.StartNew();
+            if(request.PersonCrop is { } manual)
+            {
+                if(!float.IsFinite(manual.CenterX+manual.CenterY+manual.Size)||manual.Size<=0)throw new ArgumentException("Invalid manual person crop.");
+                Visit((frame,index)=>state.Frames[index].Person=new(manual,"manual crop",null));
+            }
+            else
+            {
+                if(state.Frames.Count<count||state.Frames.Any(f=>f.Detections is null))
+                {
+                    using var detector=new PersonDetector(Path.Combine(request.Models,"person/person_detection_mediapipe_2023mar.onnx"));
+                    Visit((frame,index)=>
+                    {
+                        if(state.Frames[index].Detections is not null)return;
+                        state.Frames[index].Detections=detector.Detect(frame,cancellation);
+                        Save($"Detected person {index+1}/{count}");
+                    });
+                }
+                var track=PersonCropTrack.Stabilize(PersonCropTrack.Build(state.Frames.Select(f=>new PersonCropTrack.Frame(f.Time,f.Detections!)).ToArray()));
+                for(var i=0;i<track.Length;i++)state.Frames[i].Person=track[i];
+            }
+            state.Seconds["personDetectionThisRun"]=watch.Elapsed.TotalSeconds;Save("person-crops-ready");watch.Restart();
             if(state.Frames.Count<count||state.Frames.Any(f=>f.Observations is null))
             {
                 using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation);
                 Visit((frame,index)=>
                 {
                     if(state.Frames[index].Observations is not null)return;
-                    var crop=VideoCrop.Prepare(frame,request.PersonCrop);var heatmap=VideoCrop.AverageFlippedHeatmaps(pose.Run(crop,cancellation),pose.Run(VideoCrop.FlipImage(crop),cancellation));
-                    state.Frames[index].Observations=VideoCrop.DecodeHeatmaps(heatmap,request.PersonCrop);
+                    var box=state.Frames[index].Person!.Crop;
+                    var crop=VideoCrop.Prepare(frame,box);var heatmap=VideoCrop.AverageFlippedHeatmaps(pose.Run(crop,cancellation),pose.Run(VideoCrop.FlipImage(crop),cancellation));
+                    state.Frames[index].Observations=VideoCrop.DecodeHeatmaps(heatmap,box);
                     if(index==0||index==count-1)VideoCrop.SaveOverlay(frame,state.Frames[index].Observations!,Path.Combine(folder,$"observations-{index}.png"));
                     Save($"Reconstructed 2D pose {index+1}/{count}");
                 });
@@ -79,12 +103,12 @@ public static class BodyCapture
                 Visit((frame,index)=>
                 {
                     if(state.Frames[index].ImageFeatures is not null)return;
-                    state.Frames[index].ImageFeatures=hmr.Run(VideoCrop.Prepare(frame,request.PersonCrop),cancellation);Save($"Reconstructed image features {index+1}/{count}");
+                    state.Frames[index].ImageFeatures=hmr.Run(VideoCrop.Prepare(frame,state.Frames[index].Person!.Crop),cancellation);Save($"Reconstructed image features {index+1}/{count}");
                 });
             }
             state.Seconds["imageFeaturesThisRun"]=watch.Elapsed.TotalSeconds;GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
             Save("temporal-inference");var camera=new GvhmrDecoder.Camera(MathF.Sqrt(metadata.Width*metadata.Width+metadata.Height*metadata.Height),metadata.Width*.5f,metadata.Height*.5f);
-            var boxes=Enumerable.Repeat(request.PersonCrop,count).ToArray();var cameras=Enumerable.Repeat(camera,count).ToArray();
+            var boxes=state.Frames.Select(f=>f.Person!.Crop).ToArray();var cameras=Enumerable.Repeat(camera,count).ToArray();
             var identityCondition=Enumerable.Range(0,count).SelectMany(_=>new[]{1f,0,0,0,1,0}).ToArray();
             var conditions=GvhmrDecoder.Prepare(state.Frames.SelectMany(f=>f.Observations!).ToArray(),boxes,cameras,identityCondition);
             var network=new GvhmrTemporalNetwork(Path.Combine(request.Models,"gvhmr/gvhmr_siga24_release.ckpt"),cancellation);
@@ -94,6 +118,10 @@ public static class BodyCapture
             var skeleton=new SmplxSkeleton(Path.Combine(request.Models,"smplx/SMPLX_NEUTRAL.npz"),cancellation);
             var motion=BodyMotionBuilder.CameraRelative(skeleton,decoded,translation,state.Frames.Select(f=>f.Time).ToArray(),Path.GetFileNameWithoutExtension(request.Video),request.Video,sourceSha,metadata.FrameRate,camera);
             motion.ModelVersion+="; "+WindowsVideoDecoder.ImplementationVersion;
+            motion.ModelVersion+="; "+(request.PersonCrop is null?PersonDetector.Version:"manual-person-crop");
+            motion.Diagnostics.Add(request.PersonCrop is null
+                ?$"Automatic single-person image crops from {PersonDetector.Version}, with two centered five-frame crop averages; {state.Frames.Count(f=>f.Person!.Evidence!="detected")} short-gap crop estimates. Raw detections, detector scores and crop evidence are saved separately in reconstruction.json; they are not joint confidence or camera calibration."
+                :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             var result=Path.Combine(folder,"raw-body.hmotion");File.WriteAllText(result+".partial",motion.ToJson());File.Move(result+".partial",result,true);
             state.Seconds["temporalAndDecodeThisRun"]=watch.Elapsed.TotalSeconds;Save("complete");return result;
         }

@@ -74,9 +74,9 @@ internal static class NativeCapture
     {
         var (worker,models)=await Prepare(progress,token);
         await RunProcess(worker, new[] { "download-body-models", models }, progress, token);
-        // Initial single-person full-frame crop. No camera calibration or world recovery is implied.
-        var box = new { CenterX = width * .5f, CenterY = height * .5f, Size = (float)Math.Max(width, height) };
-        return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end, PersonCrop = box },progress,token);
+        // Omitting PersonCrop enables the worker's automatic image-space subject track.
+        // This does not recover camera motion or calibrate world scale.
+        return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end },progress,token);
     }
 
     public static async Task<string> HandsAsync(string video,string backend,double start,double end,int width,int height,Action<string> progress,CancellationToken token)

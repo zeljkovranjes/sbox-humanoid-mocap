@@ -13,13 +13,13 @@ dotnet run --project InferenceWorker -- download-body-models models
 dotnet run --project InferenceWorker -- body-capture body-job.json
 ```
 
-The first command downloads and verifies 5,530,829,656 bytes of pinned body checkpoints/model data. NuGet also restores the pinned native CPU dependencies. These files stay local and are reused.
+The first command downloads and verifies 5,542,819,815 bytes of pinned body checkpoints/model data, including the 11,990,159-byte person detector. NuGet also restores the pinned native CPU dependencies. These files stay local and are reused.
 
 Example footage and measured limitations are linked in the [capture guide](../CAPTURE.md).
 Test-video download tools, fixtures and verification reports are kept outside the
 distributed library. They are not needed to process your own videos.
 
-Example `body-job.json` (use your own absolute paths and person crop):
+Example `body-job.json` (use your own absolute paths):
 
 ```json
 {
@@ -27,16 +27,34 @@ Example `body-job.json` (use your own absolute paths and person crop):
   "Models": "D:/Mocap/models",
   "Output": "D:/Mocap/jobs",
   "Start": 0,
-  "End": 1,
-  "PersonCrop": { "CenterX": 390, "CenterY": 410, "Size": 600 }
+  "End": 1
 }
 ```
 
-Range boundaries are seconds in the original video; the end is exclusive. Crop coordinates are pixels in the visible, oriented video image, after coded padding is removed. `Size` describes a square around the person. Keep the person inside it throughout the selected range. The crop is currently manual and constant, not automatically tracked. MP4/MOV metadata and the installed Windows video decoder must support the input.
+Range boundaries are seconds in the original video; the end is exclusive. MP4/MOV metadata and the installed Windows video decoder must support the input.
+
+Without `PersonCrop`, a pinned MediaPipe person detector runs through native OpenCV DNN
+before the expensive vision models. It selects a prominent subject and follows its
+image-space center and scale. Ambiguous subjects, large jumps and tracking loss produce
+an error instead of silently switching people. Short interior crop gaps up to 0.25 seconds
+can be interpolated using timestamps; missing boundary crops require trimming the range.
+Two centered five-frame averages stabilize the crop center and size before reconstruction,
+following GVHMR's tracker preprocessing. A wider margin keeps the detected body circle
+inside the vision models' central 3:4 input. These averages change image crops, not finished
+joint animation, and introduce no causal delay. Boundary crops use replicated samples.
+Detection scores and crop evidence remain separate from the reconstructed joints in
+`reconstruction.json`. The detector is unloaded before ViTPose/HMR2 processing, and saved
+detections are reused after cancellation. This is our single-subject crop tracker, not
+GVHMR's original YOLO tracker or calibrated camera recovery.
+
+For an explicit fixed crop, add `"PersonCrop": { "CenterX": 390, "CenterY": 410, "Size": 600 }`.
+Coordinates are pixels in the visible, oriented video image, after coded padding is removed.
+`Size` sets the square crop height; the vision model uses its central 3:4 region. Keep the
+whole person inside that region throughout the selected range. A manual crop skips detection.
 
 The command prints `HM_RESULT ` followed by the resulting `raw-body.hmotion` path. The editor opens it automatically; manual worker results can be opened through **Advanced → Open motion…**. Raw observations, image features and network predictions remain beside it. Ctrl+C or an input line containing `cancel` cancels between inference operations; rerunning the same request resumes completed frames. The editor allows eight queued uploads and one active job. Each job allows up to 1,800 selected frames and uses four CPU inference threads. The body worker loads its two vision models sequentially.
 
-The default body path is camera-relative and uses an explicit identity camera-rotation conditioning assumption. Camera intrinsics are estimated from the image dimensions. Automatic editor jobs use a full-frame crop for a single visible person; the CLI permits a fixed custom crop. Camera recovery and moving person crops are not included. Target foot correction is applied during retargeting. It does not reconstruct detailed fingers or object tracks. No calibrated metric scale or world-root-motion accuracy is claimed.
+The default body path is camera-relative and uses an explicit identity camera-rotation conditioning assumption. Camera intrinsics are estimated from the image dimensions. Automatic editor jobs use the single-person crop tracker; the CLI also permits a fixed custom crop. Camera recovery is not included. Target foot correction is applied during retargeting. It does not reconstruct detailed fingers or object tracks. No calibrated metric scale or world-root-motion accuracy is claimed.
 
 For footage recorded with a stationary camera, **Advanced → Third Person → Refine · stationary camera**
 applies the pinned upstream root/contact processing and two-iteration source-limb CCD.
@@ -73,9 +91,9 @@ excluding editor preview/export. This is one measured
 CPU run, not a minimum requirement. Affected joints are labeled as IK-generated;
 static probabilities do not become per-joint confidence or observed object contacts.
 
-Tested on Ryzen 7 7800X3D with 32 GB RAM: all 312 tennis-video frames took approximately 20 minutes with the corrected video decoder and peaked at 5.82 GB worker RAM. Pose inference took 781.4 seconds, image features 411.3 seconds, and temporal inference/decoding 2.7 seconds. Editor verification overlapped this run, so it is not a controlled speed benchmark. The native image models ran on CPU; GPU inference and VRAM usage have not been validated. An earlier 29-frame cached rerun completed in under three seconds. These measurements are not minimum hardware requirements.
+Tested on Ryzen 7 7800X3D with 32 GB RAM: all 312 tennis-video frames took approximately 18.6 minutes with automatic stabilized crops and peaked at 6.12 GB worker RAM. Person detection took 12.6 seconds, pose inference 713.3 seconds, image features 389.9 seconds, and temporal inference/decoding 2.5 seconds. Other verification overlapped this run, so it is not a controlled speed benchmark. The native image models ran on CPU; GPU inference and VRAM usage have not been validated. An earlier fixed-crop run took about 20 minutes and 5.82 GB RAM. These measurements are not minimum hardware requirements.
 
-The complete Human animation and a short Citizen slice were retargeted, previewed, compiled and played in s&box. Foot drift remains; these functional checks do not establish 3D accuracy or solved contacts. See the repository's third-party notices and `Editor/HumanoidMocap/Inference/Gvhmr.LICENSE`.
+Complete Human and Citizen animations have been retargeted, previewed, compiled and played in s&box. Foot drift and occasional pose jumps remain; these functional checks do not establish 3D accuracy or solved contacts. See [drift measurements](../DRIFT_REDUCTION.md), the repository's third-party notices and `Editor/HumanoidMocap/Inference/Gvhmr.LICENSE`.
 
 For hand capture, download only the selected model. For the default MediaPipe path:
 

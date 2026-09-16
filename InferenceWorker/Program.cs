@@ -29,6 +29,7 @@ try
     else if(args.Length==2&&args[0]=="body-capture")
     {
         torch.set_num_threads(4);
+        OpenCvSharp.Cv2.SetNumThreads(4);
         var request=JsonSerializer.Deserialize<BodyCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid body job request.");
         Console.WriteLine("HM_RESULT "+BodyCapture.Run(request,cancellation.Token,Console.WriteLine));
     }

@@ -43,6 +43,8 @@ preview before exporting. This library exports animation and armatures; it does 
 automatically rig or skin a character. Phone codec support depends on Windows Media Foundation.
 
 Third Person uses camera-relative GVHMR reconstruction, without detailed finger capture.
+It automatically follows one prominent subject with image-space crops; ambiguous subjects
+and long tracking loss require a shorter or clearer recording.
 Calibrated world recovery, automatic prop tracking and multi-camera fusion are not supported.
 
 This is an experimental development build. Wrist depth, hidden elbows and shoulders

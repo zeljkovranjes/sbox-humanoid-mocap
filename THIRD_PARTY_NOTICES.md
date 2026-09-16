@@ -1,5 +1,13 @@
 # Source provenance
 
+The C# person detector adapts preprocessing, anchor layout and output decoding from
+[OpenCV Zoo's MediaPipe person detector](https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/person_detection_mediapipe)
+at `47534e27c9851bb1128ccc0102f1145e27f23f98`. It runs the published ONNX model through
+OpenCV DNN on CPU. The Apache 2.0 license is retained in
+`InferenceWorker/PersonDetector.LICENSE`; weights are downloaded separately and verified
+against the upstream Git LFS SHA-256. Subject association and conservative gap handling
+are this library's implementation, not GVHMR's original YOLO tracker.
+
 The C# MobileHand network, 23-angle pose basis and MANO buffer conventions follow
 [gmntu/mobilehand](https://github.com/gmntu/mobilehand) at
 `51c112364013b803c38955b55a1572b0d402894c`, by Lim Guan Ming, Jatesiktat Prayook

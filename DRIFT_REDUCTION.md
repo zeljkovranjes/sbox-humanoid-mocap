@@ -64,7 +64,8 @@ also needs camera/scale estimation. That capability is not supplied by these fil
 Measurements used the downloaded GVHMR tennis clip and HaWoR hand samples on the existing
 Ryzen 7 7800X3D system. Body comparison uses the same 312-frame stationary-camera result,
 same target proportions and the same 458 consecutive per-joint steps whose GVHMR
-probabilities exceed 0.8. These are model-predicted static intervals, not ground truth.
+probabilities exceed 0.8. This comparison used the earlier fixed image crop. These are
+model-predicted static intervals, not ground truth.
 
 | Target | Mean step before → after | Largest step before → after |
 | --- | --- | --- |
@@ -77,6 +78,35 @@ frame 134, about 4.49 s, with the same amplitude. Limb-length errors remained be
 0.001 cm. Reduced contact motion is not proof of correct 3D pose, ground height or scale.
 In-place export intentionally changes the reference frame; stationary-world slip numbers
 must not be applied to its moving feet.
+
+Automatic body capture now follows a prominent subject with a lightweight person detector.
+Before ViTPose/HMR2 inference, its crop center and size receive two centered five-frame
+averages, matching GVHMR's crop preprocessing. A wider margin contains the estimated
+body circle inside the models' 3:4 input. Short interior tracking gaps are interpolated;
+ambiguous subjects and longer losses stop with an actionable error. Raw detections and
+their scores remain separate from these crop estimates and the resulting motion.
+
+The first, unsmoothed crop experiment was rejected: peak raw camera-relative root speed
+rose from 3.00 to 11.17 m/s on the tennis clip. Stabilized crops reduced it to 2.73 m/s.
+All 5,288 joint observations with heatmap scores above 0.5 stayed inside the central 90%
+of their crops. Neither crop coverage nor a lower speed proves correct depth or 3D motion.
+The new reconstruction still contains a sharp left-elbow change near 2.68 seconds.
+Additional broad smoothing is not enabled to conceal it.
+
+On this new 312-frame result, stationary-camera source refinement followed by target foot
+anchoring gave the following measurements over the same 372 predicted-static steps within
+that result. The contact predictions differ from the earlier 458-step comparison above.
+
+| Target | Mean step before → after target anchoring | Largest step before → after |
+| --- | --- | --- |
+| Human | 0.247 → 0.018 cm | 0.940 → 0.832 cm |
+| Citizen | 0.297 → 0.014 cm | 0.931 → 0.512 cm |
+
+Human pelvis travel changed from 74.85 to 74.82 cm, and Citizen from 65.45 to 65.39 cm.
+The right-arm serve peak stayed at export frame 134, about 4.49 seconds. Target anchoring
+preserved its rotation, and measured limb-length errors stayed below 0.001 cm.
+These numbers describe estimated contacts under the stationary-camera assumption;
+they are not ground-truth foot-slip or world-drift accuracy.
 
 For FPS, the local linear-residual metric below compares the previous cleanup with the
 new default. It is a jitter proxy, not measured world drift or ground-truth accuracy:

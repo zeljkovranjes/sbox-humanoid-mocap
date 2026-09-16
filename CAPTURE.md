@@ -25,9 +25,11 @@ egocentric footage. MediaPipe is the small default; WiLoR is the heavier alterna
 
 For body capture, record one person with their feet and head inside the frame. A
 stationary camera and an unobstructed view are useful for reviewing ground contact.
-Automatic GVHMR jobs currently use a full-frame crop and do not track a person moving
-out of that crop. They output camera-relative motion. Camera motion, calibrated world
-scale and reliable world root motion are not recovered by this integration.
+Automatic GVHMR jobs detect a prominent person and follow the estimated image-space
+crop through the selected range. Record one clear foreground subject; ambiguous people
+or prolonged tracking loss stop processing with a useful error. Crop tracking does not
+recover camera motion, calibrated world scale or reliable world root motion. The default
+output remains camera-relative.
 
 The Third Person target preview removes the capture's constant camera offset and
 places its lowest reconstructed joint at the target's rest ground. The half-metre
@@ -111,14 +113,15 @@ after visible-aperture and orientation correction. Peak worker RAM reached 1.30 
 These are observed CPU costs, not minimum requirements or a controlled speed comparison;
 editor verification overlapped part of the run.
 GVHMR also processed all 312 frames of `tennis.mp4` (10.41 seconds between its first
-and last sample). CPU reconstruction took about 20 minutes and peaked at 5.82 GB
+and last sample). With automatic stabilized crops, CPU reconstruction took about
+18.6 minutes and peaked at 6.12 GB
 worker RAM. The complete motion was checked on Human and Citizen proportions; the
 full Human and Citizen animations passed native FBX compilation
 and animated playback in s&box. Synchronized source/target frames were visually reviewed.
 These checks do not establish full-length 3D accuracy.
 
 Foot drift remains. During consecutive frames where GVHMR's static-joint probability
-exceeds 0.8, Human foot joints still moved up to 6.23 cm per frame in the retargeted
+exceeds 0.8, Human foot joints still moved up to 6.77 cm per frame in the retargeted
 camera-relative output. This is a diagnostic of remaining motion, not a calibrated
 world-space slip measurement. The current geometric foot detector finds too few
 stable intervals in this clip to resolve those contacts automatically.
