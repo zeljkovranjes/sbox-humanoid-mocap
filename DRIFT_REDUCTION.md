@@ -156,3 +156,8 @@ Those results do not justify replacing the default assumed wrist plane. The expe
 remains outside the library; no additional filtering or depth correction was enabled.
 The [MediaPipe output definition](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/python#handle_and_display_results)
 describes hand-centered 3D landmarks; it does not supply calibrated camera translation.
+
+Recent papers and measured candidate decisions are recorded in [research notes](RESEARCH.md).
+The C# FootMR trial did not justify a default backend change: its foot displacement was
+worse on the same model-selected contact steps, and its arm-motion peak timing differed.
+No additional filter is enabled merely because it lowers a jitter metric.
