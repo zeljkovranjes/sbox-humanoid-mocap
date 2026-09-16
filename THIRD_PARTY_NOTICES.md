@@ -1,5 +1,14 @@
 # Source provenance
 
+The C# HOT3D-Clips importer adapts UmeTrack forward kinematics and Fisheye624
+projection from Meta's [hand_tracking_toolkit](https://github.com/facebookresearch/hand_tracking_toolkit/tree/950d64f7e8d2ba1fd38cd2ceede6608a8fa7f5aa)
+at `950d64f7e8d2ba1fd38cd2ceede6608a8fa7f5aa`, under Apache 2.0.
+Copyright (c) Meta Platforms, Inc. and affiliates. The license is retained in
+`InferenceWorker/Hot3d.LICENSE`. Archive fields follow the
+[HOT3D-Clips format](https://github.com/facebookresearch/hot3d/blob/146b34afef8c1a32adeef7e981c070109f225c87/hot3d/clips/README.md)
+at `146b34afef8c1a32adeef7e981c070109f225c87`. Source clips, hand profiles and object
+annotations remain separate downloads; this repository does not bundle them.
+
 The C# person detector adapts preprocessing, anchor layout and output decoding from
 [OpenCV Zoo's MediaPipe person detector](https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/person_detection_mediapipe)
 at `47534e27c9851bb1128ccc0102f1145e27f23f98`. It runs the published ONNX model through

@@ -21,6 +21,11 @@ try
         await BodyModelDownloads.Ensure(Path.GetFullPath(args[1]),cancellation.Token);
     else if(args.Length==3&&args[0]=="download-hand-models")
         await HandModelDownloads.Ensure(Path.GetFullPath(args[1]),args[2],cancellation.Token);
+    else if(args.Length==2&&args[0]=="import-hot3d")
+    {
+        var request=JsonSerializer.Deserialize<Hot3dImportRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid HOT3D import request.");
+        Console.WriteLine("HM_RESULT "+Hot3dClipImport.Run(request,cancellation.Token,Console.WriteLine));
+    }
     else if(args.Length==2&&args[0]=="landmark-capture")
     {
         var request=JsonSerializer.Deserialize<LandmarkCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid landmark job request.");
@@ -44,7 +49,7 @@ try
         var request=JsonSerializer.Deserialize<HandCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid hand job request.");
         Console.WriteLine("HM_RESULT "+HandCapture.Run(request,cancellation.Token,Console.WriteLine));
     }
-    else throw new ArgumentException("Usage: download-body-models <model-folder> | download-hand-models <model-folder> <mediapipe|mobilehand|wildhands|wilor> | body-capture <job.json> | body-refine <job.json> | hand-capture <job.json> | landmark-capture <job.json>");
+    else throw new ArgumentException("Usage: download-body-models <model-folder> | download-hand-models <model-folder> <mediapipe|mobilehand|wildhands|wilor> | body-capture <job.json> | body-refine <job.json> | hand-capture <job.json> | landmark-capture <job.json> | import-hot3d <job.json>");
 }
 catch(OperationCanceledException){Console.Error.WriteLine("Cancelled. Cached reconstruction can be resumed.");Environment.ExitCode=2;}
 catch(Exception e){Console.Error.WriteLine(e.Message);Environment.ExitCode=1;}

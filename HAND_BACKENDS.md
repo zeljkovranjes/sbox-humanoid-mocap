@@ -108,8 +108,9 @@ mean image-landmark disagreement changed from 6.20 → 4.74 pixels. The two erro
 identity frames retained both hands. Mean wrist-relative 3D disagreement remained
 about 84 mm, without rotation or scale alignment, and the prolonged detection loss
 remained. Landmark definitions differ between the models. This is one annotated clip,
-not dataset-wide accuracy or a calibrated wrist-depth result; HOT3D import/rectification
-is currently a local verification tool, not an advertised editor backend.
+not dataset-wide accuracy or a calibrated wrist-depth result. That benchmark remains
+local verification. The separate [HOT3D annotation importer](HOT3D.md) now lets the
+worker prepare annotated Aria clips for editor preview/export; it is not an inference backend.
 
 All hand backends now keep a hand-and-wrist source skeleton. MediaPipe fits landmark
 rotations to fixed canonical finger lengths and assumes wrist depth on an image plane.

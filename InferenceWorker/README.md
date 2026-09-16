@@ -2,6 +2,9 @@
 
 Experimental local body and hand reconstruction. The worker is C# and calls native LibTorch and OpenCV directly. It does not run Python. Baked animations do not depend on the worker.
 
+The separate [`import-hot3d` command](../HOT3D.md) imports published hand/object
+annotations and produces a synchronized review video without running neural inference.
+
 The editor starts this worker automatically for both workspaces and every available hand model. Select a workspace, upload a video, and inspect the result. **Advanced → Hand models…** changes the model used for subsequent FPS uploads. MediaPipe remains the lightweight default; its managed C# inference now runs in the separate worker too. ACE is not downloaded or executed.
 
 First-time native worker setup requires .NET 10 SDK and the complete repository checkout. The editor publishes the included worker into `%LOCALAPPDATA%/sbox-humanoid-mocap/worker/<source fingerprint>`. Changes to its C# sources or pinned dependencies automatically select a new build; an interrupted build is retried. To use a prebuilt worker, set `HUMANOID_MOCAP_WORKER` to its executable. Explicitly configured builds are maintained by their owner. `HUMANOID_MOCAP_MODELS` optionally selects a shared model folder. Models are downloaded only for the selected backend and verified against pinned hashes.
