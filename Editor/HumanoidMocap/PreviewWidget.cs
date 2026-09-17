@@ -342,8 +342,9 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 		_handViewDirection = null;
 	}
 
-	/// <summary>Frame the captured hands from eye height using a fixed direction for the
-	/// entire clip. This only changes the preview camera, never the captured motion.</summary>
+	/// <summary>Restore capture-camera facing for camera-relative hands and front framing
+	/// for the orbit view. Other hand previews use a fixed clip-wide framing direction.
+	/// This changes only the preview camera, never the captured motion.</summary>
 	public void ResetView()
 	{
 		_yaw = 35; _lookYaw = 0; _lookPitch = 0; _handViewDirection = null;
@@ -357,6 +358,11 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 			// the apparent clavicle span, even when every joint is at rig-rest width.
 			_yaw=MathF.Atan2(direction.y,direction.x)*180/MathF.PI;
 		}
+		// Camera-relative captures already define the view's placement and facing.
+		// Aiming at their mean wrist position tilts a full-body FPS camera into its
+		// own torso/upper arms and changes the apparent direction of the performance.
+		// Retain explicit view pitch/FOV and mouse look, but reset to the capture view.
+		if (CaptureView is not null) { UpdateCamera(); return; }
 		var scratch = new XForm[skeleton.Count];
 		var hands = FramingHands.Select(_rig.BoneForRole).Where(i=>i.HasValue).Select(i=>i.Value).ToArray();
 		var sum = Vector3.Zero; var count = 0;
@@ -365,11 +371,6 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 			for (var b=0;b<scratch.Length;b++)
 				scratch[b]=skeleton[b].ParentIndex<0?frames[f][b]:XForm.Compose(scratch[skeleton[b].ParentIndex],frames[f][b]);
 			var eye = _rig.BoneForRole(BoneRole.Head) is int head ? RigWorldToEngine(scratch[head]).Position : new Vector3(0,0,64);
-			if(CaptureView is { } capture)
-			{
-				var p=VecN.Transform(capture.CaptureCameraPosition*39.3700787f,YUpToZUp);
-				eye=new Vector3(p.X,p.Y,p.Z);
-			}
 			foreach(var hand in hands)
 			{
 				var direction=RigWorldToEngine(scratch[hand]).Position-eye;

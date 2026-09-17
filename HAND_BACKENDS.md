@@ -39,7 +39,16 @@ The native Citizen gate verified the visible unmapped-joint notice and its pinky
 details, then compiled and played the complete 121-frame armature-only FBX. Export
 round-trip position error was below 0.0001 cm. The compatible hands-only fixture
 produced no omission warning. Visual review still showed reconstructed hand-pose
-disagreement and full-body FPS preview clipping; these checks do not resolve them.
+disagreement; these transfer checks do not resolve it.
+
+FPS camera reset now respects the configured capture-camera facing. Previously it
+aimed toward the clip-average wrist position, tilting the camera down into the full
+character's torso and upper arms. Native Human and Citizen review at frames 30 and 90
+of `video_0` showed the resulting cutouts disappear with the forward capture view.
+Changing the near plane alone did not fix them, so its default remains unchanged.
+Camera switching/reset preserved every solved bone transform, and both complete
+121-frame exports compiled and played. This is a preview-camera correction; it does
+not improve the reconstructed poses or establish freedom from mesh intersections.
 
 | Backend | Status in Humanoid Mocap | Intended use and limits |
 | --- | --- | --- |
