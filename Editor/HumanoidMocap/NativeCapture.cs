@@ -74,6 +74,11 @@ internal static class NativeCapture
     {
         var (worker,models)=await Prepare(progress,token);
         await RunProcess(worker, new[] { "download-body-models", models }, progress, token);
+        // Fingers in a body capture come from WiLoR. Without it the body is still captured and
+        // its hands hold a resting pose, so a failed or offline download must not stop the job.
+        try{await RunProcess(worker,new[]{"download-hand-models",models,"wilor"},progress,token);}
+        catch(OperationCanceledException){throw;}
+        catch(Exception){progress?.Invoke("Finger model unavailable; capturing the body without finger motion");}
         // Omitting PersonCrop enables the worker's automatic image-space subject track.
         // This does not recover camera motion or calibrate world scale.
         return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end },progress,token);

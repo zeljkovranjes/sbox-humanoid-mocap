@@ -12,7 +12,7 @@ using Vector3 = System.Numerics.Vector3;
 /// <summary>A body capture has no finger tracks, which leaves a target's fingers frozen in its
 /// bind pose: on most rigs a flat, splayed hand that reads as a claw on a moving character.
 /// This gives such hands one constant, slightly curled resting shape. It is an authored pose,
-/// not captured finger motion, and is never applied when the source has any finger track.</summary>
+/// not captured finger motion, and is never applied to a hand whose fingers the source tracked.</summary>
 public static class RelaxedHands
 {
     // Flexion in degrees at the knuckle, middle and end joint; curl deepens from index to pinky.
@@ -21,15 +21,17 @@ public static class RelaxedHands
     public static int Apply(List<XForm[]> frames,MappingResult sourceMapping,TargetRig target)
     {
         if(frames.Count==0)return 0;
-        foreach(var role in sourceMapping.RoleToBone.Keys)if(FingerSolver.IsFingerRole(role))return 0;
         var rig=target.Skeleton;var rest=rig.RestWorld;
         var map=new MappingResult("Target hand anatomy",MappingSource.Authored);
         foreach(var bone in rig.Bones)if(target.RoleOf(bone.Index) is { } role)map.RoleToBone[role]=bone.Index;
         var posed=new List<(int Bone,Quaternion Local)>();
         foreach(var left in new[]{true,false})
         {
-            if(HandGeometry.Dorsal(map,rest,left) is not { } dorsal)continue;
             var side=left?"L":"R";
+            // A side with any captured finger track keeps it; only a side without one gets the resting pose.
+            var captured=false;
+            foreach(var role in sourceMapping.RoleToBone.Keys)if(FingerSolver.IsFingerRole(role)&&role.ToString().EndsWith(side,StringComparison.Ordinal))captured=true;
+            if(captured||HandGeometry.Dorsal(map,rest,left) is not { } dorsal)continue;
             foreach(var (finger,prox,mid,dist) in Curl)
             {
                 var chain=new[]{("Prox",prox),("Mid",mid),("Dist",dist)};

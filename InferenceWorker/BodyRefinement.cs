@@ -26,7 +26,7 @@ public static class BodyRefinement
         if(request.AssumeStationaryCamera==request.UseCameraRotation)throw new ArgumentException("Choose either an explicitly stationary camera or the camera rotation followed during capture.");
         cancellation.ThrowIfCancellationRequested();
         var sourceBytes=File.ReadAllBytes(request.Motion);var source=MotionDocument.Parse(sourceBytes);
-        if(source.Space!=MotionSpace.CameraRelative||source.Bones.Count!=22||!source.ModelVersion.Contains(GvhmrTemporalNetwork.CheckpointSha256,StringComparison.Ordinal))
+        if(source.Space!=MotionSpace.CameraRelative||source.Bones.Count<22||!source.ModelVersion.Contains(GvhmrTemporalNetwork.CheckpointSha256,StringComparison.Ordinal))
             throw new ArgumentException("Open the original camera-relative GVHMR reconstruction before refining it.");
         var predictions=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(request.Motion))!,"raw-predictions.json");
         if(!File.Exists(predictions))throw new FileNotFoundException("Saved GVHMR predictions are missing. Open raw-body.hmotion from its original reconstruction folder.",predictions);
@@ -93,6 +93,8 @@ public static class BodyRefinement
                 Source="GVHMR static-joint head; uncalibrated contact probability, not visibility or 3D confidence",
                 Probability=Enumerable.Range(0,pose.Frames).Select(f=>1/(1+MathF.Exp(-prediction.StaticConfidenceLogits[f*6+c]))).ToArray()});
         }
+        // Finger tracks hang beneath the wrists, unaffected by root or limb refinement, and arrive with the copied source.
+        BodyHandTracks.CarryFingerNotes(source,raw);BodyHandTracks.CarryFingerNotes(source,refined);
         raw.OriginalReconstruction=new(){Path=Path.GetFullPath(request.Motion),Sha256=rawHash};
         refined.OriginalReconstruction=new(){Path=Path.GetFullPath(request.Motion),Sha256=rawHash};
         refined.ModelVersion+="; "+(moving?MovingVersion:Version);

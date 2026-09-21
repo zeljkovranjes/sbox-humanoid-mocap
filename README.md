@@ -44,7 +44,19 @@ The preview displays the baked FBX pose, including independent pinky motion and 
 
 FPS uploads default to **WiLoR for pose reconstruction, with MediaPipe locating the hands**. It was closest to the video for fingers and wrists in every comparison, from head-mounted and outside cameras, and is the slowest: about a third of a second per hand per frame on a recent eight-core CPU, up to a second on older ones, after a 2.56 GB first download. It also keeps reconstructing a hand the detector loses while it is partly hidden in plain view. Use **Advanced → Hand models…** to choose the faster WildHands for head-mounted footage, MobileHand or the lightweight MediaPipe-only option. The status line asks for review when reconstructed hands do not match the hands found in the video. Existing captures stay unchanged; use **Process again** to reconstruct with the selected model. Badges describe processing cost, not accuracy.
 
-All reconstruction runs locally in a separate C# worker. First-time setup requires the included worker source and .NET 10 SDK, or a configured prebuilt worker. Models download on first use for the selected backend. Cancellation preserves completed observations for retry. Exported animation playback needs neither the worker nor its models.
+## Setup and requirements
+
+All reconstruction runs locally in a separate C# worker; nothing is uploaded. It needs Windows and the [.NET 10 SDK](https://dotnet.microsoft.com/download). The first upload builds the worker from the included `InferenceWorker` source (a minute or two, once per library update) and downloads the models it needs, with checksums verified: about 5.5 GB for Third Person, 2.6 GB for First Person with WiLoR (also used for fingers in Third Person), 0.9 GB for WildHands, 8 MB for MediaPipe only. Set `HUMANOID_MOCAP_WORKER` to use a prebuilt worker and `HUMANOID_MOCAP_MODELS` for an existing model folder.
+
+Inference runs on the CPU; a graphics card is not used. On a Ryzen 7 7800X3D with 32 GB RAM a 12-second Third Person clip takes about six minutes and peaks near 6 GB of worker memory, and First Person takes about a third of a second per hand per frame near 3 GB. Processors without native bfloat16 (AVX-512 BF16 or AMX) run roughly twice as slowly. Start with clips of 5–15 seconds; one job accepts up to 1,800 frames. Cancelling keeps finished frames, and **Retry** resumes. Exported animation playback needs neither the worker nor its models.
+
+## Recording tips
+
+- Good light and a short exposure matter most: motion blur is the commonest cause of bad frames. Avoid digital zoom changes. MP4 (H.264) is the safest format; phone rotation metadata is honoured.
+- **Third Person:** one person, whole body in frame, from head to feet. Use a tripod or a steady surface when you can: a still camera is detected automatically and gets anchored feet and a level floor. If you film handheld, stand in one place and turn to follow the subject with some textured background in view; walking with the camera makes travel distance unreliable. Bystanders in the background are fine; two people of similar size at the start are not.
+- **Third Person fingers** are captured only when the hands are large enough in the picture (a forearm of roughly 36 pixels or more). Film closer or at higher resolution if fingers matter; otherwise the hands hold a relaxed pose.
+- **First Person:** keep wrists and fingers in view, and start with an open hand. A head- or chest-mounted camera and footage of someone else's hands both work with the default model. With **Recording FOV** blank the lens is sized so the hands sit at typical first-person distances; enter the real horizontal field of view if you know it.
+- A hand that is partly hidden is still followed; a hand that leaves the picture or is fully covered is bridged with an eased guess and labelled **inferred gap**. Re-record if an important moment falls inside one.
 
 Published HOT3D hand/object annotations can also be imported by selecting an annotated Aria `.tar` clip through **Advanced → Open motion…**. The C# worker prepares its preview and armature tracks. This separate dataset workflow does not run reconstruction on your footage.
 
@@ -52,7 +64,7 @@ Custom models need a rig and skin weights. Automatic mapping is not perfect; che
 preview before exporting. This library exports animation and armatures; it does not
 automatically rig or skin a character. Phone codec support depends on Windows Media Foundation.
 
-Third Person uses camera-relative GVHMR reconstruction, without detailed finger capture.
+Third Person uses GVHMR body reconstruction, with WiLoR supplying finger motion when the hands are large enough in the picture.
 It finds one prominent subject, then follows that person's own 2D body joints from
 frame to frame, so distant subjects and bystanders walking through do not end the job.
 Ambiguous starts and losses longer than half a second still need a shorter or clearer recording.
