@@ -45,6 +45,7 @@ public sealed partial class RetargetWindow
         _shoulderL.Text=V(c.LeftShoulder);_shoulderR.Text=V(c.RightShoulder);
         _elbowL.Text=V(c.LeftElbow);_elbowR.Text=V(c.RightElbow);
         _capturePosition.Text=V(c.CaptureCameraPosition);_captureYaw.Text=F(c.CaptureCameraYawDegrees);_capturePitch.Text=F(c.CaptureCameraPitchDegrees);
+        _captureFacesSubject=c.CaptureFacesSubject;
         _reach.Text=F(c.Reach);_ground.Text=F(c.GroundOffset);_facing.Text=F(c.FacingDegrees);
         _stabilizeFeetControl.Value=c.StabilizeFeet;
         _wristOffsets.Clear();_wristOffsets.AddRange(c.WristOffsets.Select(e=>e.Copy()));++_wristEditRevision;

@@ -21,6 +21,7 @@ public sealed partial class RetargetWindow
     LineEdit _sourcePath, _rangeStart, _rangeEnd, _fov, _rootSmooth, _armSmooth, _fingerSmooth;
     LineEdit _shoulderL, _shoulderR, _elbowL, _elbowR, _reach, _facing, _ground, _viewPitch;
     LineEdit _capturePosition, _captureYaw, _capturePitch, _viewNear, _recordingFov;
+    bool _captureFacesSubject;
     MocapVideoWidget _video;
     PreviewWidget _mocapPreview;
     FloatSlider _timeline;
@@ -340,7 +341,8 @@ public sealed partial class RetargetWindow
             // It must not pull the FPS camera away from the consistently tracked hand.
             _mocapPreview.FramingHands=handCoverage.Where(x=>x.Count>0&&x.Count>=strongest*.5f).Select(x=>x.Role).ToArray();
             _mocapPreview.ViewmodelNearClipCm=edit.NearClip;
-            if(HandCaptureRetargeter.Supports(motion))_mocapPreview.CaptureView=corrections;
+            // A camera that faced the performer is not where a first-person view looks from.
+            if(HandCaptureRetargeter.Supports(motion))_mocapPreview.CaptureView=corrections.CaptureFacesSubject?null:corrections;
             var props=new PropContactMotion(motion);var propPlacement=CapturePlacement.ForTarget(spec.UpAxis,corrections);
             var supportsProps=HandCaptureRetargeter.Supports(motion)&&corrections.FirstPerson&&rootMotion==HumanoidMocap.Cleanup.RootMotionMode.Off
                 &&motion.Objects.All(p=>p.Space==motion.Space);
@@ -405,6 +407,9 @@ public sealed partial class RetargetWindow
         _stabilizeFeetControl.Value=true;
         _wristOffsets.Clear();++_wristEditRevision;
         var settings=TargetCorrectionSettings.ForRig(_target.Spec.Rig,_target.Spec.UpAxis);
+        // Footage filmed facing the performer: put the capture camera in front of the character, looking back.
+        _captureFacesSubject=_firstPerson&&_rawMotion is not null&&HandCaptureRetargeter.Supports(_rawMotion)&&CaptureViewpoint.FacesSubject(_rawMotion);
+        if(_captureFacesSubject)CaptureViewpoint.PlaceFacingCamera(settings);
         // These editable values also feed the solver; retain sub-millimetre rig
         // precision instead of shortening the shoulder span through display rounding.
         string Coordinates(System.Numerics.Vector3 v)=>FormattableString.Invariant($"{v.X:0.######},{v.Y:0.######},{v.Z:0.######}");
@@ -424,7 +429,8 @@ public sealed partial class RetargetWindow
         GroundOffset=Number(_ground,0),FacingDegrees=Number(_facing,0),
         StabilizeFeet=_stabilizeFeetControl.Value,
         WristOffsets=_wristOffsets.Select(e=>e.Copy()).ToList(),
-        CaptureCameraPosition=Vector(_capturePosition),CaptureCameraYawDegrees=Number(_captureYaw,180),CaptureCameraPitchDegrees=Number(_capturePitch,0)
+        CaptureCameraPosition=Vector(_capturePosition),CaptureCameraYawDegrees=Number(_captureYaw,180),CaptureCameraPitchDegrees=Number(_capturePitch,0),
+        CaptureFacesSubject=_captureFacesSubject
     };
     static System.Numerics.Vector3 Vector(LineEdit edit)
     {
