@@ -17,7 +17,7 @@ public static class ManoMotionBuilder
     static readonly string[] Roles={"Hand","IndexProx","IndexMid","IndexDist","MiddleProx","MiddleMid","MiddleDist",
         "PinkyProx","PinkyMid","PinkyDist","RingProx","RingMid","RingDist","ThumbProx","ThumbMid","ThumbDist"};
     public static MotionDocument Build(IReadOnlyList<ManoFrameSample> samples,string backend,string checkpointPath,
-        string name,string video,string sourceHash,double fps,WildHandsCrop.Camera camera,int width,int height,CancellationToken cancellation=default)
+        string name,string video,string sourceHash,double fps,WildHandsCrop.Camera camera,int width,int height,CancellationToken cancellation=default,int? focalEstimateSamples=null)
     {
         if(backend is not ("mobilehand" or "wildhands" or "wilor"))throw new ArgumentException("Unsupported MANO motion backend.");
         if(samples.Count==0||!samples.Any(f=>f.Hands.Count>0))throw new InvalidDataException("No reconstructed hands. Raw observations were retained.");
@@ -25,7 +25,7 @@ public static class ManoMotionBuilder
         var mobileDecoder=mobile?MobileHandModel.ReadDecoder(checkpointPath,cancellation):null;
         var document=new MotionDocument{Name=name,SourceVideo=video,SourceSha256=sourceHash,SourceFps=fps,
             Backend=mobile?"MobileHand / C# native CPU / MediaPipe crops":wild?"WildHands / C# native CPU / MediaPipe crops":"WiLoR / C# native CPU / MediaPipe crops",
-            ModelVersion=(mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256)+"; camera-framing-v1",
+            ModelVersion=(mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256)+"; camera-framing-v1"+"; palm-anchored-v1"+(wild?"; depth-prior-v1":""),
             Space=MotionSpace.CameraRelative,MetricScaleCalibrated=false};
         var cameraToDocument=Quaternion.CreateFromAxisAngle(Vector3.UnitX,MathF.PI);
         var decoders=new ManoDecoder[2];var betas=new float[2][];var rest=new ManoDecoder.DecodedHand[2];
@@ -49,6 +49,20 @@ public static class ManoMotionBuilder
         var previousPositions=document.Bones.Select(b=>(float[])b.RestPosition.Clone()).ToArray();
         var previousRotations=document.Bones.Select(b=>(float[])b.RestRotation.Clone()).ToArray();
         var palmResiduals=new List<float>();var palmRelativeResiduals=new List<float>();
+        // Every backend's wrist is moved sideways, at its predicted depth, onto the detected
+        // palm's viewing ray. WildHands also regresses absolute depth, which carried a
+        // consistent clip-wide scale bias on calibrated reference footage, so its depth is
+        // normalised by the first-person distance prior. Rotations and finger poses are untouched.
+        int[] palmLandmarks={0,5,9,13,17},palmJoints={0,1,4,10,7};
+        float WildDepth(ManoHandSample hand)=>(camera.Fx+camera.Fy)/(Math.Max(width,height)*Math.Max(.1f,hand.WeakCamera[0])+1e-9f);
+        Vector2? PalmCentroid(ManoHandSample hand)=>hand.DetectorImageLandmarks is {Length:21} image&&image.All(p=>p is {Length:>=2}&&float.IsFinite(p[0]+p[1]))
+            ?new Vector2(palmLandmarks.Average(i=>image[i][0]),palmLandmarks.Average(i=>image[i][1])):null;
+        float? depthGain=null;var anchored=0;
+        if(wild)depthGain=CaptureCameraFraming.DepthGainFromHandDistances(samples.SelectMany(f=>f.Hands).Select(h=>
+        {
+            var z=WildDepth(h);if(PalmCentroid(h) is not Vector2 c)return new Vector3(h.WeakCamera[1],h.WeakCamera[2],z).Length();
+            var x=(c.X-camera.Cx)/camera.Fx;var y=(c.Y-camera.Cy)/camera.Fy;return z*MathF.Sqrt(1+x*x+y*y);
+        }).ToArray());
         foreach(var sample in samples)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -63,6 +77,7 @@ public static class ManoMotionBuilder
                 {
                     var f=(camera.Fx+camera.Fy)/2;
                     translation=new(weak[1],weak[2],2*f/(Math.Max(width,height)*Math.Max(.1f,weak[0])+1e-9f));
+                    translation.Z*=depthGain??1;
                 }
                 else if(mobile)
                 {
@@ -81,6 +96,17 @@ public static class ManoMotionBuilder
                     var scale=observed.Crop.Size*weak[0]+1e-9f;
                     translation=new(sign*weak[1]+2*(observed.Crop.CenterX-camera.Cx)/scale,
                         weak[2]+2*(observed.Crop.CenterY-camera.Cy)/scale,(camera.Fx+camera.Fy)/scale);
+                }
+                if(PalmCentroid(observed) is Vector2 centroid)
+                {
+                    // Mirrored left hands decode in the right-hand frame; reflect into the camera frame.
+                    var restWrist=hand.RestJoints[0];restWrist.X*=sign;var wristDepth=restWrist.Z+translation.Z;
+                    var offsets=palmJoints.Select(j=>{var o=hand.Joints[j]-hand.Joints[0];o.X*=sign;return o;}).ToArray();
+                    if(wristDepth>.02f&&offsets.All(o=>wristDepth+o.Z>.01f))
+                    {
+                        translation=CaptureCameraFraming.AnchorWristToImage(wristDepth,offsets,centroid,camera.Fx,camera.Fy,camera.Cx,camera.Cy)-restWrist;
+                        anchored++;
+                    }
                 }
                 if(observed.DetectorImageLandmarks is {Length:21} image)
                 {
@@ -115,7 +141,7 @@ public static class ManoMotionBuilder
             }
             document.Frames.Add(frame);previousPositions=frame.Positions;previousRotations=frame.Rotations;
         }
-        document.Cameras.Add(new(){Id="video",Source=camera.Calibrated?"User-supplied camera calibration":"Estimated pinhole camera; not calibration",
+        document.Cameras.Add(new(){Id="video",Source=camera.Calibrated?"User-supplied camera calibration":focalEstimateSamples is null?"Estimated pinhole camera; not calibration":"Pinhole camera sized from typical first-person hand distance; not calibration",
             Calibrated=camera.Calibrated,Synchronized=true,ImageWidth=width,ImageHeight=height,Intrinsics=new[]{camera.Fx,0,camera.Cx,0,camera.Fy,camera.Cy,0,0,1}});
         document.Diagnostics.AddRange(new[]{
             "Native MANO wrist and finger rotations are retained. Shoulders and elbows are not observed and require target-rig IK.",
@@ -126,6 +152,10 @@ public static class ManoMotionBuilder
             "A mean predicted hand shape fixes bone lengths within this clip. Original per-frame shape predictions remain in the raw cache.",
             "These C# model ports remain experimental. Independent image-network reference parity and ground-truth accuracy are not established."
         });
+        if(focalEstimateSamples is int count)document.Diagnostics.Add(FormattableString.Invariant(
+            $"Recording lens assumed {2*MathF.Atan(width/(2*camera.Fx))*180/MathF.PI:F0} degrees horizontal from {count} hand-size samples: the median hand is placed {CaptureCameraFraming.TypicalHandDistance:F2} m from the camera and the farthest within {CaptureCameraFraming.MaximumHandDistance:F2} m. This is an anthropometric first-person prior, not calibration; set Recording FOV to override it."));
+        document.Diagnostics.Add(FormattableString.Invariant(
+            $"Wrist placement: {anchored} observed wrists were moved sideways onto the detected palm's viewing ray at unchanged depth. {(depthGain is float gain?$"WildHands' clip-wide depth was multiplied by {gain:F2} to meet the first-person hand-distance prior":wild?"Too few hands to apply the hand-distance depth prior":"Depth is the backend's own")}. Placement remains estimated, not measured."));
         if(mobile)document.Diagnostics.Add("MobileHand is a small single-image model. Sample videos showed large rotation and estimated-depth jumps; no temporal or occlusion accuracy is established. Original 39-parameter predictions remain in the raw cache.");
         if(palmResiduals.Count>0)
         {

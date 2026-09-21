@@ -32,7 +32,7 @@ The target must have the finger joints you want to export. Citizen's four-finger
 
 First-person preview hides the character's separate head mesh when supported, preventing it from clipping through the camera. Switching to third-person view restores it. This affects only preview visibility.
 
-For native hand capture, **Advanced → First Person → Recording FOV (°)** optionally supplies the video's horizontal lens angle. Leave it blank for the automatic assumption. Choose **Process again** to apply it; previous captures remain intact. This affects inferred depth and is separate from **Viewmodel FOV**, which only changes preview framing. See [capture instructions](CAPTURE.md) before adjusting it.
+For native hand capture, **Advanced → First Person → Recording FOV (°)** optionally supplies the video's horizontal lens angle. Leave it blank to size the lens from the hands, which keeps them at first-person distances within arm's reach. Choose **Process again** to apply it; previous captures remain intact. This affects inferred depth and is separate from **Viewmodel FOV**, which only changes preview framing. See [capture instructions](CAPTURE.md) before adjusting it.
 
 For third-person recordings made with a stationary camera, **Advanced → Third Person → Refine · stationary camera** reuses saved predictions for root and limb-contact correction. It opens a separate result; the same button restores the original capture. **Reduce foot drift** keeps predicted stationary ankles and toes anchored on the final target rig. Review the result before export. **In place** removes horizontal travel. See [drift reduction and measured limits](DRIFT_REDUCTION.md).
 

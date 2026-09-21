@@ -30,9 +30,17 @@ intrinsics; it does not calibrate or undistort the lens. WildHands is designed f
 egocentric footage and is the FPS default, with MediaPipe locating hands for its crops.
 WiLoR is the heavier alternative; MediaPipe-only reconstruction remains optional.
 
-If native hand depth is wrong and you know the recording's horizontal field of view,
-set **Advanced → First Person → Recording FOV (°)** and choose **Process again**.
-Blank keeps the automatic pinhole assumption. This optional 20–150° setting changes
+With **Recording FOV** blank, native hand capture sizes the lens from the hands
+themselves. A hand's size fixes its depth only in proportion to the unknown focal
+length, so the clip's median hand is placed 0.45 m from the camera and its farthest
+hands within 0.65 m. This suits a head- or chest-mounted camera; footage of someone
+else's hands recorded from farther away is pulled to the same first-person distances.
+The assumed angle is listed with the capture details in **Advanced**. It is a prior about where
+first-person hands usually are, not lens calibration.
+
+If you know the recording's horizontal field of view, set
+**Advanced → First Person → Recording FOV (°)** and choose **Process again**.
+This optional 20–150° setting changes
 reconstruction depth; **Viewmodel FOV** changes only the preview. It is available for
 WildHands, WiLoR and MobileHand, not MediaPipe-only or body capture. The value refers
 to the actual video after cropping or stabilization, which can differ from a phone's

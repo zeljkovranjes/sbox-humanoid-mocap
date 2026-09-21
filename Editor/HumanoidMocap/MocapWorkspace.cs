@@ -152,7 +152,7 @@ public sealed partial class RetargetWindow
         _reach=Field(camera,"Reach fraction","0.995");_fov=Field(camera,"Viewmodel FOV","75");
         _recordingFov=Field(camera,"Recording FOV (°)","");
         _recordingFov.PlaceholderText="Automatic";
-        _recordingFov.ToolTip="Optional horizontal field of view of the recorded video, 20–150 degrees. Blank uses the automatic pinhole assumption. Applies to WildHands, WiLoR and MobileHand on Process again; changes reconstructed depth, not just the preview. This is not calibration or fisheye correction.";
+        _recordingFov.ToolTip="Optional horizontal field of view of the recorded video, 20–150 degrees. Blank sizes the lens automatically so the hands sit at a typical first-person distance within arm's reach; enter your lens value if you know it. Applies to WildHands, WiLoR and MobileHand on Process again; changes reconstructed depth, not just the preview. This is not calibration or fisheye correction.";
         _viewPitch=Field(camera,"Camera pitch","0");
         _viewNear=Field(camera,"Near clip (cm)","15");
         _viewNear.ToolTip="Hide nearby head geometry on full-body targets. Reduce this distance to inspect hands close to the viewmodel camera.";

@@ -50,6 +50,64 @@ Camera switching/reset preserved every solved bone transform, and both complete
 121-frame exports compiled and played. This is a preview-camera correction; it does
 not improve the reconstructed poses or establish freedom from mesh intersections.
 
+The C# WildHands network now has independent reference parity. The pinned upstream
+PyTorch modules were run on the exact tensors the C# worker prepared for a real
+`video_0` frame. All 144 rotation-matrix entries, 10 shape values and 3 camera values
+for both hands agreed within 0.0000008. This covers the two ResNet-50 encoders, camera
+encodings, feature fusion and both iterative heads; image preparation was checked
+separately above, and MANO decoding is shared with WiLoR. It shows the port reproduces
+the published network, not that the network's predictions are correct.
+
+That isolated the visible placement error to the model's translation output rather
+than the port. On the calibrated HOT3D view, WildHands depth was a consistent 0.58–0.71
+of the reference (median 0.63) while finger poses were usable, and its predicted
+position reprojected 39 px from the detected hand in a 640 px image. WildHands wrists
+are therefore placed differently from its raw translation:
+
+- Depth is multiplied by one clip-wide factor so the median hand sits 0.45 m from the
+  camera and the farthest within 0.65 m.
+- Each wrist then moves sideways, at that depth, until the reconstructed palm's
+  centroid projects onto the detected palm's centroid.
+
+Rotations, finger poses and shape are untouched, and frames without a detection stay
+unobserved. A fresh worker run on the HOT3D view with no calibration supplied gave
+58.2 mm mean camera-wrist disagreement over 237 hands (p95 90.3 mm). The previous
+placement gave 153.7 mm (p95 198.7 mm) even with the published calibration. Replaying
+those calibrated predictions with the new placement gave 41.0 mm. On the three supplied clips,
+median palm reprojection disagreement fell from 170 / 113 / 107 px to 23 / 31 / 20 px
+at 1920 px width. WiLoR's translation already follows its image crop, so the sideways
+move matters less: 48.0 to 40.8 mm mean on the cached calibrated predictions, with p95
+94.3 to 96.6 mm. It is applied to every native backend so reconstructed hands sit on the
+hands in the video; only WildHands receives the depth factor.
+
+Several ways to push this below 25 mm were measured on the same clip and rejected.
+A perspective fit of all 16 joints to the detected landmarks made depth worse (WiLoR
+82.4 mm), because finger-pose error biases the fitted scale. Median filtering depth
+over 5–15 frames changed the mean by under 1 mm; the depth error drifts slowly with
+pose rather than flickering. Averaging with MediaPipe's hand-scale depth raised
+WildHands from 34 to 42 mm, and averaging WildHands with WiLoR depth did not beat
+WildHands alone. Compensating depth for each frame's predicted hand size changed
+nothing, since predicted size varies by only 0.3–1.4%, and separate left/right depth
+factors gave the same result as one. With perfect depth the placement would differ from the reference
+by 16–22 mm, of which 12–18 mm is a constant image-vertical offset between the
+reference wrist and the MediaPipe/MANO wrist. The remaining error is single-image
+depth, about 5% of hand distance, and the prior itself: this clip's true median hand
+distance was 0.44 m (0.42 m left, 0.46 m right) against the assumed 0.45 m. A 25 mm
+absolute wrist target therefore needs a metric reference the video does not contain,
+such as a known lens together with a measured hand, or a depth camera. One annotated clip is not dataset-wide accuracy, and
+the distance prior is an assumption about first-person footage, not a measurement.
+
+With **Recording FOV** blank, every native backend now sizes the lens from the hands
+instead of assuming a focal length equal to the image diagonal. That older assumption
+(a 47° lens for 1920×1080) put `video_0`'s wrists 1.2–1.9 m from the camera, beyond
+either built-in rig's reach, so arm IK flattened all of them. WildHands needs the
+lens before inference because camera rays enter its network, so up to 48 evenly spaced
+frames get an untracked MediaPipe pass first; WiLoR and MobileHand instead use their
+own hand scale after inference, which costs nothing extra. On the HOT3D view with a
+known 184.75 px focal length the estimates were 243 px (MediaPipe pass) and 193 px
+(WiLoR scale); the diagonal rule gives 905 px. The supplied clips gave 118°, 67° and
+71° horizontal. The pre-pass added about 8 s to a 121-frame WildHands job.
+
 | Backend | Status in Humanoid Mocap | Intended use and limits |
 | --- | --- | --- |
 | MediaPipe | Available, experimental C# implementation; 7.8 MB model | Lightweight hand landmarks and finger motion. Wrist depth and arm placement are estimated; this is not calibrated world tracking. |
@@ -163,6 +221,20 @@ crop selection and its new neural predictions. Saved handedness is the model pro
 assigned side; values below 0.5 expose disagreement rather than invent confidence.
 The detector version changed, so processing again preserves older files and creates
 a new observation cache. Native hand models share this detector behavior.
+
+Two further physical-consistency rules follow that step. In `video_0` the right hand
+left the image and the side classifier then called the remaining left hand "right" with
+0.97 probability; a fresh palm detection next duplicated that hand under the other
+label. The stolen region ended the real right-hand track, and the right wrist was held
+at the left hand's position through the following one-second occlusion, crossing the
+arms. Now a hand resting on one established track is not relabelled as the other hand
+while that hand's track was at least a palm and a half away one frame earlier, whatever
+the classifier reports, and two observations whose landmarks coincide collapse to one,
+keeping the label of the track it continues. Reacquisition, close or crossing hands and
+single-track history still use the classifier. On `video_0` both hands keep their sides
+through frames 40–47, the right hand is followed five frames longer, and observed hand
+instances rose from 157 to 161. Landmarks are never edited and no observation is created.
+The detector version changed again, so processing again creates a new cache.
 
 A local test used all 150 frames of HOT3D clip `001849`, with its per-frame Aria
 Fisheye624 calibration and a fixed, authored virtual pinhole view. Comparison against

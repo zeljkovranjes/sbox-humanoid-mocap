@@ -86,8 +86,10 @@ internal static class NativeCapture
         var (worker,models)=await Prepare(progress,token);
         await RunProcess(worker,new[]{"download-hand-models",models,backend},progress,token);
         // Estimated pinhole intrinsics; these are neither calibrated nor world-space recovery.
+        // Without a supplied recording FOV the worker sizes the lens from the clip's hands;
+        // this focal length is then only its fallback when too few hands are found.
         var camera=new { Fx=focal,Fy=focal,Cx=width*.5f,Cy=height*.5f,Calibrated=false };
-        return await Job(worker,"hand",jobs=>new { Video=video,Models=models,Output=jobs,Backend=backend,Start=start,End=end,Camera=camera },progress,token);
+        return await Job(worker,"hand",jobs=>new { Video=video,Models=models,Output=jobs,Backend=backend,Start=start,End=end,Camera=camera,EstimateFocal=recordingHorizontalFov is null },progress,token);
     }
 
     public static async Task<string> RefineBodyAsync(string motion,Action<string> progress,CancellationToken token)

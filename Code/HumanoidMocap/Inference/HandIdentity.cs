@@ -10,6 +10,53 @@ namespace HumanoidMocap.Inference;
 /// This changes labels, never landmarks or presence, and creates no observations.</summary>
 public static class HandIdentity
 {
+    static Vector2 WristOf(HandObservation h)=>new(h.ImageLandmarks[0].X,h.ImageLandmarks[0].Y);
+    static float SpanOf(HandObservation h)=>new[]{5,9,13,17}.Max(i=>Vector2.Distance(WristOf(h),new(h.ImageLandmarks[i].X,h.ImageLandmarks[i].Y)));
+    static bool Usable(HandObservation h)=>h.Side is "L" or "R"&&h.ImageLandmarks.Length==21&&float.IsFinite(h.Handedness)&&h.Handedness>=0&&h.Handedness<=1&&
+        h.ImageLandmarks.All(p=>float.IsFinite(p.X+p.Y))&&SpanOf(h)>=4;
+
+    /// <summary>Physical consistency between consecutive frames, applied after
+    /// <see cref="PreserveSeparatedTracks"/>. A hand resting on one established track
+    /// cannot be the other hand when that hand's track was somewhere else a frame ago,
+    /// however confident the side classifier is. Two observations on the same physical
+    /// hand collapse to one. Labels and duplicates only: no landmark is edited and no
+    /// observation is created.</summary>
+    public static List<HandObservation> ResolveConflicts(IReadOnlyList<HandObservation> current,IReadOnlyList<HandObservation> previous)
+    {
+        var result=current.ToList();
+        if(result.Count==0||result.Any(h=>!Usable(h)))return result;
+        var tracks=previous.Where(Usable).ToArray();
+        HandObservation? Nearest(HandObservation hand)
+        {
+            var nearest=tracks.OrderBy(t=>Vector2.Distance(WristOf(t),WristOf(hand))).FirstOrDefault();
+            return nearest is not null&&Vector2.Distance(WristOf(nearest),WristOf(hand))<=SpanOf(nearest)*.7f?nearest:null;
+        }
+        if(tracks.Length==2&&tracks[0].Side!=tracks[1].Side)
+        {
+            var separation=Vector2.Distance(WristOf(tracks[0]),WristOf(tracks[1]));var span=tracks.Max(SpanOf);
+            if(separation>=span*1.5f)for(var i=0;i<result.Count;i++)
+            {
+                var hand=result[i];if(Nearest(hand) is not { } own||own.Side==hand.Side)continue;
+                var claimed=tracks.First(t=>t.Side==hand.Side);
+                // The claimed side's hand was at least a palm and a half away one frame ago.
+                if(Vector2.Distance(WristOf(claimed),WristOf(hand))<span*1.5f)continue;
+                result[i]=hand with{Side=own.Side,Handedness=1-hand.Handedness};
+            }
+        }
+        for(var i=0;i<result.Count;i++)for(var j=result.Count-1;j>i;j--)
+        {
+            var a=result[i];var b=result[j];var span=Math.Max(SpanOf(a),SpanOf(b));
+            var apart=Enumerable.Range(0,21).Average(k=>Vector2.Distance(new(a.ImageLandmarks[k].X,a.ImageLandmarks[k].Y),new(b.ImageLandmarks[k].X,b.ImageLandmarks[k].Y)));
+            if(apart>=span*.5f)continue;
+            // Same physical hand: keep the label of the track it continues, else the stronger presence.
+            var side=Nearest(a)?.Side??Nearest(b)?.Side;
+            var keepFirst=side is null||a.Side==b.Side?a.Presence>=b.Presence:a.Side==side;
+            if(!keepFirst)result[i]=b;
+            result.RemoveAt(j);
+        }
+        return result;
+    }
+
     public static List<HandObservation> PreserveSeparatedTracks(IReadOnlyList<HandObservation> current,IReadOnlyList<HandObservation> previous)
     {
         var result=current.ToList();
