@@ -21,7 +21,8 @@ public sealed partial class RetargetWindow
     LineEdit _sourcePath, _rangeStart, _rangeEnd, _fov, _rootSmooth, _armSmooth, _fingerSmooth;
     LineEdit _shoulderL, _shoulderR, _elbowL, _elbowR, _reach, _facing, _ground, _viewPitch;
     LineEdit _capturePosition, _captureYaw, _capturePitch, _viewNear, _recordingFov;
-    bool _captureFacesSubject;
+    bool _captureFacesSubject,_settingFacingControl;
+    Checkbox _facingControl;
     MocapVideoWidget _video;
     PreviewWidget _mocapPreview;
     FloatSlider _timeline;
@@ -166,6 +167,8 @@ public sealed partial class RetargetWindow
         var tiltPresets=placement.AddRow();tiltPresets.Spacing=4;
         tiltPresets.Add(new Button("Level","horizontal_rule"){Clicked=()=>_=SetCaptureTiltAsync(0),ToolTip="Place the capture as a level camera. Reuses reconstruction."});
         tiltPresets.Add(new Button("Looking down","south_east"){Clicked=()=>_=SetCaptureTiltAsync(-45),ToolTip="Assume a camera tilted 45 degrees down. Changes target arm placement and the exported animation; keeps captured hand detail. Adjust Capture pitch for your footage."});
+        _facingControl=placement.Add(new Checkbox("Filmed facing the performer"){ToolTip="On: the camera stood in front of the person, so their right hand is on the left of the picture. Off: the camera was worn on their head or chest. Guessed from which side of the picture each hand is on; change it if the arms come out crossed or mirrored. Reuses reconstruction."});
+        _facingControl.Clicked=()=>{if(!_settingFacingControl)_=SetCaptureFacingAsync(_facingControl.Value);};
         _firstOptions.ToolTip="Shoulders and hidden elbows are estimated. These controls apply to target arm correction when hand tracks are present.";
         _wristOffsetRows=_firstOptions.Layout.AddColumn();_wristOffsetRows.Spacing=6;
 
@@ -301,7 +304,7 @@ public sealed partial class RetargetWindow
     }
     void RestoreRecordingFov(MotionDocument motion)
     {
-        _recordingFov.Text="";
+        _recordingFov.Text="";_recordingFov.PlaceholderText="Automatic";
         if(!new[]{"WildHands /","WiLoR /","MobileHand /"}.Any(prefix=>motion.Backend.StartsWith(prefix,StringComparison.Ordinal)))return;
         var camera=motion.Cameras.SingleOrDefault(c=>c.Id=="video");
         if(camera?.ImageWidth is not int width||camera.ImageHeight is not int height||camera.Intrinsics is not {Length:9} k||
@@ -309,6 +312,10 @@ public sealed partial class RetargetWindow
         var automatic=CaptureCameraFraming.EstimatedFocalLength(width,height);
         if(Math.Abs(k[0]-automatic)<automatic*1e-6f)return;
         var fov=2*MathF.Atan(width/(2*k[0]))*180/MathF.PI;
+        // A lens the worker sized from the hands is still the automatic choice: show it, but keep the
+        // field blank so Process again estimates afresh instead of freezing this value as if typed.
+        if(camera.Source?.StartsWith("Pinhole camera sized from typical first-person hand distance",StringComparison.Ordinal)==true)
+        {if(float.IsFinite(fov))_recordingFov.PlaceholderText=FormattableString.Invariant($"Automatic · {fov:F0}°");return;}
         if(float.IsFinite(fov)&&fov>=20&&fov<=150)_recordingFov.Text=fov.ToString("G9",CultureInfo.InvariantCulture);
     }
 
@@ -397,6 +404,26 @@ public sealed partial class RetargetWindow
         _capturePitch.Text=degrees.ToString(CultureInfo.InvariantCulture);
         return RefreshMocapPreviewAsync();
     }
+    /// <summary>Re-place the capture camera for the chosen viewpoint, starting from this target's defaults.</summary>
+    Task SetCaptureFacingAsync(bool faces)
+    {
+        if(_target is null)return Task.CompletedTask;
+        var settings=TargetCorrectionSettings.ForRig(_target.Spec.Rig,_target.Spec.UpAxis);
+        if(faces)CaptureViewpoint.PlaceFacingCamera(settings);
+        _captureFacesSubject=faces;ShowCapturePlacement(settings);
+        return RefreshMocapPreviewAsync();
+    }
+    void ShowCapturePlacement(TargetCorrectionSettings settings)
+    {
+        _capturePosition.Text=FormattableString.Invariant($"{settings.CaptureCameraPosition.X:0.######},{settings.CaptureCameraPosition.Y:0.######},{settings.CaptureCameraPosition.Z:0.######}");
+        _captureYaw.Text=settings.CaptureCameraYawDegrees.ToString("G9",CultureInfo.InvariantCulture);_capturePitch.Text="0";
+        SyncFacingControl();
+    }
+    void SyncFacingControl()
+    {
+        if(!_facingControl.IsValid())return;
+        _settingFacingControl=true;try{_facingControl.Value=_captureFacesSubject;}finally{_settingFacingControl=false;}
+    }
     void FitMocapPlacementToTarget()
     {
         if(_target is null||_shoulderL is null)return;
@@ -418,6 +445,7 @@ public sealed partial class RetargetWindow
         _capturePosition.Text=Coordinates(settings.CaptureCameraPosition);
         _captureYaw.Text=settings.CaptureCameraYawDegrees.ToString("G9",CultureInfo.InvariantCulture);_capturePitch.Text="0";
         RestoreTargetAdjustments();
+        SyncFacingControl();
         RefreshWristOffsetRows();
     }
 
