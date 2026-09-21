@@ -29,6 +29,10 @@ public sealed class TargetCorrectionSettings
     public Vector3 CaptureCameraPosition { get; set; } = new(0,1.65f,0);
     public float CaptureCameraYawDegrees { get; set; } = 180;
     public float CaptureCameraPitchDegrees { get; set; }
+    /// <summary>Shrink a hand capture toward the camera, by at most a quarter, when the
+    /// target's arms are too short to reach it. Points keep their viewing rays, so the
+    /// first-person picture is unchanged. Skipped while prop contacts share the capture space.</summary>
+    public bool FitCaptureToArmReach { get; set; } = true;
 
     public static TargetCorrectionSettings ForRig(TargetRig rig,TargetUpAxis axis)
     {

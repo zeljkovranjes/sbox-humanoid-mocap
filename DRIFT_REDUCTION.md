@@ -290,6 +290,28 @@ The reviewed frames still disagree with the source hand poses and show target-me
 deformation. Removing reach clamping is useful but does not establish acceptable final
 capture quality or justify changing the default lens assumption.
 
+Blank **Recording FOV** no longer means the image-diagonal focal length. Native hand
+capture sizes the lens from the hands in the clip, places WildHands wrists on the
+detected palm's viewing ray with a clip-wide depth factor, and keeps left/right tracks
+physically consistent; [hand backend options](HAND_BACKENDS.md) records the method and
+its reference measurements. On the same complete `video_0` WildHands capture, Human's
+mean target IK wrist displacement fell from 92.1 / 79.8 cm (left / right, 157/157
+wrists beyond reach) to 0.28 / 0.003 cm with 16/161 beyond reach and a 3.1 cm maximum.
+The assumed lens was 118° horizontal. Citizen's 44.9 cm arms still fell short for 71/161
+wrists, by up to 6.7 cm.
+
+Hand capture therefore also shrinks toward the capture camera, by at most a quarter,
+when more than one observed wrist in twenty lies beyond the target's arm reach. Every
+wrist keeps its viewing ray, so the first-person picture does not change; this is not
+the earlier rejected trajectory scale, whose fitted 0.19 overlapped the hands. With it,
+Human shortened 6/161 wrists by at most 1.4 cm and Citizen 3/161 by at most 0.6 cm.
+Shortfalls this small are recorded in the capture details without raising
+**Clip: arm reach limited**, which still appears once more than 5% of wrists or any
+wrist by 2 cm is affected. Clips with imported prop tracks are not scaled, because
+props share the capture space. These are target IK measurements, not capture accuracy,
+and the arms crossing while both hands are out of view is reduced only as far as the
+corrected right-hand track allows; the hold itself remains an unobserved interval.
+
 The preview now reapplies the exported pose to final render bones after model evaluation.
 Human's stock constraints had changed 22 bones in a reviewed WildHands frame, including
 pinky rotations by up to 24.5° and an elbow helper by 41.7°. Omitting helper overrides

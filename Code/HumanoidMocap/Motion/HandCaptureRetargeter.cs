@@ -18,6 +18,7 @@ using Vector3 = System.Numerics.Vector3;
 public static class HandCaptureRetargeter
 {
     public const string ReachWarningPrefix="Target arm reach limited";
+    public const string ReachNotePrefix="Target arm reach nearly met:";
     public const string MissingTargetTracksPrefix="Target hand mapping omits captured joints";
     public static bool Supports(MotionDocument document)=>document.Space==MotionSpace.CameraRelative&&
         document.Bones.Any(b=>b.Role is BoneRole.HandL or BoneRole.HandR)&&
@@ -148,6 +149,20 @@ public static class HandCaptureRetargeter
         var capturePlacement=CapturePlacement.ForTarget(axis,settings);
         var placement=capturePlacement.Rotation;
         var sourceWorld=new XForm[source.Skeleton.Count];var targetWorld=new XForm[target.Skeleton.Count];
+        var captureScale=1f;
+        if(settings.FitCaptureToArmReach&&source.CaptureContacts is not {Objects.Count:>0})
+        {
+            var observedWrists=new List<(bool Left,Vector3 Position)>();
+            for(var f=0;f<input.Frames.Count;f++)
+            {
+                FkUtil.ToWorld(input.Frames[f],source.Skeleton,sourceWorld);
+                foreach(var (left,hand) in mappedHands)if(evidence[f][hand.Source]==JointEvidence.Reconstructed)
+                    observedWrists.Add((left,sourceWorld[hand.Source].Pos/100));
+            }
+            captureScale=CaptureScaleForArmReach(observedWrists,target,axis,settings);
+            if(captureScale<1)diagnostic?.Invoke(FormattableString.Invariant(
+                $"{CaptureScalePrefix} {captureScale:F2} toward the camera so this target's shorter arms can reach it. Each wrist keeps its viewing ray, so the first-person picture is unchanged; distances between the hands shrink by the same factor."));
+        }
         var previous=target.Skeleton.Bones.Select(b=>b.RestLocal).ToArray();
         var seen=new HashSet<bool>();var targets=new List<Dictionary<BoneRole,XForm>>();
         var output=new Clip(name,input.Fps,input.Looping);
@@ -163,7 +178,7 @@ public static class HandCaptureRetargeter
             var frame=previous.ToArray();var wristTargets=new Dictionary<BoneRole,XForm>();
             foreach(var (left,hand) in mappedHands)if(seen.Contains(left))
             {
-                var captured=new XForm(sourceWorld[hand.Source].Pos/100,sourceWorld[hand.Source].Rot);
+                var captured=new XForm(sourceWorld[hand.Source].Pos/100*captureScale,sourceWorld[hand.Source].Rot);
                 var time=Math.Min(clipStart+f/(double)input.Fps,clipEnd);
                 captured.Pos+=WristPositionOffsets.Sample(settings.WristOffsets,left?BoneRole.HandL:BoneRole.HandR,time,clipStart,clipEnd);
                 if(source.CaptureContacts is { } contacts)
@@ -204,10 +219,40 @@ public static class HandCaptureRetargeter
                     limited++;maximumCm=Math.Max(maximumCm,error);
                 }
             }
-            if(limited>0)diagnostic(FormattableString.Invariant($"{ReachWarningPrefix} {limited}/{observed} observed wrist targets by more than 1 mm; maximum displacement {maximumCm:F1} cm. Bone lengths were preserved, but these wrist trajectories could not be reproduced. Review camera/depth assumptions and target placement. This is target IK displacement, not measured reconstruction accuracy."));
+            // A few wrists a centimetre short are recorded without raising the clip-level warning.
+            if(limited>0&&limited*20<=observed&&maximumCm<2)diagnostic(FormattableString.Invariant(
+                $"{ReachNotePrefix} {limited}/{observed} observed wrist targets were shortened, by at most {maximumCm:F1} cm, to preserve bone lengths."));
+            else if(limited>0)diagnostic(FormattableString.Invariant($"{ReachWarningPrefix} {limited}/{observed} observed wrist targets by more than 1 mm; maximum displacement {maximumCm:F1} cm. Bone lengths were preserved, but these wrist trajectories could not be reproduced. Review camera/depth assumptions and target placement. This is target IK displacement, not measured reconstruction accuracy."));
         }
         if(source.CaptureContacts is {} finalContacts)FingerContactCorrection.Apply(output.Frames,target,axis,settings,finalContacts,input.Fps);
         return output;
+    }
+
+    public const string CaptureScalePrefix="Capture scaled by";
+    public const float MinimumCaptureScale=.75f;
+    /// <summary>Largest scale in [0.75, 1], about the capture camera, at which 95% of the
+    /// observed wrists lie within the target arm's permitted reach of their shoulder.
+    /// Wrists are camera-space metres. Rigs without both arm bones are never scaled.</summary>
+    public static float CaptureScaleForArmReach(IReadOnlyList<(bool Left,Vector3 Position)> wrists,TargetRig target,TargetUpAxis axis,TargetCorrectionSettings settings)
+    {
+        if(wrists.Count<8)return 1;
+        var units=axis==TargetUpAxis.ZUpEngine?39.3700787f:100f;var rest=target.Skeleton.RestWorld;
+        float Reach(BoneRole upper,BoneRole lower,BoneRole hand)=>
+            target.BoneForRole(upper) is int u&&target.BoneForRole(lower) is int l&&target.BoneForRole(hand) is int h
+            ?(Vector3.Distance(rest[u].Pos,rest[l].Pos)+Vector3.Distance(rest[l].Pos,rest[h].Pos))/units*settings.Reach:0;
+        var leftReach=Reach(BoneRole.UpperArmL,BoneRole.LowerArmL,BoneRole.HandL);
+        var rightReach=Reach(BoneRole.UpperArmR,BoneRole.LowerArmR,BoneRole.HandR);
+        var camera=Quaternion.CreateFromYawPitchRoll(settings.CaptureCameraYawDegrees*MathF.PI/180,settings.CaptureCameraPitchDegrees*MathF.PI/180,0);
+        var usable=wrists.Where(w=>(w.Left?leftReach:rightReach)>1e-4f&&Finite(w.Position)).ToArray();
+        if(usable.Length<8)return 1;
+        for(var scale=1f;scale>MinimumCaptureScale;scale-=.01f)
+        {
+            // Excess over reach, so arms of different length share one percentile.
+            var excess=usable.Select(w=>Vector3.Distance(Vector3.Transform(w.Position*scale,camera)+settings.CaptureCameraPosition,
+                w.Left?settings.LeftShoulder:settings.RightShoulder)-(w.Left?leftReach:rightReach)).OrderBy(e=>e).ToArray();
+            if(excess[(int)Math.Round((excess.Length-1)*.95f)]<=0)return scale;
+        }
+        return MinimumCaptureScale;
     }
 
     static bool Finite(Vector3 v)=>float.IsFinite(v.X)&&float.IsFinite(v.Y)&&float.IsFinite(v.Z);
