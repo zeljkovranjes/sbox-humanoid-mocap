@@ -25,25 +25,7 @@ public static class BodyModelDownloads
                 var asset=pinned with{Path=System.IO.Path.Combine(modelFolder,pinned.Path.Substring(7))};
                 cancellation.Token.ThrowIfCancellationRequested();Directory.CreateDirectory(System.IO.Path.GetDirectoryName(asset.Path)!);
                 if(File.Exists(asset.Path))await Verify(asset.Path,asset,cancellation.Token);
-                else
-                {
-                    var partial=asset.Path+"."+Guid.NewGuid().ToString("N")+".partial";
-                    try
-                    {
-                        Console.WriteLine($"Downloading {System.IO.Path.GetFileName(asset.Path)} ({asset.Bytes:N0} bytes)");
-                        using var response=await client.GetAsync(asset.Url,HttpCompletionOption.ResponseHeadersRead,cancellation.Token);response.EnsureSuccessStatusCode();
-                        if(response.Content.Headers.ContentLength is long size&&size!=asset.Bytes)throw new InvalidDataException("Model download size mismatch.");
-                        await using(var input=await response.Content.ReadAsStreamAsync(cancellation.Token))
-                        await using(var output=File.Create(partial))
-                        {
-                            var buffer=new byte[1024*1024];long total=0;int read;
-                            while((read=await input.ReadAsync(buffer,cancellation.Token))!=0)
-                            {total+=read;if(total>asset.Bytes)throw new InvalidDataException("Model response exceeds its pinned size.");await output.WriteAsync(buffer.AsMemory(0,read),cancellation.Token);}
-                        }
-                        await Verify(partial,asset,cancellation.Token);File.Move(partial,asset.Path);
-                    }
-                    finally{if(File.Exists(partial))File.Delete(partial);}
-                }
+                else await ModelDownload.Fetch(client,asset.Url,asset.Path,asset.Bytes,asset.Sha256,Console.WriteLine,cancellation.Token);
                 Console.WriteLine("Verified "+System.IO.Path.GetFileName(asset.Path));
             }
             Directory.CreateDirectory(modelFolder);

@@ -27,29 +27,7 @@ public static class HandModelDownloads
         foreach(var asset in assets)
         {
             var path=Path.Combine(folder,asset.Path);Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            if(!File.Exists(path))
-            {
-                var temporary=path+"."+Guid.NewGuid().ToString("N")+".partial";
-                try
-                {
-                    Console.WriteLine($"Downloading {Path.GetFileName(path)} · {asset.Bytes/1000000f:0.#} MB");
-                    using var response=await http.GetAsync(asset.Url,HttpCompletionOption.ResponseHeadersRead,token);response.EnsureSuccessStatusCode();
-                    if(response.Content.Headers.ContentLength is long length&&length!=asset.Bytes)throw new InvalidDataException("Unexpected model download size.");
-                    await using(var source=await response.Content.ReadAsStreamAsync(token))
-                    await using(var output=File.Create(temporary))
-                    {
-                        var buffer=new byte[1024*1024];long received=0;var lastPercent=-1;
-                        int count;while((count=await source.ReadAsync(buffer,token))>0)
-                        {
-                            received+=count;if(received>asset.Bytes)throw new InvalidDataException("Model response exceeds its expected size.");
-                            await output.WriteAsync(buffer.AsMemory(0,count),token);
-                            var percent=(int)(received*100/asset.Bytes);if(percent>=lastPercent+5){Console.WriteLine($"Downloading {backend} · {percent}%");lastPercent=percent;}
-                        }
-                    }
-                    await Verify(temporary,asset,token);File.Move(temporary,path);
-                }
-                finally{if(File.Exists(temporary))File.Delete(temporary);}
-            }
+            if(!File.Exists(path))await ModelDownload.Fetch(http,asset.Url,path,asset.Bytes,asset.Sha256,Console.WriteLine,token);
             else await Verify(path,asset,token);
             Console.WriteLine("Verified "+Path.GetFileName(path));
         }

@@ -195,7 +195,17 @@ internal static class NativeCapture
         }
         await Task.WhenAll(output,error);
         if(Interlocked.Exchange(ref latestProgress,null) is { } last)await Notify(progress,last);
-        if (process.ExitCode != 0) throw new InvalidOperationException($"Local capture failed (exit {process.ExitCode}): " + string.Join("\n", errors.Concat(outputErrors).Take(4)));
+        if (process.ExitCode != 0)
+        {
+            var details=errors.Concat(outputErrors).ToArray();
+            // "dotnet" can exist as a runtime only, or as an SDK too old to build the worker.
+            if(executable=="dotnet"&&details.Any(d=>d.Contains("No .NET SDKs were found",StringComparison.OrdinalIgnoreCase)||d.Contains("NETSDK1045",StringComparison.Ordinal)||
+                d.Contains("does not support targeting .NET",StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("The local capture worker needs the .NET 10 SDK (the runtime alone, or an older SDK, cannot build it). Install it from https://dotnet.microsoft.com/download, restart the editor and upload again, or set HUMANOID_MOCAP_WORKER to a prebuilt worker.");
+            if(executable=="dotnet"&&details.Any(d=>d.Contains("NU1301",StringComparison.Ordinal)||d.Contains("Unable to load the service index",StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("First-time setup could not reach nuget.org to fetch the worker's inference libraries. Check the internet connection and upload again; nothing needs reinstalling.");
+            throw new InvalidOperationException($"Local capture failed (exit {process.ExitCode}): " + string.Join("\n", details.Take(4)));
+        }
         return result;
     }
 }
