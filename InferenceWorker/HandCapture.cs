@@ -16,7 +16,7 @@ public sealed record HandCaptureRequest(string Video,string Models,string Output
 /// corrections are deliberately excluded from the expensive prediction cache.</summary>
 public static class HandCapture
 {
-    public const string ImplementationVersion="native-mano-v6-followed-hands";
+    public const string ImplementationVersion="native-mano-v7-followed-hands";
     public const string FollowedSource="WiLoR followed through detector loss";
     /// <summary>A hand WiLoR is following by itself after the landmark detector lost it.</summary>
     public sealed record FollowedHand(string Side,float[][] Image,float[] GlobalRotation,float CropSize,double Since);
@@ -87,9 +87,9 @@ public static class HandCapture
                 {
                     if(state.Frames.Count>0)throw new InvalidDataException("Cached hand job has no inference camera.");
                     state.InferenceCamera=request.Camera;
-                    // Only WildHands consumes the lens before inference; the other
-                    // backends size it from their own predictions when motion is built.
-                    if(request.EstimateFocal&&wild)
+                    // WildHands consumes the lens before inference, and MobileHand's own hand scale is too
+                    // unreliable to size one; WiLoR sizes it from its own predictions when motion is built.
+                    if(request.EstimateFocal&&(wild||mobile))
                     {
                         progress?.Invoke("Estimating the recording lens from hand size");
                         var samples=FocalSamples(request.Video,times,detector,cancellation);state.FocalEstimateSamples=samples.Count;
@@ -174,7 +174,7 @@ public static class HandCapture
             var estimated=request.EstimateFocal&&camera!=request.Camera;
             // Focal length never enters the WiLoR or MobileHand networks, so their own
             // metric hand scale refines the detector-based estimate without new inference.
-            if(request.EstimateFocal&&!wild)
+            if(request.EstimateFocal&&!wild&&!mobile)
             {
                 // Distance is taken along the ray of the detected palm, where the wrist is
                 // anchored, rather than the crop centre; they differ in wide-angle views.
