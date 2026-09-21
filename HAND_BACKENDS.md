@@ -90,8 +90,9 @@ against 11.8 ms. Across 28 real crops from the finger clip the two precisions di
 (0.74 mm worst). Weights are converted as they are read, so peak worker memory fell from
 4.7–6.7 GB to 2.8 GB. Reduced precision keeps its own reconstruction cache. With eight
 threads and bfloat16, detection plus inference for `video_0` (121 frames, 176 hand
-samples) takes about 65 s, 0.37 s per hand, against 330 s for a comparable job with four
-float32 threads. Batching both hands gave under 6% in the same timing and was not pursued.
+samples) takes about 65 s, 0.37 s per hand; the earlier four-thread float32 HOT3D run
+took 330 s for 236 hands, 1.4 s per hand. In the block-shape timing, batching both hands
+gained under 6%, so it was not pursued.
 
 The earlier default change separated hand detection from pose reconstruction; it was not
 a claim that the WildHands port faithfully reproduces every FPS performance.
