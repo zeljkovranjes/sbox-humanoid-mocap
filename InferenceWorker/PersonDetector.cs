@@ -13,7 +13,7 @@ namespace HumanoidMocap.Worker;
 public sealed class PersonDetector : IDisposable
 {
     public const string CheckpointSha256="47fd5599d6fa17608f03e0eb0ae230baa6e597d7e8a2c8199fe00abea55a701f";
-    public const string Version="opencv-blazepose-person-v5-joint-following";
+    public const string Version="opencv-blazepose-person-v8-followable-body";
     readonly Net network;
     readonly string[] outputs;
     static readonly Point2f[] Anchors=CreateAnchors();

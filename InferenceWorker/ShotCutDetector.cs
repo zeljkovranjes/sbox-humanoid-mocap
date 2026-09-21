@@ -15,16 +15,40 @@ public static class ShotCutDetector
     /// <summary>Index into the selected frames of the first frame after a cut, or null.</summary>
     public static int? FirstCut(string video,IReadOnlyList<double> times,CancellationToken cancellation)
     {
-        using var decoder=new WindowsVideoDecoder(video);float[]? previous=null;
-        for(var i=0;i<times.Count;i++)
+        using var decoder=new WindowsVideoDecoder(video);
+        IEnumerable<float[]> Thumbnails()
         {
-            cancellation.ThrowIfCancellationRequested();DecodedVideoFrame? frame;
-            do{frame=decoder.Read(cancellation);if(frame is null)return null;}while(frame.Time<times[i]-.00001);
-            var current=Thumbnail(frame);
-            if(previous is not null&&IsCut(previous,current))return i;
-            previous=current;
+            for(var i=0;i<times.Count;i++)
+            {
+                cancellation.ThrowIfCancellationRequested();DecodedVideoFrame? frame;
+                do{frame=decoder.Read(cancellation);if(frame is null)yield break;}while(frame.Time<times[i]-.00001);
+                yield return Thumbnail(frame);
+            }
         }
-        return null;
+        return FirstCut(Thumbnails());
+    }
+    /// <summary>How many frames a damaged picture may last before it counts as a new shot.</summary>
+    public const int MaximumGlitchFrames=3;
+    /// <summary>A cut stays cut. A damaged frame (a broken stream, a dropped packet) also differs wildly from
+    /// the one before, but the scene returns a frame or two later; on a kata sample one such frame ended a
+    /// 28-second capture after 1.9 seconds. A candidate is therefore confirmed only if the following frames
+    /// still do not match the picture from before it.</summary>
+    public static int? FirstCut(IEnumerable<float[]> thumbnails)
+    {
+        float[]? before=null;var candidate=-1;var index=0;
+        foreach(var current in thumbnails)
+        {
+            if(before is null){before=current;}
+            else if(candidate<0)
+            {
+                if(IsCut(before,current))candidate=index;else before=current;
+            }
+            else if(!IsCut(before,current)){candidate=-1;before=current;} // the scene came back: a glitch
+            else if(index-candidate>=MaximumGlitchFrames)return candidate;
+            index++;
+        }
+        // Too few frames remain to tell a cut from a glitch; the half-second minimum shot length makes either harmless.
+        return candidate>=0&&index-candidate>=2?candidate:null;
     }
     public static bool IsCut(float[] a,float[] b)
     {

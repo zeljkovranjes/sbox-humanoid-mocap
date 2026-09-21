@@ -43,6 +43,30 @@ public static class PersonCropTrack
         var size=Math.Max(right-left,bottom-top)*1.4f;
         return size>=16?new((left+right)/2,(top+bottom)/2,size):null;
     }
+    /// <summary>Whether these joints show a body that can be followed. <paramref name="previousSpan"/> is the
+    /// <see cref="Span"/> of the subject's last sighting, or null on first acquisition.
+    /// As a performer walked out of the picture the pose model kept answering: first with joints piled
+    /// along the border they left by, then with a confident "body" 30 pixels tall on a shelf the detector
+    /// had offered, which kept a capture going for a second after the person was gone. A followable body
+    /// has six confident joints clear of the picture's border, some of its torso among them, and has not
+    /// suddenly shrunk to a fraction of its size a moment ago.</summary>
+    public static bool Followable(float[] joints,float? previousSpan,int width,int height)
+        =>FromJoints(joints) is not null&&Span(joints,width,height) is float span&&(previousSpan is not float known||span>=known*MinimumSpanKept);
+    /// <summary>Larger side of the box around confident joints clear of the border, or null when fewer than six
+    /// are, or none of them is a shoulder or hip.</summary>
+    public static float? Span(float[] joints,int width,int height)
+    {
+        float marginX=width*BorderFraction,marginY=height*BorderFraction,left=float.MaxValue,top=float.MaxValue,right=float.MinValue,bottom=float.MinValue;
+        var inside=0;var torso=false;
+        for(var j=0;j<17;j++)
+        {
+            float x=joints[j*3],y=joints[j*3+1];
+            if(!(joints[j*3+2]>=.5f)||x<marginX||x>width-marginX||y<marginY||y>height-marginY)continue;
+            inside++;torso|=j is 5 or 6 or 11 or 12;left=Math.Min(left,x);right=Math.Max(right,x);top=Math.Min(top,y);bottom=Math.Max(bottom,y);
+        }
+        return inside>=6&&torso?Math.Max(right-left,bottom-top):null;
+    }
+    public const float BorderFraction=.03f,MinimumSpanKept=.4f;
     public static int ConfidentJoints(float[] joints)=>Enumerable.Range(0,17).Count(j=>joints[j*3+2]>=.5f);
     /// <summary>Next crop while following one subject. A box around partly visible joints is
     /// smaller than the body, and a smaller crop hides more joints on the next frame; on the

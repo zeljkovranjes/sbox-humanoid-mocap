@@ -33,7 +33,61 @@ public static class BodyCapture
         public CameraRotationTrack.Result? CameraRotation { get; set; }
         public string? CameraRotationVersion { get; set; }
     }
+    /// <summary>The automatic track has no subject at <see cref="Time"/>. <see cref="LastSeen"/> is null when none was found yet.</summary>
+    sealed class SubjectLost(string message,double rangeStart,double time,double? lastSeen,List<FrameState> frames):IOException(message)
+    {
+        public double RangeStart=>rangeStart;public double Time=>time;public double? LastSeen=>lastSeen;public List<FrameState> Frames=>frames;
+    }
+    public const string PartlyVisiblePrefix="Performer not in view for the whole video";
+    /// <summary>The shortest stretch with the performer in view that is still worth capturing.</summary>
+    public const double MinimumVisibleSeconds=1;
+    /// <summary>Captures the range; when the performer enters late or leaves the picture, captures the part
+    /// where they are in view and says so, rather than refusing the whole video.</summary>
     public static string Run(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress=null)
+    {
+        string? note=null;List<FrameState>? seed=null;
+        for(var attempt=0;;attempt++)
+        {
+            try{return RunRange(request,cancellation,progress,seed,note);}
+            catch(SubjectLost lost) when(request.PersonCrop is null&&attempt<3)
+            {
+                if(lost.LastSeen is double seen)
+                {
+                    if(seen-lost.RangeStart<MinimumVisibleSeconds)throw;
+                    note=FormattableString.Invariant($"{PartlyVisiblePrefix}: they could not be followed from {lost.Time:F2} s, so the capture ends at {seen:F2} s. {note}").TrimEnd();
+                    progress?.Invoke(FormattableString.Invariant($"Performer left the picture at {lost.Time:F1} s; capturing up to there"));
+                    // Keep the 2D poses already found; the shorter range is a job of its own.
+                    seed=lost.Frames.Where(f=>f.Time<=seen+.0001&&f.Observations is not null&&f.Person is not null).ToList();
+                    request=request with{Start=lost.RangeStart,End=seen+.0001};
+                }
+                else
+                {
+                    progress?.Invoke("Looking for where the performer enters the picture");
+                    if(FirstSubjectTime(request,lost.Time,cancellation) is not double entered||request.End-entered<MinimumVisibleSeconds)throw;
+                    note=FormattableString.Invariant($"{PartlyVisiblePrefix}: nobody could be followed before {entered:F2} s, so the capture starts there.");
+                    seed=null;request=request with{Start=entered};
+                }
+            }
+        }
+    }
+    /// <summary>First time after <paramref name="after"/>, checked about four times a second, at which the detector finds
+    /// somebody and the pose model sees enough of their body to follow, which is what the tracker itself requires.</summary>
+    static double? FirstSubjectTime(BodyCaptureRequest request,double after,CancellationToken cancellation)
+    {
+        using var detector=new PersonDetector(Path.Combine(request.Models,"person/person_detection_mediapipe_2023mar.onnx"));
+        using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation);
+        using var decoder=new WindowsVideoDecoder(request.Video);var next=after+.25;DecodedVideoFrame? frame;
+        while((frame=decoder.Read(cancellation)) is not null&&frame.Time<request.End)
+        {
+            if(frame.Time<next)continue;next=frame.Time+.25;
+            if(PersonCropTrack.Select(null,detector.DetectFollowing(frame,null,cancellation)) is not { } subject)continue;
+            var crop=VideoCrop.Prepare(frame,subject.Crop);
+            var joints=VideoCrop.DecodeHeatmaps(VideoCrop.AverageFlippedHeatmaps(pose.Run(crop,cancellation),pose.Run(VideoCrop.FlipImage(crop),cancellation)),subject.Crop);
+            if(PersonCropTrack.Followable(joints,null,frame.Width,frame.Height))return frame.Time;
+        }
+        return null;
+    }
+    static string RunRange(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress,List<FrameState>? seed,string? visibilityNote)
     {
         if(!double.IsFinite(request.Start+request.End)||request.Start<0||request.End<=request.Start)throw new ArgumentException("Select a finite non-empty video range.");
         var metadata=Mp4Metadata.Read(request.Video);var captureTimes=metadata.CaptureTimes;
@@ -76,6 +130,8 @@ public static class BodyCapture
             if(state is not null)progress?.Invoke("Earlier progress for this video could not be reused; starting again");
             state=new State{Key=key};
         }
+        if(state.Frames.Count==0&&seed is not null&&seed.Count<=count&&!seed.Where((f,i)=>Math.Abs(f.Time-expected[i])>.0005).Any())
+            state.Frames.AddRange(seed.Select(f=>new FrameState{Time=f.Time,Observations=f.Observations,Detections=f.Detections,Person=f.Person}));
         void Save(string status)
         {
             state.Status=status;state.PeakRamBytes=Math.Max(state.PeakRamBytes,Process.GetCurrentProcess().PeakWorkingSet64);
@@ -116,7 +172,7 @@ public static class BodyCapture
                 {
                     using var detector=new PersonDetector(Path.Combine(request.Models,"person/person_detection_mediapipe_2023mar.onnx"));
                     using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation);
-                    GvhmrDecoder.Box? followed=null;var lastSeen=double.NaN;
+                    GvhmrDecoder.Box? followed=null;var lastSeen=double.NaN;float? span=null;
                     float[] Observe(DecodedVideoFrame frame,GvhmrDecoder.Box box)
                     {
                         var crop=VideoCrop.Prepare(frame,box);
@@ -131,11 +187,11 @@ public static class BodyCapture
                             if(followed is { } expected)
                             {
                                 joints=Observe(frame,expected);
-                                if(PersonCropTrack.FromJoints(joints) is null)
+                                if(!PersonCropTrack.Followable(joints,span,frame.Width,frame.Height))
                                 {
                                     // Fast or blurred movement: look again in a wider window before asking the detector.
                                     var wider=expected with{Size=expected.Size*1.35f};joints=Observe(frame,wider);
-                                    if(PersonCropTrack.FromJoints(joints) is null)joints=null;else{followed=wider;evidence="widened crop";}
+                                    if(!PersonCropTrack.Followable(joints,span,frame.Width,frame.Height))joints=null;else{followed=wider;evidence="widened crop";}
                                 }
                             }
                             if(joints is null)
@@ -147,24 +203,32 @@ public static class BodyCapture
                                     // than the body; while a subject is followed, keep a comparable size.
                                     var crop=followed is { } known?subject.Crop with{Size=Math.Clamp(subject.Crop.Size,known.Size*.85f,known.Size*1.35f)}:subject.Crop;
                                     var found=Observe(frame,crop);
-                                    if(PersonCropTrack.FromJoints(found) is not null){joints=found;followed=crop;evidence="detected";score=subject.Score;}
+                                    if(PersonCropTrack.Followable(found,span,frame.Width,frame.Height)){joints=found;followed=crop;evidence="detected";score=subject.Score;}
                                 }
                             }
                             if(joints is null)
                             {
                                 if(followed is not { } held||!(current.Time-lastSeen<=.5))
-                                    throw new InvalidDataException($"Cannot follow one person at {current.Time:F2}s. Use a shorter range with one clearly visible subject or supply PersonCrop in a manual worker job.");
+                                    throw new SubjectLost($"Cannot follow one person at {current.Time:F2}s. Film one clearly visible performer, whole body in frame, or select the part of the video where they are in view under Advanced.",
+                                        request.Start,current.Time,double.IsNaN(lastSeen)?null:lastSeen,state.Frames);
                                 // Keep the last crop briefly; the joints are still this frame's own prediction.
                                 joints=Observe(frame,held);evidence="held crop";
                             }
                             current.Observations=joints;current.Person=new(followed!.Value,evidence,score);
                             if(index==0||index==count-1)VideoCrop.SaveOverlay(frame,joints,Path.Combine(folder,$"observations-{index}.png"));
                         }
-                        if(PersonCropTrack.FromJoints(current.Observations) is { } next)
-                        {followed=PersonCropTrack.Continue(followed,next,PersonCropTrack.ConfidentJoints(current.Observations));lastSeen=current.Time;}
+                        // A held crop is not a sighting: its joints did not pass as a followable body, so they
+                        // must neither move the crop nor extend how long the subject may stay unseen.
+                        if(current.Person!.Evidence!="held crop"&&PersonCropTrack.FromJoints(current.Observations) is { } next)
+                        {followed=PersonCropTrack.Continue(followed,next,PersonCropTrack.ConfidentJoints(current.Observations));lastSeen=current.Time;span=PersonCropTrack.Span(current.Observations,frame.Width,frame.Height)??span;}
                         Save($"Followed person and reconstructed 2D pose {index+1}/{count}");
                     });
-                    if(state.Frames[^1].Person!.Evidence=="held crop")throw new InvalidDataException("Person tracking is lost at the end. Trim the range or supply a manual crop.");
+                    if(state.Frames[^1].Person!.Evidence=="held crop")
+                    {
+                        var lastFollowed=state.Frames.FindLastIndex(f=>f.Person!.Evidence!="held crop");
+                        throw new SubjectLost("The performer could not be followed at the end of the video. Select the part where they are in view under Advanced.",
+                            request.Start,state.Frames[lastFollowed+1].Time,lastFollowed<0?null:state.Frames[lastFollowed].Time,state.Frames);
+                    }
                 }
                 // Final model crops come from each frame's own joints, then GVHMR's crop smoothing.
                 GvhmrDecoder.Box? steady=null;
@@ -260,6 +324,7 @@ public static class BodyCapture
                 ?$"Automatic single-person image crops ({PersonDetector.Version}): the detector located the subject in {state.Frames.Count(f=>f.Person!.Evidence=="detected")} frame(s), crops then followed the previous frame's 2D body joints, and {state.Frames.Count(f=>f.Person!.Evidence=="held crop")} frame(s) briefly held the last crop. Two centered five-frame crop averages follow. Crop evidence is saved separately in reconstruction.json; it is not joint confidence or camera calibration."
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             if(shotNote is not null)motion.Diagnostics.Add(shotNote);
+            if(visibilityNote is not null)motion.Diagnostics.Add(visibilityNote);
             if(metadata.SamplingNote is { } sampling)motion.Diagnostics.Add(sampling);
             motion.Diagnostics.Add(state.CameraMotion.Diagnostic);
             if(!state.CameraMotion.Stationary&&state.CameraRotation is not null)motion.Diagnostics.Add(state.CameraRotation.Diagnostic);

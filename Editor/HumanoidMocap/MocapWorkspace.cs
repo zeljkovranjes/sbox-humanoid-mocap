@@ -296,6 +296,9 @@ public sealed partial class RetargetWindow
             // Written by the worker when edited footage cut to another shot; see InferenceWorker/ShotCutDetector.cs.
             if(doc.Diagnostics.FirstOrDefault(d=>d.StartsWith("Footage cuts to another shot",StringComparison.Ordinal)) is { } cut)
                 _captureStatus.Text+=" "+cut;
+            // Written by the worker when the performer entered late or left the picture; see InferenceWorker/BodyCapture.cs.
+            if(doc.Diagnostics.FirstOrDefault(d=>d.StartsWith("Performer not in view for the whole video",StringComparison.Ordinal)) is { } partlyVisible)
+                _captureStatus.Text+=" "+partlyVisible;
             if(doc.Diagnostics.FirstOrDefault(d=>d.StartsWith("Long video:",StringComparison.Ordinal)) is { } longVideo)
                 _captureStatus.Text+=" "+longVideo;
             _motionDetails.Text=$"{doc.Backend} · {doc.Space}. "+loaded.quality.HandSummary+" "+string.Join(" ",doc.Diagnostics);
