@@ -26,6 +26,8 @@ public static class BodyCapture
         public List<FrameState> Frames { get; set; }=new();
         public Dictionary<string,double> Seconds { get; set; }=new();
         public long PeakRamBytes { get; set; }
+        public CameraMotionCheck.Result? CameraMotion { get; set; }
+        public string? CameraMotionVersion { get; set; }
     }
     public static string Run(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress=null)
     {
@@ -69,20 +71,82 @@ public static class BodyCapture
             }
             else
             {
-                if(state.Frames.Count<count||state.Frames.Any(f=>f.Detections is null))
+                // The detector finds the subject; after that each crop follows the previous
+                // frame's 2D body joints, as pose trackers do. Detector-only association lost
+                // a distant performer and was taken over by a nearer bystander on the kata sample.
+                if(state.Frames.Count<count||state.Frames.Any(f=>f.Observations is null||f.Person is null))
                 {
                     using var detector=new PersonDetector(Path.Combine(request.Models,"person/person_detection_mediapipe_2023mar.onnx"));
+                    using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation);
+                    GvhmrDecoder.Box? followed=null;var lastSeen=double.NaN;
+                    float[] Observe(DecodedVideoFrame frame,GvhmrDecoder.Box box)
+                    {
+                        var crop=VideoCrop.Prepare(frame,box);
+                        return VideoCrop.DecodeHeatmaps(VideoCrop.AverageFlippedHeatmaps(pose.Run(crop,cancellation),pose.Run(VideoCrop.FlipImage(crop),cancellation)),box);
+                    }
                     Visit((frame,index)=>
                     {
-                        if(state.Frames[index].Detections is not null)return;
-                        state.Frames[index].Detections=detector.Detect(frame,cancellation);
-                        Save($"Detected person {index+1}/{count}");
+                        var current=state.Frames[index];
+                        if(current.Observations is null||current.Person is null)
+                        {
+                            float[]? joints=null;var evidence="followed body joints";float? score=null;
+                            if(followed is { } expected)
+                            {
+                                joints=Observe(frame,expected);
+                                if(PersonCropTrack.FromJoints(joints) is null)
+                                {
+                                    // Fast or blurred movement: look again in a wider window before asking the detector.
+                                    var wider=expected with{Size=expected.Size*1.35f};joints=Observe(frame,wider);
+                                    if(PersonCropTrack.FromJoints(joints) is null)joints=null;else{followed=wider;evidence="widened crop";}
+                                }
+                            }
+                            if(joints is null)
+                            {
+                                current.Detections=detector.DetectFollowing(frame,followed,cancellation);
+                                if(PersonCropTrack.Select(followed,current.Detections) is { } subject)
+                                {
+                                    // The detector's crop comes from the face and hips and can be far tighter
+                                    // than the body; while a subject is followed, keep a comparable size.
+                                    var crop=followed is { } known?subject.Crop with{Size=Math.Clamp(subject.Crop.Size,known.Size*.85f,known.Size*1.35f)}:subject.Crop;
+                                    var found=Observe(frame,crop);
+                                    if(PersonCropTrack.FromJoints(found) is not null){joints=found;followed=crop;evidence="detected";score=subject.Score;}
+                                }
+                            }
+                            if(joints is null)
+                            {
+                                if(followed is not { } held||!(current.Time-lastSeen<=.5))
+                                    throw new InvalidDataException($"Cannot follow one person at {current.Time:F2}s. Use a shorter range with one clearly visible subject or supply PersonCrop in a manual worker job.");
+                                // Keep the last crop briefly; the joints are still this frame's own prediction.
+                                joints=Observe(frame,held);evidence="held crop";
+                            }
+                            current.Observations=joints;current.Person=new(followed!.Value,evidence,score);
+                            if(index==0||index==count-1)VideoCrop.SaveOverlay(frame,joints,Path.Combine(folder,$"observations-{index}.png"));
+                        }
+                        if(PersonCropTrack.FromJoints(current.Observations) is { } next)
+                        {followed=PersonCropTrack.Continue(followed,next,PersonCropTrack.ConfidentJoints(current.Observations));lastSeen=current.Time;}
+                        Save($"Followed person and reconstructed 2D pose {index+1}/{count}");
                     });
+                    if(state.Frames[^1].Person!.Evidence=="held crop")throw new InvalidDataException("Person tracking is lost at the end. Trim the range or supply a manual crop.");
                 }
-                var track=PersonCropTrack.Stabilize(PersonCropTrack.Build(state.Frames.Select(f=>new PersonCropTrack.Frame(f.Time,f.Detections!)).ToArray()));
+                // Final model crops come from each frame's own joints, then GVHMR's crop smoothing.
+                GvhmrDecoder.Box? steady=null;
+                var own=state.Frames.Select(f=>
+                {
+                    var crop=PersonCropTrack.FromJoints(f.Observations!) is { } box?PersonCropTrack.Continue(steady,box,PersonCropTrack.ConfidentJoints(f.Observations!)):f.Person!.Crop;
+                    steady=crop;return f.Person! with{Crop=crop};
+                }).ToArray();
+                var track=PersonCropTrack.Stabilize(own);
                 for(var i=0;i<track.Length;i++)state.Frames[i].Person=track[i];
             }
             state.Seconds["personDetectionThisRun"]=watch.Elapsed.TotalSeconds;Save("person-crops-ready");watch.Restart();
+            if(state.CameraMotion is null||state.CameraMotionVersion!=CameraMotionCheck.Version)
+            {
+                progress?.Invoke("Checking whether the recording camera stayed still");
+                using var check=new CameraMotionCheck();
+                Visit((frame,index)=>check.Add(frame,state.Frames[index].Person!.Crop));
+                state.CameraMotion=check.Finish();state.CameraMotionVersion=CameraMotionCheck.Version;
+                state.Seconds["cameraMotionThisRun"]=watch.Elapsed.TotalSeconds;Save("camera-motion-checked");watch.Restart();
+            }
             if(state.Frames.Count<count||state.Frames.Any(f=>f.Observations is null))
             {
                 using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation);
@@ -120,8 +184,9 @@ public static class BodyCapture
             motion.ModelVersion+="; "+WindowsVideoDecoder.ImplementationVersion;
             motion.ModelVersion+="; "+(request.PersonCrop is null?PersonDetector.Version:"manual-person-crop");
             motion.Diagnostics.Add(request.PersonCrop is null
-                ?$"Automatic single-person image crops from {PersonDetector.Version}, with two centered five-frame crop averages; {state.Frames.Count(f=>f.Person!.Evidence!="detected")} short-gap crop estimates. Raw detections, detector scores and crop evidence are saved separately in reconstruction.json; they are not joint confidence or camera calibration."
+                ?$"Automatic single-person image crops ({PersonDetector.Version}): the detector located the subject in {state.Frames.Count(f=>f.Person!.Evidence=="detected")} frame(s), crops then followed the previous frame's 2D body joints, and {state.Frames.Count(f=>f.Person!.Evidence=="held crop")} frame(s) briefly held the last crop. Two centered five-frame crop averages follow. Crop evidence is saved separately in reconstruction.json; it is not joint confidence or camera calibration."
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
+            motion.Diagnostics.Add(state.CameraMotion.Diagnostic);
             var result=Path.Combine(folder,"raw-body.hmotion");File.WriteAllText(result+".partial",motion.ToJson());File.Move(result+".partial",result,true);
             state.Seconds["temporalAndDecodeThisRun"]=watch.Elapsed.TotalSeconds;Save("complete");return result;
         }

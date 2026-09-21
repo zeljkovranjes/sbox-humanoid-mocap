@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using HumanoidMocap.Motion;
@@ -92,6 +93,12 @@ public sealed partial class RetargetWindow
             {
                 motionPath = await NativeCapture.BodyAsync(video, start, end ?? metadata.Duration, metadata.Width, metadata.Height,
                     ReceiveWorkerProgress, token);
+                // A camera the worker measured as still gets world-relative root and foot-contact
+                // refinement straight away. The untouched capture stays beside it and
+                // Advanced → Restore original capture reopens it.
+                var bodyPath=motionPath;
+                if(await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(bodyPath)).Diagnostics.Any(d=>d.StartsWith(StationaryCameraPrefix,StringComparison.Ordinal)),token))
+                    motionPath=await NativeCapture.RefineBodyAsync(motionPath,ReceiveWorkerProgress,token);
             }
             token.ThrowIfCancellationRequested();
             await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;

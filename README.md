@@ -34,7 +34,7 @@ First-person preview hides the character's separate head mesh when supported, pr
 
 For native hand capture, **Advanced → First Person → Recording FOV (°)** optionally supplies the video's horizontal lens angle. Leave it blank to size the lens from the hands, which keeps them at first-person distances within arm's reach. Choose **Process again** to apply it; previous captures remain intact. This affects inferred depth and is separate from **Viewmodel FOV**, which only changes preview framing. See [capture instructions](CAPTURE.md) before adjusting it.
 
-For third-person recordings made with a stationary camera, **Advanced → Third Person → Refine · stationary camera** reuses saved predictions for root and limb-contact correction. It opens a separate result; the same button restores the original capture. **Reduce foot drift** keeps predicted stationary ankles and toes anchored on the final target rig. Review the result before export. **In place** removes horizontal travel. See [drift reduction and measured limits](DRIFT_REDUCTION.md).
+Third Person checks whether the recording camera stayed still by following background detail outside the person. When it did, root and foot-contact refinement is applied automatically from the saved predictions, reconstructed floor height is levelled, and the status line says so; **Advanced → Third Person → Restore original capture** reopens the untouched result. For a moving or handheld camera the capture stays camera-relative, and **Refine · stationary camera** remains available if you know better. **Reduce foot drift** keeps predicted stationary ankles and toes anchored on the final target rig. Review the result before export. **In place** removes horizontal travel. See [drift reduction and measured limits](DRIFT_REDUCTION.md).
 
 FPS cleanup reduces small wrist-position fluctuations while preserving fast movement and captured finger detail. **Advanced → Contact review** imports prop FBX animation and lets you add, edit or suggest wrist contacts from imported rigid surfaces. Contacts appear beneath the playback slider; right-click an interval to review it or adjust its timing. The contact dialog also edits sliding position keys and optional finger contact points. Review yellow suggestions before confirming. Confirmed contacts constrain the hands, with optional wrist-orientation anchoring for rigid grips; prop armatures appear in preview and export with their animated bones. See [prop tracks](PROP_TRACKS.md) for alignment and remaining limitations; hand reconstruction alone does not recover object motion.
 
@@ -53,8 +53,9 @@ preview before exporting. This library exports animation and armatures; it does 
 automatically rig or skin a character. Phone codec support depends on Windows Media Foundation.
 
 Third Person uses camera-relative GVHMR reconstruction, without detailed finger capture.
-It automatically follows one prominent subject with image-space crops; ambiguous subjects
-and long tracking loss require a shorter or clearer recording.
+It finds one prominent subject, then follows that person's own 2D body joints from
+frame to frame, so distant subjects and bystanders walking through do not end the job.
+Ambiguous starts and losses longer than half a second still need a shorter or clearer recording.
 Calibrated world recovery, automatic prop tracking and multi-camera fusion are not supported.
 
 This is an experimental development build. Wrist depth, hidden elbows and shoulders

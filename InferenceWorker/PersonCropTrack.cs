@@ -8,6 +8,53 @@ public static class PersonCropTrack
 {
     public sealed record Frame(double Time,PersonDetector.Detection[] Detections);
     public sealed record Sample(GvhmrDecoder.Box Crop,string Evidence,float? DetectorScore);
+    /// <summary>The detection that continues the followed subject, or the single prominent
+    /// subject while none is followed. Null when absent or ambiguous.</summary>
+    public static PersonDetector.Detection? Select(GvhmrDecoder.Box? previous,IReadOnlyList<PersonDetector.Detection> detections)
+    {
+        var candidates=detections.Where(d=>d.Score>=.5f&&float.IsFinite(d.Score)&&
+            d.Landmarks.Length==8&&d.Landmarks.All(float.IsFinite)&&d.Crop.Size>=16&&float.IsFinite(d.Crop.Size)).ToArray();
+        if(previous is not { } p)
+        {
+            // Prefer the prominent foreground subject; do not pick arbitrarily
+            // when two candidates have comparable apparent size and evidence.
+            var prominent=candidates.OrderByDescending(d=>d.Crop.Size*d.Score).ToArray();
+            return prominent.Length>0&&(prominent.Length==1||prominent[1].Crop.Size*prominent[1].Score<prominent[0].Crop.Size*prominent[0].Score*.8f)?prominent[0]:null;
+        }
+        var ranked=candidates.Select(d=>new{Detection=d,Distance=Distance(d.Crop,p)/p.Size,Scale=d.Crop.Size/p.Size})
+            .Where(d=>d.Distance<.65f&&d.Scale>.5f&&d.Scale<2)
+            .Select(d=>new{d.Detection,Cost=d.Distance+Math.Abs(MathF.Log(d.Scale))*.4f+(1-d.Detection.Score)*.1f})
+            .OrderBy(d=>d.Cost).ToArray();
+        return ranked.Length>0&&(ranked.Length==1||ranked[1].Cost-ranked[0].Cost>.15f)?ranked[0].Detection:null;
+    }
+    /// <summary>Square model crop around confidently located COCO-17 joints (x, y, score),
+    /// or null when fewer than six are confident. The joint box excludes the top of the
+    /// head, hands and feet, so it is padded more than a detector's person box would be.</summary>
+    public static GvhmrDecoder.Box? FromJoints(float[] joints)
+    {
+        if(joints.Length!=51)throw new ArgumentException("Expected COCO-17 joints.");
+        float left=float.MaxValue,top=float.MaxValue,right=float.MinValue,bottom=float.MinValue;var confident=0;
+        for(var j=0;j<17;j++)
+        {
+            if(!(joints[j*3+2]>=.5f)||!float.IsFinite(joints[j*3]+joints[j*3+1]))continue;
+            confident++;left=Math.Min(left,joints[j*3]);right=Math.Max(right,joints[j*3]);top=Math.Min(top,joints[j*3+1]);bottom=Math.Max(bottom,joints[j*3+1]);
+        }
+        if(confident<6)return null;
+        var size=Math.Max(right-left,bottom-top)*1.4f;
+        return size>=16?new((left+right)/2,(top+bottom)/2,size):null;
+    }
+    public static int ConfidentJoints(float[] joints)=>Enumerable.Range(0,17).Count(j=>joints[j*3+2]>=.5f);
+    /// <summary>Next crop while following one subject. A box around partly visible joints is
+    /// smaller than the body, and a smaller crop hides more joints on the next frame; on the
+    /// kata sample that collapsed a 292-pixel crop to 54 pixels within five frames. Size may
+    /// therefore shrink by at most 8% per frame, only while at least twelve joints are
+    /// confident, and grow by at most 35%.</summary>
+    public static GvhmrDecoder.Box Continue(GvhmrDecoder.Box? previous,GvhmrDecoder.Box fromJoints,int confidentJoints)
+    {
+        if(previous is not { } p)return fromJoints;
+        var smallest=confidentJoints>=12?p.Size*.92f:p.Size;
+        return fromJoints with{Size=Math.Clamp(fromJoints.Size,smallest,p.Size*1.35f)};
+    }
     public static Sample[] Build(IReadOnlyList<Frame> frames)
     {
         if(frames.Count==0)throw new ArgumentException("No frames for person tracking.");
@@ -15,25 +62,7 @@ public static class PersonCropTrack
         for(var i=0;i<frames.Count;i++)
         {
             if(!double.IsFinite(frames[i].Time)||(i>0&&frames[i].Time<=frames[i-1].Time))throw new ArgumentException("Person-track timestamps must increase.");
-            var candidates=frames[i].Detections.Where(d=>d.Score>=.5f&&float.IsFinite(d.Score)&&
-                d.Landmarks.Length==8&&d.Landmarks.All(float.IsFinite)&&d.Crop.Size>=16&&float.IsFinite(d.Crop.Size)).ToArray();
-            PersonDetector.Detection? selected=null;
-            if(previous is null)
-            {
-                // Prefer the prominent foreground subject; do not pick arbitrarily
-                // when two candidates have comparable apparent size and evidence.
-                var ranked=candidates.OrderByDescending(d=>d.Crop.Size*d.Score).ToArray();
-                if(ranked.Length>0&&(ranked.Length==1||ranked[1].Crop.Size*ranked[1].Score<ranked[0].Crop.Size*ranked[0].Score*.8f))selected=ranked[0];
-            }
-            else
-            {
-                var p=previous.Value;
-                var ranked=candidates.Select(d=>new{Detection=d,Distance=Distance(d.Crop,p)/p.Size,Scale=d.Crop.Size/p.Size})
-                    .Where(d=>d.Distance<.65f&&d.Scale>.5f&&d.Scale<2)
-                    .Select(d=>new{d.Detection,Cost=d.Distance+Math.Abs(MathF.Log(d.Scale))*.4f+(1-d.Detection.Score)*.1f})
-                    .OrderBy(d=>d.Cost).ToArray();
-                if(ranked.Length>0&&(ranked.Length==1||ranked[1].Cost-ranked[0].Cost>.15f))selected=ranked[0].Detection;
-            }
+            var selected=Select(previous,frames[i].Detections);
             if(selected is null)
             {
                 if(lastObserved<0||frames[i].Time-frames[lastObserved].Time>.25)

@@ -863,7 +863,7 @@ public static class Retargeter
         if(request.FootPlantCleanup&&!handCapture&&(request.MocapCorrections?.StabilizeFeet??true))
         {
             var locking=Motion.CaptureFootLock.Apply(frames,scene,map,target.Rig,target.UpAxis);
-            if(locking.ConstrainedSamples>0)AddNote(report,$"Final target foot anchors: {locking.ConstrainedSamples} leg samples; maximum reach residual {locking.MaximumReachResidual:F4} target units. Backend static probabilities are contact suggestions, not measured ground truth.");
+            if(locking.ConstrainedSamples>0)AddNote(report,$"Final target foot anchors: {locking.ConstrainedSamples} leg samples; maximum reach residual {locking.MaximumReachResidual:F4} target units; level-floor height drift of up to {locking.MaximumFloorDrift:F2} target units removed from the root. Backend static probabilities are contact suggestions, not measured ground truth.");
         }
         ApplyRootMotion(request.RootMotion, frames, context, report);
 

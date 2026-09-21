@@ -10,6 +10,8 @@ namespace HumanoidMocap.Editor;
 
 public sealed partial class RetargetWindow
 {
+    /// <summary>Written by the worker's background-feature test; see InferenceWorker/CameraMotionCheck.cs.</summary>
+    const string StationaryCameraPrefix="Stationary recording camera:";
     global::Editor.Button _bodyRefinementButton;
     void RefreshBodyRefinementButton()
     {
@@ -20,7 +22,7 @@ public sealed partial class RetargetWindow
         _bodyRefinementButton.Text=restore?"Restore original capture":"Refine · stationary camera";
         _bodyRefinementButton.Enabled=restore||_rawMotion is {Space:MotionSpace.CameraRelative}&&_rawMotion.Backend.StartsWith("GVHMR",StringComparison.Ordinal);
         _bodyRefinementButton.ToolTip=restore?"Reopen the unchanged original reconstruction. Adjustments remain saved separately with each motion file.":
-            "Use only when the recording camera stayed still. Reuses saved GVHMR predictions; keeps the original and opens a separate result. Review contacts before exporting.";
+            "Applied automatically when the recording measured as still. Use it yourself only when you know the camera did not move. Reuses saved GVHMR predictions; keeps the original and opens a separate result. Review contacts before exporting.";
     }
     async Task RefineStationaryBodyAsync()
     {

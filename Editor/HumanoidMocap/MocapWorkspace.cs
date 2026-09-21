@@ -287,6 +287,8 @@ public sealed partial class RetargetWindow
                     (doc.Backend.StartsWith("WiLoR",StringComparison.Ordinal)?" Check the video against the preview before exporting.":" Choose Advanced → Hand models… → WiLoR, then Process again.");
             else if(missingHands.Length==0&&doc.Diagnostics.Any(d=>d.StartsWith("Review wrist placement:",StringComparison.Ordinal)))
                 _captureStatus.Text="Review needed · Hand projection disagrees with detected image landmarks. See Advanced before exporting.";
+            if(missingHands.Length==0&&doc is {Space:MotionSpace.WorldRelative,OriginalReconstruction:not null,StationaryJoints.Count:>0})
+                _captureStatus.Text=$"Ready · {doc.Frames.Count} frames · still camera, foot contacts anchored. Review the animation, then export.";
             _motionDetails.Text=$"{doc.Backend} · {doc.Space}. "+loaded.quality.HandSummary+" "+string.Join(" ",doc.Diagnostics);
             if(loaded.session.Notice is { } notice)_captureStatus.Text+=" "+notice;
             await RefreshMocapPreviewAsync();

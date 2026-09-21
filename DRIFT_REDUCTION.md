@@ -173,6 +173,62 @@ that result. The contact predictions differ from the earlier 458-step comparison
 | Citizen | 0.297 → 0.014 cm | 0.931 → 0.512 cm |
 
 Human pelvis travel changed from 74.85 to 74.82 cm, and Citizen from 65.45 to 65.39 cm.
+
+Those tennis measurements assumed a still camera that the footage does not have. The
+worker now tests this itself: corner features outside the followed person are tracked
+from the first frame to every fifth frame, with forward-backward agreement, and the
+camera counts as still only when the median background shift stays under 0.4% of image
+width in every sample and at least 80% of samples are usable. The tennis clip moved
+1.3% at the median and 2.2% at most, a slow pan, so it is no longer refined
+automatically and its figures above describe an assumption rather than the recording.
+Head-mounted clips measured 2–8%. A tripod recording of a karate kata
+([Hean Shodan](https://commons.wikimedia.org/wiki/File:Karate,_Hean_Shodan.webm),
+CC BY-SA 4.0, 640×480, 25 fps, first 12 s) measured 0.03% and 0.05%. This is an
+image-motion test: it does not recover camera motion, and a moving background can
+defeat it.
+
+When the camera tests still, Third Person applies stationary-camera refinement and
+**Reduce foot drift** without being asked; the untouched capture stays beside it and
+**Restore original capture** reopens it. Two further corrections were needed on the
+kata clip. Reconstructed world height wandered as the performer moved in depth, leaving
+planted ankles anywhere from 6 to 20 cm above one another. Because a still camera sees a
+level floor, the height of each predicted contact above the target's standing rest
+height is taken as that drift, frame by frame, using the lowest planted joint so a
+raised heel does not count. It is interpolated between contacts, averaged over a quarter
+second, never allowed to push a foot joint below the floor, and removed from the root
+before anchoring. Contacts more than 30 cm from the floor are treated as real elevation.
+Planted anchors within 8 cm of the floor then take the floor height instead of their
+interval median, which had left feet hovering.
+
+Over the same 368 predicted-static steps on Human, 300 frames:
+
+| Stage | Mean step, ankles / toes | Largest step | Lowest foot support above rest |
+| --- | --- | --- | --- |
+| Previous default (camera-relative) | 1.49–1.72 / 1.50–2.27 cm | 14.07 cm | not comparable |
+| Refined, anchored, before levelling | 0.002 / 0.025–0.029 cm | 0.77 cm | 0.9–3.0 cm (hovering) |
+| Refined, levelled and anchored (new default) | 0.007–0.054 / 0.051–0.108 cm | 2.04 cm | −0.9 to −0.7 cm |
+
+Levelling costs a little of the anchoring's stillness, because the root now moves
+vertically inside long contacts, and lets toes dip up to 0.9 cm under their rest height
+for 12–20 frames. Limb lengths stayed within 0.0001 cm. The largest single-frame joint
+rotations (56° forearm, 43° hips) coincide with motion-blurred strikes and turns in the
+video and are not smoothed. The native gate ran this path from upload to a 300-frame
+FBX that compiled and played; five synchronized frames matched the performer's stances.
+Static intervals are model predictions, and one clip is not a guarantee for other floors,
+stairs or moving cameras.
+
+Following the subject also changed. The face-and-hips person detector sees the whole
+frame at 224 pixels; on the kata clip it flickered on the distant performer and handed the
+track to a bystander walking past, ending the job at 4.4 s. It now only finds the
+subject, looking also in a window around the last position and in overlapping tiles while
+none is known. Each later crop comes from the previous frame's own 2D body joints, as
+pose trackers do. A box around partly visible joints is smaller than the body, and a
+smaller crop hides more joints: one blurred frame shrank a 292-pixel crop to 54 pixels
+in five frames. Crop size may therefore shrink by at most 8% per frame and only while
+twelve joints are confident, a failed frame is retried in a wider window before the
+detector is asked, and a detector crop is held near the followed size. The 300 frames
+then used the detector once, followed joints 297 times and widened twice, with at least
+ten confident joints throughout. Losses longer than half a second still stop the job.
 The right-arm serve peak stayed at export frame 134, about 4.49 seconds. Target anchoring
 preserved its rotation, and measured limb-length errors stayed below 0.001 cm.
 These numbers describe estimated contacts under the stationary-camera assumption;
