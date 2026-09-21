@@ -65,8 +65,17 @@ public static class BodyCapture
         }))));
         var folder=Path.Combine(request.Output,key);Directory.CreateDirectory(folder);var statePath=Path.Combine(folder,"reconstruction.json");
         using var jobLock=new FileStream(Path.Combine(folder,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
-        var state=File.Exists(statePath)?JsonSerializer.Deserialize<State>(File.ReadAllText(statePath))!:new State{Key=key};
-        if(state is null||state.Key!=key||state.Frames.Count>count)throw new InvalidDataException("Invalid reconstruction checkpoint.");
+        // A checkpoint that is unreadable (interrupted write) or does not follow this video's sample
+        // table is started again rather than failing every later attempt.
+        var expected=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
+        State? state=null;
+        try{if(File.Exists(statePath))state=JsonSerializer.Deserialize<State>(File.ReadAllText(statePath));}
+        catch(JsonException){}
+        if(state is null||state.Key!=key||state.Frames.Count>count||state.Frames.Where((f,i)=>Math.Abs(f.Time-expected[i])>.0005).Any())
+        {
+            if(state is not null)progress?.Invoke("Earlier progress for this video could not be reused; starting again");
+            state=new State{Key=key};
+        }
         void Save(string status)
         {
             state.Status=status;state.PeakRamBytes=Math.Max(state.PeakRamBytes,Process.GetCurrentProcess().PeakWorkingSet64);
@@ -78,12 +87,14 @@ public static class BodyCapture
             var wanted=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
             while((frame=decoder.Read(cancellation))is not null)
             {
-                if(frame.Time<request.Start)continue;if(frame.Time>=request.End||index>=wanted.Length)break;
+                // Follow the sample table rather than comparing decoded times with the range: the decoder
+                // rounds to 100 ns, so a range that starts exactly on a frame (after a cut) would lose it.
                 // Frames between the sampled ones (footage faster than the capture rate) are passed over.
+                if(index>=wanted.Length)break;
                 if(frame.Time<wanted[index]-.00001)continue;
                 if(index>=1800)throw new InvalidDataException("Decoded range exceeds frame limit.");
                 if(index>=state.Frames.Count)state.Frames.Add(new(){Time=frame.Time});
-                if(Math.Abs(state.Frames[index].Time-frame.Time)>1e-7)throw new InvalidDataException("Decoded timestamps differ from reconstruction checkpoint.");
+                if(Math.Abs(state.Frames[index].Time-frame.Time)>.0005)throw new InvalidDataException("Decoded timestamps differ from reconstruction checkpoint.");
                 process(frame,index++);
             }
             if(index!=count)throw new InvalidDataException($"Expected {count} selected frames but decoded {index}.");

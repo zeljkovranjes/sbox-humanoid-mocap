@@ -34,10 +34,12 @@ public sealed class PersonDetector : IDisposable
     }
     public PersonDetector(string path)
     {
-        using(var input=File.OpenRead(path))
-            if(!Convert.ToHexString(SHA256.HashData(input)).Equals(CheckpointSha256,StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("Person detector checksum mismatch.");
-        network=CvDnn.ReadNetFromOnnx(path)??throw new InvalidDataException("Cannot load person detector.");
+        // Loaded from memory: OpenCV takes narrow file names, which fail under a user folder with
+        // characters outside the system code page.
+        var model=File.ReadAllBytes(path);
+        if(!Convert.ToHexString(SHA256.HashData(model)).Equals(CheckpointSha256,StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Person detector checksum mismatch.");
+        network=CvDnn.ReadNetFromOnnx(model)??throw new InvalidDataException("Cannot load person detector.");
         network.SetPreferableBackend(Backend.OPENCV);network.SetPreferableTarget(OpenCvSharp.Dnn.Target.CPU);
         outputs=network.GetUnconnectedOutLayersNames().Select(n=>n??throw new InvalidDataException("Missing detector output name.")).ToArray();
     }

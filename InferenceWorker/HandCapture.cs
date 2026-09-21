@@ -69,9 +69,13 @@ public static class HandCapture
         using var jobLock=new FileStream(Path.Combine(directory,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         var statePath=Path.Combine(directory,"reconstruction.json");
         if(File.Exists(statePath)&&new FileInfo(statePath).Length>64*1024*1024)throw new InvalidDataException("Cached hand job exceeds metadata limit.");
-        var state=File.Exists(statePath)?JsonSerializer.Deserialize<State>(File.ReadAllText(statePath),MotionDocument.JsonOptions)??throw new InvalidDataException("Empty hand job cache."):new State{Key=key};
+        // An unreadable checkpoint (interrupted write) is started again rather than failing every later attempt.
+        State? cached=null;
+        try{if(File.Exists(statePath))cached=JsonSerializer.Deserialize<State>(File.ReadAllText(statePath),MotionDocument.JsonOptions);}
+        catch(JsonException){}
+        var state=cached??new State{Key=key};
         if(state.Key!=key||state.Frames.Count>times.Length||state.Frames.Where((f,i)=>Math.Abs(f.Time-times[i])>.001).Any())
-            throw new InvalidDataException("Cached hand job does not match source timestamps.");
+            state=new State{Key=key};
         void Save(string status)
         {
             state.Status=status;state.PeakRamBytes=Math.Max(state.PeakRamBytes,Process.GetCurrentProcess().PeakWorkingSet64);

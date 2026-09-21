@@ -58,7 +58,11 @@ public static class Hot3dClipImport
         if(fps is <1 or >120||times.Where((t,i)=>Math.Abs(t-i/fps)>.25/fps).Any())
             throw new NotSupportedException("This clip needs variable-rate video encoding. Its annotations were not resampled.");
         var doc=BuildMotion(archive,times,fps,videoPath,archivePath,hash,token);doc.Validate();
-        var temporary=Path.Combine(folder,"rectified.partial.mp4");
+        // OpenCV's video writer takes a narrow file name; encode somewhere plain ASCII when the job folder is not.
+        var scratch=new[]{folder,Path.GetTempPath(),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"sbox-humanoid-mocap")}
+            .FirstOrDefault(p=>p.All(c=>c<128))??throw new IOException("HOT3D import needs a folder whose path uses only plain Latin characters; none was available.");
+        Directory.CreateDirectory(scratch);
+        var temporary=Path.Combine(scratch,scratch==folder?"rectified.partial.mp4":"hm-rectified-"+Guid.NewGuid().ToString("N")+".partial.mp4");
         Cv2.SetNumThreads(4);
         try
         {

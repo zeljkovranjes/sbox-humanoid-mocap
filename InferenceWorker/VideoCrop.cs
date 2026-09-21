@@ -22,7 +22,7 @@ public static class VideoCrop
         using var affine=Cv2.GetAffineTransform(new[]{new Point2f(cx-half,cy-half),new Point2f(cx+half,cy-half),new Point2f(cx,cy)},
             new[]{new Point2f(0,0),new Point2f(255,0),new Point2f(127.5f,127.5f)});
         using var crop=new Mat();Cv2.WarpAffine(small,crop,affine,new Size(256,256),InterpolationFlags.Linear,BorderTypes.Constant,Scalar.Black);
-        if(previewFile is not null){using var bgr=new Mat();Cv2.CvtColor(crop,bgr,ColorConversionCodes.RGB2BGR);Cv2.ImWrite(previewFile,bgr);}
+        if(previewFile is not null){using var bgr=new Mat();Cv2.CvtColor(crop,bgr,ColorConversionCodes.RGB2BGR);WriteImage(previewFile,bgr);}
         var bytes=new byte[256*256*3];Marshal.Copy(crop.Data,bytes,0,bytes.Length);
         float[] mean={.485f,.456f,.406f},std={.229f,.224f,.225f};var normalized=new float[3*256*192];
         for(var c=0;c<3;c++)for(var y=0;y<256;y++)for(var x=0;x<192;x++)
@@ -71,6 +71,12 @@ public static class VideoCrop
         Point P(int j)=>new((int)Math.Round(joints[j*3]),(int)Math.Round(joints[j*3+1]));
         foreach(var (a,b) in edges)if(joints[a*3+2]>.3&&joints[b*3+2]>.3)Cv2.Line(image,P(a),P(b),new Scalar(30,240,30),2);
         for(var j=0;j<17;j++)if(joints[j*3+2]>.3)Cv2.Circle(image,P(j),4,new Scalar(0,100,255),-1);
-        Cv2.ImWrite(path,image);
+        WriteImage(path,image);
+    }
+    /// <summary>Encodes in memory and writes through .NET; OpenCV's own writer cannot open non-ASCII paths.</summary>
+    static void WriteImage(string path,Mat image)
+    {
+        var extension=Path.GetExtension(path);if(!Cv2.ImEncode(extension.Length>0?extension:".png",image,out var bytes))throw new IOException("Cannot encode "+Path.GetFileName(path));
+        File.WriteAllBytes(path,bytes);
     }
 }
