@@ -29,3 +29,18 @@ Editor/HumanoidMocap/MocapSmokeGate.cs
 **/uploads/
 *.sln
 *.slnx
+
+# Working notes, measurements and setup details stay local. Only the package
+# README and the third-party notices (required attribution) are published.
+*.md
+!/README.md
+!/THIRD_PARTY_NOTICES.md
+
+# Tool and editor leftovers
+.claude/
+*.log
+*.tmp
+*.partial
+*.bak
+Thumbs.db
+.DS_Store
