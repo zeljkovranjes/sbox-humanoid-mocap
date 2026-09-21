@@ -218,7 +218,8 @@ Over the same 368 predicted-static steps on Human, 300 frames:
 | Refined, anchored, before levelling | 0.002 / 0.025–0.029 cm | 0.77 cm | 0.9–3.0 cm (hovering) |
 | Refined, levelled and anchored (new default) | 0.007–0.054 / 0.051–0.108 cm | 2.04 cm | −0.9 to −0.7 cm |
 
-Levelling costs a little of the anchoring's stillness, because the root now moves
+Citizen's different proportions gave 0.004–0.082 cm mean and 1.83 cm largest on the same
+steps, with limb lengths within 0.0001 cm. Levelling costs a little of the anchoring's stillness, because the root now moves
 vertically inside long contacts, and lets toes dip up to 0.9 cm under their rest height
 for 12–20 frames. Limb lengths stayed within 0.0001 cm. The largest single-frame joint
 rotations (56° forearm, 43° hips) coincide with motion-blurred strikes and turns in the
