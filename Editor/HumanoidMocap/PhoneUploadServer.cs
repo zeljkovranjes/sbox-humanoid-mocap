@@ -101,8 +101,9 @@ public sealed class PhoneUploadServer : IDisposable
                 if(length>MaximumBytes){await Reply(stream,413,"Video exceeds the 2 GB upload limit.",cancellation);return;}
                 var original=Uri.UnescapeDataString(headers.GetValueOrDefault("X-Filename","video.mp4"));
                 original=Path.GetFileName(original.Replace('\\','/'));var extension=Path.GetExtension(original).ToLowerInvariant();
-                if(!new[]{".mp4",".mov",".m4v",".webm"}.Contains(extension))
-                {await Reply(stream,415,"Choose MP4, MOV, M4V or WebM video.",cancellation);return;}
+                // Only containers the capture pipeline reads; refusing here saves uploading a file that cannot be processed.
+                if(!new[]{".mp4",".mov",".m4v"}.Contains(extension))
+                {await Reply(stream,415,"Choose an MP4, MOV or M4V video. Phone cameras record these; convert other formats to H.264 MP4 first.",cancellation);return;}
                 ownsUpload=await uploads.WaitAsync(0,cancellation);
                 if(!ownsUpload){await Reply(stream,409,"Another upload is in progress. Try again shortly.",cancellation);return;}
                 var safe=new string(Path.GetFileNameWithoutExtension(original).Where(c=>char.IsLetterOrDigit(c)||c=='-'||c=='_').Take(70).ToArray());
@@ -120,8 +121,7 @@ public sealed class PhoneUploadServer : IDisposable
                 }
                 var header=new byte[12];using(var input=File.OpenRead(partial))input.ReadExactly(header);
                 var mp4=Encoding.ASCII.GetString(header,4,4)=="ftyp";
-                var webm=header[0]==0x1A && header[1]==0x45 && header[2]==0xDF && header[3]==0xA3;
-                if((extension==".webm"&&!webm)||(extension!=".webm"&&!mp4))
+                if(!mp4)
                 {await Reply(stream,415,"The file is not a recognized video container.",cancellation);return;}
                 File.Move(partial,destination);partial=null;Received?.Invoke(destination);
                 await Reply(stream,200,"Received. You can choose another video; pairing remains active for one hour.",cancellation);

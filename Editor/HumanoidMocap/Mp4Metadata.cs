@@ -30,8 +30,13 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
     public static Mp4Metadata Read(string path)
     {
         using var stream=File.OpenRead(path);using var r=new BinaryReader(stream);
-        var top=Boxes(r,0,stream.Length);
-        if(!top.Any(b=>b.Type=="ftyp")||!top.Any(b=>b.Type=="mdat"))throw new FormatException("Not a media MP4 (HTML/LFS pointers are rejected).");
+        const string foreign="This file is not an MP4 or MOV video. Convert it to an H.264 MP4 and upload it again.";
+        List<Box> top;
+        try{top=Boxes(r,0,stream.Length);}
+        catch(Exception error) when(error is FormatException or EndOfStreamException){throw new FormatException(foreign,error);}
+        if(!top.Any(b=>b.Type=="ftyp")||!top.Any(b=>b.Type=="mdat"))throw new FormatException(foreign);
+        // Fragmented MP4 (some screen recorders and streaming downloads) keeps its frame table in moof boxes this reader does not follow.
+        if(top.Any(b=>b.Type=="moof"))throw new FormatException("This MP4 is fragmented (a streaming or screen-recorder format). Re-export it as a regular H.264 MP4 and upload it again.");
         var moov=top.Single(b=>b.Type=="moov");
         foreach(var track in Boxes(r,moov.Start,moov.End).Where(b=>b.Type=="trak"))
         {
@@ -76,7 +81,22 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
                     for(var j=0;j<repeats;j++)times[frame++]+=(double)offset/scale;
                 }
             }
-            Array.Sort(times);var first=times[0];for(var i=0;i<times.Length;i++)times[i]-=first;
+            // An edit list may open with an empty edit that delays the picture (dropped first frames,
+            // audio priming). Media Foundation presents frames that much later; the table must agree.
+            double delay=0;
+            if(children.FirstOrDefault(c=>c.Type=="edts") is { } edts&&Boxes(r,edts.Start,edts.End).FirstOrDefault(c=>c.Type=="elst") is { } elst
+                &&moov.Start<moov.End&&Boxes(r,moov.Start,moov.End).FirstOrDefault(c=>c.Type=="mvhd") is { } mvhd)
+            {
+                stream.Position=mvhd.Start;var mv=r.ReadByte();stream.Position=mvhd.Start+(mv==1?20:12);var movieScale=U32(r);
+                stream.Position=elst.Start;var ev=r.ReadByte();stream.Position=elst.Start+4;var edits=U32(r);
+                for(var i=0;i<edits&&movieScale>0;i++)
+                {
+                    var length=ev==1?U64(r):U32(r);var mediaTime=ev==1?unchecked((long)U64(r)):unchecked((int)U32(r));stream.Position+=4;
+                    if(mediaTime!=-1)break;
+                    delay+=(double)length/movieScale;
+                }
+            }
+            Array.Sort(times);var first=times[0];for(var i=0;i<times.Length;i++)times[i]+=delay-first;
             var seconds=(double)duration/scale;return new(seconds,width,height,count/seconds){Times=times,RotationDegrees=rotation};
         }
         throw new FormatException("No video track.");

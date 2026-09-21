@@ -38,8 +38,32 @@ public sealed class WindowsVideoDecoder : IDisposable
             Check(Method<SetGuid>(type,24)(type,Major,Video));Check(Method<SetGuid>(type,24)(type,Subtype,Rgb32));
             Check(Method<SetType>(reader,7)(reader,VideoStream,IntPtr.Zero,type));ReadFormat();
         }
+        // MF_E_TOPO_CODEC_NOT_FOUND / unsupported stream: Windows has no decoder for this video's codec.
+        catch(COMException error) when(error.HResult is unchecked((int)0xC00D5212) or unchecked((int)0xC00D36C4) or unchecked((int)0xC00D36B4))
+        {Dispose();throw new NotSupportedException(MissingCodecMessage(path),error);}
         catch{Dispose();throw;}
         finally{Release(ref type);Release(ref attributes);}
+    }
+    /// <summary>Names the codec when the container says so. iPhones record HEVC unless set to Most Compatible,
+    /// and Windows decodes HEVC only with the HEVC Video Extensions installed.</summary>
+    public static string MissingCodecMessage(string path)
+    {
+        var codec="";
+        try
+        {
+            using var stream=File.OpenRead(path);var window=(int)Math.Min(stream.Length,4*1024*1024);var bytes=new byte[window];
+            foreach(var offset in new[]{0L,Math.Max(0,stream.Length-window)})
+            {
+                stream.Position=offset;var read=stream.Read(bytes,0,window);var text=System.Text.Encoding.Latin1.GetString(bytes,0,read);
+                if(text.Contains("hvc1")||text.Contains("hev1")){codec="HEVC (H.265)";break;}
+                if(text.Contains("av01")){codec="AV1";break;}
+                if(text.Contains("vp09")){codec="VP9";break;}
+            }
+        }
+        catch(IOException){}
+        return codec.StartsWith("HEVC",StringComparison.Ordinal)
+            ?"This video is HEVC (H.265), which this PC cannot decode. Install \"HEVC Video Extensions\" from the Microsoft Store and upload it again, or record in H.264: on iPhone choose Settings → Camera → Formats → Most Compatible."
+            :$"Windows has no decoder for this video{(codec.Length>0?" ("+codec+")":"")}. Convert it to an H.264 MP4 and upload it again.";
     }
     void ReadFormat()
     {
