@@ -162,7 +162,8 @@ public static class ManoMotionBuilder
             float Percentile(List<float> values,float fraction){var sorted=values.OrderBy(v=>v).ToArray();return sorted[(int)Math.Round((sorted.Length-1)*fraction)];}
             var median=Percentile(palmResiduals,.5f);var p95=Percentile(palmResiduals,.95f);var relative=Percentile(palmRelativeResiduals,.5f);
             document.Diagnostics.Add(FormattableString.Invariant($"Native palm reprojection versus MediaPipe image landmarks: median {median:F1} px, p95 {p95:F1} px across {palmResiduals.Count} observed hands. Derived disagreement metric, not 3D confidence or ground-truth accuracy."));
-            if(relative>.2f)document.Diagnostics.Add("Review wrist placement: native palm projection disagrees with detected image landmarks by more than 20% of palm span at the median. This heuristic can flag model/camera/crop errors; it does not identify which estimate is correct.");
+            // The palm centroid is anchored to the detection, so what remains is palm orientation and shape.
+            if(relative>.2f)document.Diagnostics.Add("Review hand pose: with the palm centred on the detected hand, its reconstructed wrist and knuckles still miss the detected ones by more than 20% of palm span at the median. The hand's orientation or pose probably does not match this footage; WildHands and MobileHand showed this on hands filmed from outside. It compares two estimates and does not prove which is correct.");
         }
         document.Validate();return document;
     }

@@ -15,6 +15,10 @@ if(Console.IsInputRedirected)
         catch(ObjectDisposedException){}
     });
 }
+// One thread per physical core on typical SMT processors, leaving the rest to the
+// editor. Four threads took 2.4 times longer than eight for WiLoR on a Ryzen 7 7800X3D.
+static int InferenceThreads()=>int.TryParse(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_THREADS"),out var threads)&&threads is >=1 and <=64
+    ?threads:Math.Clamp(Environment.ProcessorCount/2,2,12);
 try
 {
     if(args.Length==2&&args[0]=="download-body-models")
@@ -33,8 +37,8 @@ try
     }
     else if(args.Length==2&&args[0]=="body-capture")
     {
-        torch.set_num_threads(4);
-        OpenCvSharp.Cv2.SetNumThreads(4);
+        torch.set_num_threads(InferenceThreads());
+        OpenCvSharp.Cv2.SetNumThreads(InferenceThreads());
         var request=JsonSerializer.Deserialize<BodyCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid body job request.");
         Console.WriteLine("HM_RESULT "+BodyCapture.Run(request,cancellation.Token,Console.WriteLine));
     }
@@ -45,7 +49,7 @@ try
     }
     else if(args.Length==2&&args[0]=="hand-capture")
     {
-        torch.set_num_threads(4);
+        torch.set_num_threads(InferenceThreads());
         var request=JsonSerializer.Deserialize<HandCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid hand job request.");
         Console.WriteLine("HM_RESULT "+HandCapture.Run(request,cancellation.Token,Console.WriteLine));
     }

@@ -1,8 +1,8 @@
 # Hand backend options
 
-WildHands is the FPS default, with MediaPipe locating hands and supplying image crops.
-WildHands supplies wrist and finger pose; MediaPipe rotations are not blended into it.
-WiLoR uses the same detection/pose split when selected. MediaPipe-only reconstruction
+WiLoR is the FPS default, with MediaPipe locating hands and supplying image crops.
+WiLoR supplies wrist and finger pose; MediaPipe rotations are not blended into it.
+WildHands uses the same detection/pose split when selected. MediaPipe-only reconstruction
 remains an optional lightweight mode. Existing captures are preserved; select the model
 and use **Advanced → Process again** to reconstruct the video with it.
 ACE-Ego-Hand is optional and must not become
@@ -14,8 +14,41 @@ selected, downloaded or loaded automatically. The badges are **Light** (MediaPip
 and **Very heavy*** (ACE). An asterisk means the processing weight is an architectural
 estimate, not a local memory measurement or accuracy rating.
 
-The default change separates hand detection from pose reconstruction; it is not a
-claim that the current WildHands port faithfully reproduces every FPS performance.
+## Finger articulation check and the default model
+
+A finger-focused clip was added to the local samples: the Dutch Sign Language manual
+alphabet ([NGT handalfabet](https://commons.wikimedia.org/wiki/File:NGT_handalfabet.webm),
+Vera de Kok, CC BY-SA 4.0), 26 labelled and clearly different poses of one right hand,
+filmed from outside at 1280×720. `dev/samples/fetch_finger_sample.py` downloads it
+against a pinned SHA-256 and prepares an H.264 copy. It has no 3D reference; results
+were judged by projecting each reconstruction over the video and against MediaPipe's
+image landmarks, which sat on the fingers in every inspected frame.
+
+WildHands failed on it. Over 1,099 observed hands its projected palm direction differed
+from the detected one by 37° at the median and 107° at p90, against 5–13° on the three
+head-mounted clips and the HOT3D view; an open palm came out half-curled and rotated by
+about a quarter turn. Because the C# network matches the upstream one, this is the
+model outside its egocentric training domain rather than a port error. WiLoR on the
+same frames matched the open palm, C, pointing D and fist E, with 12 px median palm
+disagreement against WildHands' 74 px. On HOT3D WiLoR was also closer (wrist-relative
+30.8 against 43.5–50.2 mm; palm direction 1.2° against 6.2°). Through the editor the
+default path reproduced the signed G on Human, index extended with the other fingers
+curled, and its 240-frame FBX compiled and played in s&box.
+
+WiLoR is therefore the default, and WildHands is offered as the faster choice for
+head-mounted footage only. The worker previously ran four inference threads whatever
+the processor; it now uses one per two logical processors, between 2 and 12, or
+`HUMANOID_MOCAP_THREADS`. On the Ryzen 7 7800X3D WiLoR took 1.54 s per hand per frame
+with four threads and 0.64 s with eight. A four-second two-handed clip is about three
+minutes. When a reconstructed palm, centred on the detected hand, still misses the
+detected wrist and knuckles by more than 20% of palm span at the median, the capture
+is marked **Review hand pose** and the status line suggests WiLoR. That fired for
+WildHands on this clip and for none of the other five jobs checked. It compares two
+estimates; it cannot certify a pose as correct. A recording in which one hand never
+appears beside a well-tracked hand is reported as one-handed rather than as a fault.
+
+The earlier default change separated hand detection from pose reconstruction; it was not
+a claim that the WildHands port faithfully reproduces every FPS performance.
 On the complete 121-frame `video_0` sample, it produced 157 observed hand instances
 across 89 frames and still missed both hands during the shared occlusion. Native
 editor preview, cleanup, armature export and compiled playback passed. Synchronized
@@ -112,8 +145,8 @@ known 184.75 px focal length the estimates were 243 px (MediaPipe pass) and 193 
 | --- | --- | --- |
 | MediaPipe | Available, experimental C# implementation; 7.8 MB model | Lightweight hand landmarks and finger motion. Wrist depth and arm placement are estimated; this is not calibrated world tracking. |
 | MobileHand | Available, experimental C# native CPU port; 15.2 MB checkpoint | Small MobileNetV3 hand-angle model. Real sample tests show substantial pose/depth jumps; not an accuracy replacement for ACE. |
-| WildHands | Available, experimental C# native CPU port; 855 MB checkpoint | Egocentric wrist/finger rotations and shape. Uses MediaPipe hand crops and estimated camera intrinsics; review wrist depth and visibility. |
-| WiLoR | Available, experimental C# native CPU port; 2.56 GB checkpoint | Wrist/finger rotations and shape with a larger transformer. Uses MediaPipe hand crops rather than the original detector. |
+| WildHands | Available, experimental C# native CPU port; 855 MB checkpoint | Faster option for head-mounted footage. Wrong finger poses and orientation on hands filmed from outside. Uses MediaPipe hand crops and an estimated lens. |
+| WiLoR | FPS default, experimental C# native CPU port; 2.56 GB checkpoint | Wrist/finger rotations and shape with a larger transformer; closest to the video in every comparison here. Slowest. Uses MediaPipe hand crops rather than the original detector. |
 | ACE-Ego-Hand | Optional future backend; not integrated | Offline bimanual reconstruction through occlusion using the much larger Wan video backbone. Downloads and model loading must be opt-in. |
 
 MobileHand follows the [released FreiHAND implementation](https://github.com/gmntu/mobilehand/tree/51c112364013b803c38955b55a1572b0d402894c).

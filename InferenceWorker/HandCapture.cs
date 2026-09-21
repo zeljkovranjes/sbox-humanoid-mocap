@@ -146,8 +146,15 @@ public static class HandCapture
             // metric hand scale refines the detector-based estimate without new inference.
             if(request.EstimateFocal&&!wild)
             {
-                var samples=state.Frames.SelectMany(f=>f.Hands).Where(h=>h.WeakCamera[0]>0).Select(h=>new CaptureCameraFraming.HandScaleSample(
-                    mobile?224/(1000*h.WeakCamera[0]*h.Crop.Size):2/(h.Crop.Size*h.WeakCamera[0]),h.Crop.CenterX,h.Crop.CenterY)).ToArray();
+                // Distance is taken along the ray of the detected palm, where the wrist is
+                // anchored, rather than the crop centre; they differ in wide-angle views.
+                int[] palm={0,5,9,13,17};
+                var samples=state.Frames.SelectMany(f=>f.Hands).Where(h=>h.WeakCamera[0]>0).Select(h=>
+                {
+                    var landmarks=h.DetectorImageLandmarks is {Length:21} image&&image.All(p=>p is {Length:>=2})?image:null;
+                    return new CaptureCameraFraming.HandScaleSample(mobile?224/(1000*h.WeakCamera[0]*h.Crop.Size):2/(h.Crop.Size*h.WeakCamera[0]),
+                        landmarks is null?h.Crop.CenterX:palm.Average(i=>landmarks[i][0]),landmarks is null?h.Crop.CenterY:palm.Average(i=>landmarks[i][1]));
+                }).ToArray();
                 if(CaptureCameraFraming.FocalLengthFromHandScale(samples,metadata.Width,metadata.Height) is float focal)
                 {camera=camera with{Fx=focal,Fy=focal};estimated=true;state.FocalEstimateSamples=samples.Length;}
             }

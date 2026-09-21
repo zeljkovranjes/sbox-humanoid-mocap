@@ -26,9 +26,10 @@ For hands, keep both wrists and fingers visible when the motion needs both hands
 Include an open hand and a relaxed closed hand at the beginning so handedness and
 finger articulation are easy to review. Avoid an ultra-wide/fisheye lens unless you
 can correct it with known calibration. The current automatic path estimates camera
-intrinsics; it does not calibrate or undistort the lens. WildHands is designed for
-egocentric footage and is the FPS default, with MediaPipe locating hands for its crops.
-WiLoR is the heavier alternative; MediaPipe-only reconstruction remains optional.
+intrinsics; it does not calibrate or undistort the lens. WiLoR is the FPS default, with MediaPipe locating hands for its crops; it handled both
+head-mounted footage and hands filmed from outside. WildHands is about four times
+faster but is designed for egocentric footage and produced wrong finger poses on hands
+filmed from outside. MediaPipe-only reconstruction remains optional.
 
 With **Recording FOV** blank, native hand capture sizes the lens from the hands
 themselves. A hand's size fixes its depth only in proportion to the unknown focal

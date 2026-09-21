@@ -196,6 +196,11 @@ Native MANO fitting writes `raw-hands-v5-camera.hmotion`, preserving the previou
 bone motion. MediaPipe's camera describes its authored wrist plane and is explicitly
 uncalibrated. It does not estimate lens calibration or recover wrist depth.
 
+Hand and body jobs use one inference thread per two logical processors, between 2 and
+12; set `HUMANOID_MOCAP_THREADS` (1–64) to override. WiLoR measured 1.54 s per hand per
+frame with four threads and 0.64 s with eight on the Ryzen 7 7800X3D. The table below
+predates this and used four threads.
+
 Fresh runs with the corrected video decoder recorded the following on the Ryzen 7
 7800X3D, 32 GB RAM, using four CPU inference threads and no GPU:
 

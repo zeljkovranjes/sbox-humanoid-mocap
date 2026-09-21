@@ -27,7 +27,7 @@ public sealed partial class RetargetWindow
     MotionDocument _rawMotion, _editedMotion;
     string _motionPath;
     string _handModelPath;
-    string _handBackend="wildhands";
+    string _handBackend="wilor";
     bool _swapHands;
     Checkbox _swapHandsControl;
     Checkbox _inPlaceControl;
@@ -274,9 +274,18 @@ public sealed partial class RetargetWindow
             var missingHands=loaded.quality.Tracks.Where(t=>t.Role is HumanoidMocap.Mapping.BoneRole.HandL or HumanoidMocap.Mapping.BoneRole.HandR)
                 .Where(t=>HandCaptureRetargeter.Supports(doc)&&t.Reconstructed<doc.Frames.Count/2d)
                 .Select(t=>$"{(t.Role==HumanoidMocap.Mapping.BoneRole.HandL?"Left":"Right")} hand {(t.Reconstructed==0?"not detected":"mostly untracked")}").ToArray();
-            _captureStatus.Text=missingHands.Length==0?$"Ready · {doc.Frames.Count} frames. Review the animation, then export."
+            // A hand that never appears beside a well-tracked one is a one-handed recording, not a tracking fault.
+            var handTracks=loaded.quality.Tracks.Where(t=>t.Role is HumanoidMocap.Mapping.BoneRole.HandL or HumanoidMocap.Mapping.BoneRole.HandR).ToArray();
+            var absent=handTracks.Where(t=>t.Reconstructed==0).ToArray();
+            var oneHanded=HandCaptureRetargeter.Supports(doc)&&handTracks.Length==2&&absent.Length==1&&missingHands.Length==1&&
+                handTracks.Single(t=>t.Reconstructed>0).Reconstructed>=doc.Frames.Count/2d;
+            if(oneHanded)missingHands=Array.Empty<string>();
+            _captureStatus.Text=missingHands.Length==0?$"Ready · {doc.Frames.Count} frames{(oneHanded?$", {(absent[0].Role==HumanoidMocap.Mapping.BoneRole.HandL?"right":"left")} hand only":"")}. Review the animation, then export."
                 :$"Review needed · {string.Join("; ",missingHands)}. See Advanced for tracking coverage.";
-            if(missingHands.Length==0&&doc.Diagnostics.Any(d=>d.StartsWith("Review wrist placement:",StringComparison.Ordinal)))
+            if(missingHands.Length==0&&doc.Diagnostics.Any(d=>d.StartsWith("Review hand pose:",StringComparison.Ordinal)))
+                _captureStatus.Text="Review needed · Reconstructed hands do not match the hands found in the video."+
+                    (doc.Backend.StartsWith("WiLoR",StringComparison.Ordinal)?" Check the video against the preview before exporting.":" Choose Advanced → Hand models… → WiLoR, then Process again.");
+            else if(missingHands.Length==0&&doc.Diagnostics.Any(d=>d.StartsWith("Review wrist placement:",StringComparison.Ordinal)))
                 _captureStatus.Text="Review needed · Hand projection disagrees with detected image landmarks. See Advanced before exporting.";
             _motionDetails.Text=$"{doc.Backend} · {doc.Space}. "+loaded.quality.HandSummary+" "+string.Join(" ",doc.Diagnostics);
             if(loaded.session.Notice is { } notice)_captureStatus.Text+=" "+notice;
