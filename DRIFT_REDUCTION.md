@@ -228,7 +228,7 @@ FBX that compiled and played; five synchronized frames matched the performer's s
 Static intervals are model predictions, and one clip is not a guarantee for other floors,
 stairs or moving cameras.
 
-Three retargeting faults made the kata character look wrong even with correct contacts.
+Four retargeting faults made the kata character look wrong even with correct contacts.
 It shrugged when the performer did not. Body captures had copied the reconstructed
 clavicle's direction outright, but an SMPL clavicle starts low in the chest and points
 upward even at rest, while Human's is nearly level. In the performer's neutral opening
@@ -249,9 +249,16 @@ levelling and anchoring, which gives 0.64 on the same frame with limb lengths wi
 0.0001 cm and unchanged foot anchoring. Its fingers were a splayed claw, because a body
 capture has no finger tracks and the rig stayed in its bind pose; such hands now hold one
 authored, slightly curled resting shape, never applied when the source has finger tracks.
-All three appear in the capture details. The arms in that clip's opening stance sit wider than
-the performer's because GVHMR itself reconstructs the wrists 45 cm apart; that is left as
-reconstructed.
+Its hands were too far apart. The reconstruction itself is right side to side: its
+projected wrists fall within 2–5 px of the 2D wrists found in the video. But Human's
+shoulder joints are 0.72 arm-lengths apart against the performer's 0.60, so copied arm
+rotations turned hands 0.90 arm-lengths apart into 1.02, and hands that meet in a video
+would not meet on the character. Each wrist in front of or across the body now moves back
+along the shoulder line by that difference and the arm is re-solved, keeping arm lengths
+and hand orientation; the move fades out between 0.2 and 0.6 arm-lengths to the hand's own
+side, so an outstretched arm stays straight. The same frame measures 0.87. How far forward
+the hands sit (31 cm in that stance) is the body model's depth estimate from a frontal view
+and is left as reconstructed. All four appear in the capture details.
 
 A moving camera is no longer left camera-relative. In the role of GVHMR's SimpleVO,
 corner features outside the person are followed between every sixth frame with

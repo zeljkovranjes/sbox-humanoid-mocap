@@ -862,6 +862,9 @@ public static class Retargeter
         {
             var shoulders=Motion.CaptureShoulderCarriage.Apply(frames,scene.Clips[take].Frames,scene.Skeleton,map,target.Rig);
             if(shoulders>0)AddNote(report,$"Shoulders: {shoulders} clavicle samples carry the performer's change from their own rest shoulder line onto this target's rest shoulder line, instead of copying a differently built clavicle's direction. Arms keep their solved orientation.");
+            // After the shoulders are placed: restore the performer's hand spacing on differently proportioned shoulders.
+            var arms=Motion.CaptureArmProportion.Apply(frames,scene.Skeleton,map,target.Rig);
+            if(arms.Samples>0)AddNote(report,$"Hand spacing: wrists in front of or across the body moved up to {arms.HalfWidthCorrection:F2} target units toward the centre line, because this target's shoulders are wider relative to its arms than the performer's. Arm lengths and hand orientation are preserved; outstretched arms are left alone.");
             var relaxed=Motion.RelaxedHands.Apply(frames,map,target.Rig);
             if(relaxed>0)AddNote(report,$"Hands: this body capture has no finger tracks, so {relaxed} target finger joints hold one authored, slightly curled resting pose instead of the bind pose. It is not captured finger motion.");
         }
