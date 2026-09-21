@@ -296,6 +296,8 @@ public sealed partial class RetargetWindow
             // Written by the worker when edited footage cut to another shot; see InferenceWorker/ShotCutDetector.cs.
             if(doc.Diagnostics.FirstOrDefault(d=>d.StartsWith("Footage cuts to another shot",StringComparison.Ordinal)) is { } cut)
                 _captureStatus.Text+=" "+cut;
+            if(doc.Diagnostics.FirstOrDefault(d=>d.StartsWith("Long video:",StringComparison.Ordinal)) is { } longVideo)
+                _captureStatus.Text+=" "+longVideo;
             _motionDetails.Text=$"{doc.Backend} · {doc.Space}. "+loaded.quality.HandSummary+" "+string.Join(" ",doc.Diagnostics);
             if(loaded.session.Notice is { } notice)_captureStatus.Text+=" "+notice;
             await RefreshMocapPreviewAsync();

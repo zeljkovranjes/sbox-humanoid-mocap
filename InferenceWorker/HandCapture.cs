@@ -50,7 +50,7 @@ public static class HandCapture
         if(request.Camera is null||request.Camera.Fx<=0||request.Camera.Fy<=0||!new[]{request.Camera.Fx,request.Camera.Fy,request.Camera.Cx,request.Camera.Cy}.All(float.IsFinite))
             throw new ArgumentException("Supply estimated or calibrated pinhole camera parameters.");
         var metadata=Mp4Metadata.Read(request.Video);
-        var times=metadata.Times.Where(t=>t>=request.Start&&t<request.End).ToArray();
+        var times=metadata.CaptureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
         if(times.Length is <1 or >1800)throw new ArgumentException("Choose between 1 and 1800 frames; the end time is exclusive.");
         var wild=request.Backend=="wildhands";var mobile=request.Backend=="mobilehand";
         var checkpointPath=Path.Combine(request.Models,mobile?"mobilehand/hmr_model_freihand_auc.pth":wild?"wildhands/wildhands.ckpt":"wilor/wilor_final.ckpt");
@@ -63,7 +63,7 @@ public static class HandCapture
         // Reduced precision changes predictions slightly, so it keeps its own cache.
         var wilorPrecision=!wild&&!mobile?WilorModel.ChoosePrecision():null;
         var implementation=ImplementationVersion+(wild?"; "+WildHandsCrop.ImplementationVersion:"")+(wilorPrecision is null or WilorModel.Float32?"":"; wilor-blocks-"+wilorPrecision);
-        var keyData=JsonSerializer.Serialize(new{pipeline=implementation,decoder=WindowsVideoDecoder.ImplementationVersion,detectorImplementation=ManagedHands.ImplementationVersion,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
+        var keyData=JsonSerializer.Serialize(new{pipeline=implementation+(metadata.CaptureStride>1?"; every"+metadata.CaptureStride:""),decoder=WindowsVideoDecoder.ImplementationVersion,detectorImplementation=ManagedHands.ImplementationVersion,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyData))).ToLowerInvariant();
         var directory=Path.Combine(Path.GetFullPath(request.Output),key);Directory.CreateDirectory(directory);
         using var jobLock=new FileStream(Path.Combine(directory,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -189,7 +189,8 @@ public static class HandCapture
                 {camera=camera with{Fx=focal,Fy=focal};estimated=true;state.FocalEstimateSamples=samples.Length;}
             }
             var motion=ManoMotionBuilder.Build(state.Frames,request.Backend,checkpointPath,Path.GetFileNameWithoutExtension(request.Video),
-                Path.GetFullPath(request.Video),sourceHash,metadata.FrameRate,camera,metadata.Width,metadata.Height,cancellation,estimated?state.FocalEstimateSamples:null);
+                Path.GetFullPath(request.Video),sourceHash,metadata.CaptureFrameRate,camera,metadata.Width,metadata.Height,cancellation,estimated?state.FocalEstimateSamples:null);
+            if(metadata.SamplingNote is { } sampling)motion.Diagnostics.Add(sampling);
             motion.ModelVersion+="; "+implementation+"; crop detector "+ManagedHands.ImplementationVersion+"; "+WindowsVideoDecoder.ImplementationVersion;
             var motionPath=Path.Combine(directory,"raw-hands-v5-camera.hmotion");Atomic(motionPath,motion.ToJson());
             state.Error=null;Save("complete");return motionPath;

@@ -11,6 +11,34 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
 {
     public double[] Times { get; init; } = Array.Empty<double>();
     public int RotationDegrees { get; init; }
+    /// <summary>Capture keeps every frame up to this rate. Faster footage (60 fps phones, slow motion) is
+    /// sampled down to about 30 per second: the body network was trained at 30, game animation needs no
+    /// more, and the work and the 1,800-frame limit then cover the same seconds as ordinary footage.</summary>
+    public const double MaximumCaptureRate=40;
+    /// <summary>Every how many frames capture reads one, from the median frame interval so gaps do not skew it.</summary>
+    public int CaptureStride
+    {
+        get
+        {
+            if(Times.Length<3)return 1;
+            var intervals=new double[Times.Length-1];for(var i=1;i<Times.Length;i++)intervals[i-1]=Times[i]-Times[i-1];
+            Array.Sort(intervals);var interval=intervals[intervals.Length/2];if(!(interval>0))return 1;
+            var rate=1/interval;return rate>MaximumCaptureRate?Math.Max(1,(int)Math.Round(rate/30)):1;
+        }
+    }
+    /// <summary>Presentation times of the frames capture reads.</summary>
+    public double[] CaptureTimes
+    {
+        get{var stride=CaptureStride;return stride==1?Times:Times.Where((_,i)=>i%stride==0).ToArray();}
+    }
+    /// <summary>Frames per second of the captured samples.</summary>
+    public double CaptureFrameRate=>FrameRate/CaptureStride;
+    public const string SamplingPrefix="High frame rate footage";
+    /// <summary>Note for the motion's diagnostics, or null when every frame is read.</summary>
+    public string SamplingNote=>CaptureStride is var stride&&stride>1
+        ?FormattableString.Invariant($"{SamplingPrefix}: recorded at about {1/((Times[^1]-Times[0])/(Times.Length-1)):F0} frames per second; every {Ordinal(stride)} frame was captured.")
+        :null;
+    static string Ordinal(int n)=>n==2?"second":n==3?"third":n==4?"fourth":n+"th";
     record Box(string Type,long Start,long End);
     static uint U32(BinaryReader r)=>BinaryPrimitives.ReverseEndianness(r.ReadUInt32());
     static ulong U64(BinaryReader r)=>BinaryPrimitives.ReverseEndianness(r.ReadUInt64());

@@ -69,7 +69,8 @@ public static class BodyHandTracks
             for(var j=0;j<15;j++)
             {
                 Quaternion At(int t){var r=samples[t][side]!.LocalRotations;return Quaternion.Normalize(new(r[j*4],r[j*4+1],r[j*4+2],r[j*4+3]));}
-                var track=new Quaternion[samples.Count];var evidence=new JointEvidence[samples.Count];
+                // Reconstructed is the enum's zero value, so unseen frames must be marked explicitly.
+                var track=new Quaternion[samples.Count];var evidence=Enumerable.Repeat(JointEvidence.Unobserved,samples.Count).ToArray();
                 foreach(var t in observed){track[t]=At(t);evidence[t]=JointEvidence.Reconstructed;}
                 // Small hands jitter from frame to frame; a three-tap blend over neighbouring observations only.
                 var smoothed=track.ToArray();

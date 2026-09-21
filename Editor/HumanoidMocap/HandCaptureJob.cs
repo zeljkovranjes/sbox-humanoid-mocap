@@ -22,7 +22,7 @@ public static class HandCaptureJob
             var fs=global::Editor.FileSystem.ProjectTemporary;fs.CreateDirectory("humanoid_mocap/jobs");
             var directory=fs.GetFullPath("humanoid_mocap/jobs");
             var metadata=await Task.Run(()=>Mp4Metadata.Read(video),token);
-            var total=metadata.Times.Count(t=>t>=start&&(!end.HasValue||t<end));
+            var total=metadata.CaptureTimes.Count(t=>t>=start&&(!end.HasValue||t<end));
             if(total is <1 or >1800)throw new ArgumentException("Choose a nonempty range of at most 1800 frames.");
             await EditorPipeline.SwitchToMainThread();
             var messages=new ConcurrentQueue<string>();var done=0;

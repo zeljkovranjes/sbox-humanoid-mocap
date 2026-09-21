@@ -36,8 +36,8 @@ public static class BodyCapture
     public static string Run(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress=null)
     {
         if(!double.IsFinite(request.Start+request.End)||request.Start<0||request.End<=request.Start)throw new ArgumentException("Select a finite non-empty video range.");
-        var metadata=Mp4Metadata.Read(request.Video);
-        if(metadata.Times.Count(t=>t>=request.Start&&t<request.End) is <1 or >1800)throw new ArgumentException("Select between one and 1,800 frames.");
+        var metadata=Mp4Metadata.Read(request.Video);var captureTimes=metadata.CaptureTimes;
+        if(captureTimes.Count(t=>t>=request.Start&&t<request.End) is <1 or >1800)throw new ArgumentException("Select between one and 1,800 frames.");
         // Edited footage: capture the first shot of at least half a second, not a subject followed across a cut.
         string? shotNote=null;
         if(request.PersonCrop is null)
@@ -45,18 +45,18 @@ public static class BodyCapture
             progress?.Invoke("Checking the footage for cuts");
             for(var guard=0;guard<64;guard++)
             {
-                var selected=metadata.Times.Where(t=>t>=request.Start&&t<request.End).ToArray();
+                var selected=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
                 if(ShotCutDetector.FirstCut(request.Video,selected,cancellation) is not int cut)break;
                 var shotSeconds=selected[cut]-selected[0];
                 if(shotSeconds>=.5){shotNote=FormattableString.Invariant($"{ShotCutDetector.Prefix} at {selected[cut]:F2} s. Only the shot from {selected[0]:F2} s up to the cut was captured; trim the video to capture another shot.");request=request with{End=selected[cut]};break;}
                 request=request with{Start=selected[cut]};
             }
         }
-        var count=metadata.Times.Count(t=>t>=request.Start&&t<request.End);
+        var count=captureTimes.Count(t=>t>=request.Start&&t<request.End);
         if(count<1)throw new ArgumentException("No shot of at least half a second was found in the selected range.");
         using var video=File.OpenRead(request.Video);var sourceSha=Convert.ToHexString(SHA256.HashData(video));
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{
-            version="gvhmr-csharp-person-crop-v2",detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,
+            version="gvhmr-csharp-person-crop-v2"+(metadata.CaptureStride>1?"-every"+metadata.CaptureStride:""),detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,
             temporal=GvhmrTemporalNetwork.CheckpointSha256,hmr="2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",pose="50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc",
             // Reduced precision changes image features slightly, so it keeps its own cache.
             visionPrecision=WilorModel.ChoosePrecision(),
@@ -75,9 +75,12 @@ public static class BodyCapture
         void Visit(Action<DecodedVideoFrame,int> process)
         {
             using var decoder=new WindowsVideoDecoder(request.Video);DecodedVideoFrame? frame;var index=0;
+            var wanted=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
             while((frame=decoder.Read(cancellation))is not null)
             {
-                if(frame.Time<request.Start)continue;if(frame.Time>=request.End)break;
+                if(frame.Time<request.Start)continue;if(frame.Time>=request.End||index>=wanted.Length)break;
+                // Frames between the sampled ones (footage faster than the capture rate) are passed over.
+                if(frame.Time<wanted[index]-.00001)continue;
                 if(index>=1800)throw new InvalidDataException("Decoded range exceeds frame limit.");
                 if(index>=state.Frames.Count)state.Frames.Add(new(){Time=frame.Time});
                 if(Math.Abs(state.Frames[index].Time-frame.Time)>1e-7)throw new InvalidDataException("Decoded timestamps differ from reconstruction checkpoint.");
@@ -234,7 +237,7 @@ public static class BodyCapture
             else File.WriteAllText(rotationPath,JsonSerializer.Serialize(new BodyRefinement.CameraRotation(followedRotation,state.CameraRotation!.RotationOnly)));
             var decoded=GvhmrDecoder.Decode(prediction.PredX,count);var translation=GvhmrDecoder.CameraTranslation(prediction.PredCam,boxes,cameras);
             var skeleton=new SmplxSkeleton(Path.Combine(request.Models,"smplx/SMPLX_NEUTRAL.npz"),cancellation);
-            var motion=BodyMotionBuilder.CameraRelative(skeleton,decoded,translation,state.Frames.Select(f=>f.Time).ToArray(),Path.GetFileNameWithoutExtension(request.Video),request.Video,sourceSha,metadata.FrameRate,camera);
+            var motion=BodyMotionBuilder.CameraRelative(skeleton,decoded,translation,state.Frames.Select(f=>f.Time).ToArray(),Path.GetFileNameWithoutExtension(request.Video),request.Video,sourceSha,metadata.CaptureFrameRate,camera);
             if(state.Frames.All(f=>f.Hands is not null))
             {
                 BodyHandTracks.Append(motion,state.Frames.Select(f=>f.Hands!).ToArray());
@@ -246,6 +249,7 @@ public static class BodyCapture
                 ?$"Automatic single-person image crops ({PersonDetector.Version}): the detector located the subject in {state.Frames.Count(f=>f.Person!.Evidence=="detected")} frame(s), crops then followed the previous frame's 2D body joints, and {state.Frames.Count(f=>f.Person!.Evidence=="held crop")} frame(s) briefly held the last crop. Two centered five-frame crop averages follow. Crop evidence is saved separately in reconstruction.json; it is not joint confidence or camera calibration."
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             if(shotNote is not null)motion.Diagnostics.Add(shotNote);
+            if(metadata.SamplingNote is { } sampling)motion.Diagnostics.Add(sampling);
             motion.Diagnostics.Add(state.CameraMotion.Diagnostic);
             if(!state.CameraMotion.Stationary&&state.CameraRotation is not null)motion.Diagnostics.Add(state.CameraRotation.Diagnostic);
             if(followedRotation is not null)

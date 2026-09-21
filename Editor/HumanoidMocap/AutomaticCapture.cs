@@ -70,8 +70,16 @@ public sealed partial class RetargetWindow
             _captureStatus.Text = "Preparing video…";
             var metadata = await Task.Run(() => Mp4Metadata.Read(video), token);
             await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
-            if (metadata.Times.Length > 1800 && !end.HasValue)
-                throw new InvalidOperationException("This video is longer than the current 1,800-frame limit. Select a shorter range in Advanced.");
+            // A long video is not refused: the first 1,800 captured frames (about a minute) are processed
+            // and the range shows it, so another part can be chosen under Advanced.
+            string lengthNote=null;
+            var available=metadata.CaptureTimes.Where(t=>t>=start).ToArray();
+            if (available.Length > 1800 && !end.HasValue)
+            {
+                end=available[1800];
+                _rangeEnd.Text=end.Value.ToString("0.###",System.Globalization.CultureInfo.InvariantCulture);
+                lengthNote=FormattableString.Invariant($"Long video: captured {start:0.#}–{end.Value:0.#} s of {metadata.Duration:0.#} s (1,800 frames at a time). Set another range under Advanced to capture a later part.");
+            }
             string motionPath;
             if (firstPerson && handBackend=="mediapipe")
             {
@@ -115,6 +123,7 @@ public sealed partial class RetargetWindow
                 var raw = MotionDocument.Parse(File.ReadAllBytes(motionPath));
                 // GVHMR already has a temporal model; do not stack generic cleanup on it.
                 var cleaned = firstPerson ? MotionCleanup.Apply(raw, cleanup) : raw.Copy();
+                if(lengthNote is not null)cleaned.Diagnostics.Add(lengthNote);
                 token.ThrowIfCancellationRequested();
                 var destination = Path.Combine(Path.GetDirectoryName(motionPath), "automatic.edited.hmotion");
                 File.WriteAllText(destination, cleaned.ToJson()); return destination;

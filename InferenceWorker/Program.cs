@@ -56,4 +56,4 @@ try
     else throw new ArgumentException("Usage: download-body-models <model-folder> | download-hand-models <model-folder> <mediapipe|mobilehand|wildhands|wilor> | body-capture <job.json> | body-refine <job.json> | hand-capture <job.json> | landmark-capture <job.json> | import-hot3d <job.json>");
 }
 catch(OperationCanceledException){Console.Error.WriteLine("Cancelled. Cached reconstruction can be resumed.");Environment.ExitCode=2;}
-catch(Exception e){Console.Error.WriteLine(e.Message);Environment.ExitCode=1;}
+catch(Exception e){Console.Error.WriteLine(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_TRACE")=="1"?e.ToString():e.Message);Environment.ExitCode=1;}
