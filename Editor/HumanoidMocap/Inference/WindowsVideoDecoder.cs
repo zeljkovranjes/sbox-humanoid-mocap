@@ -46,6 +46,7 @@ public sealed class WindowsVideoDecoder : IDisposable
     }
     /// <summary>Names the codec when the container says so. iPhones record HEVC unless set to Most Compatible,
     /// and Windows decodes HEVC only with the HEVC Video Extensions installed.</summary>
+    public const string UndecodableFramesMessage="Windows could not decode this video's frames. It may use an unusual encoding (4:4:4 or 10-bit H.264 from a screen recorder or editor) or be damaged. Re-export it as a standard H.264 MP4 (8-bit, 4:2:0) and upload it again.";
     public static string MissingCodecMessage(string path)
     {
         var codec="";
@@ -104,7 +105,10 @@ public sealed class WindowsVideoDecoder : IDisposable
         for(var attempts=0;attempts<1000;attempts++)
         {
             token.ThrowIfCancellationRequested();
-            Check(Method<ReadSample>(reader,9)(reader,VideoStream,0,out _,out var flags,out var timestamp,out var sample));
+            var result=Method<ReadSample>(reader,9)(reader,VideoStream,0,out _,out var flags,out var timestamp,out var sample);
+            // The container opened but its frames cannot be decoded: 4:4:4 or 10-bit H.264 from screen
+            // recorders and editors, or a damaged file. Windows reports only "unspecified error".
+            if(result<0)throw new NotSupportedException(UndecodableFramesMessage,Marshal.GetExceptionForHR(result));
             IntPtr buffer=IntPtr.Zero;
             try
             {

@@ -72,11 +72,11 @@ internal static class NativeCapture
 
     /// <summary>Opens the video once before any build or download, so footage this PC cannot decode
     /// (typically HEVC from an iPhone) is reported in seconds rather than after gigabytes of models.</summary>
-    static void EnsureDecodable(string video){using var decoder=new Inference.WindowsVideoDecoder(video);}
+    static void EnsureDecodable(string video){using var decoder=new Inference.WindowsVideoDecoder(video);decoder.Read(CancellationToken.None);}
 
     public static async Task<string> BodyAsync(string video,double start,double end,int width,int height,Action<string> progress,CancellationToken token)
     {
-        EnsureDecodable(video);
+        await Task.Run(()=>EnsureDecodable(video),token);
         var (worker,models)=await Prepare(progress,token);
         await RunProcess(worker, new[] { "download-body-models", models }, progress, token);
         // Fingers in a body capture come from WiLoR. Without it the body is still captured and
@@ -93,7 +93,7 @@ internal static class NativeCapture
     {
         if(backend is not ("mobilehand" or "wildhands" or "wilor"))throw new NotSupportedException("Choose MediaPipe, MobileHand, WildHands or WiLoR. ACE is not loaded automatically.");
         var focal=Motion.CaptureCameraFraming.EstimatedFocalLength(width,height,recordingHorizontalFov);
-        EnsureDecodable(video);
+        await Task.Run(()=>EnsureDecodable(video),token);
         var (worker,models)=await Prepare(progress,token);
         await RunProcess(worker,new[]{"download-hand-models",models,backend},progress,token);
         // Estimated pinhole intrinsics; these are neither calibrated nor world-space recovery.
