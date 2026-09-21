@@ -228,6 +228,51 @@ FBX that compiled and played; five synchronized frames matched the performer's s
 Static intervals are model predictions, and one clip is not a guarantee for other floors,
 stairs or moving cameras.
 
+Two retargeting faults made the kata character look wrong even with correct contacts.
+Its legs were splayed: the reconstructed performer's hip joints sit 0.15 leg-lengths apart
+and Human's 0.25, so copying leg rotations carried both feet outward by the extra
+half-width and a 0.62 leg-length stance became 0.73. Body captures now move each ankle
+back along the pelvis' own lateral axis by that difference and re-solve the leg before
+levelling and anchoring, which gives 0.64 on the same frame with limb lengths within
+0.0001 cm and unchanged foot anchoring. Its fingers were a splayed claw, because a body
+capture has no finger tracks and the rig stayed in its bind pose; such hands now hold one
+authored, slightly curled resting shape, never applied when the source has finger tracks.
+Both appear in the capture details. The arms in that clip's opening stance sit wider than
+the performer's because GVHMR itself reconstructs the wrists 45 cm apart; that is left as
+reconstructed.
+
+A moving camera is no longer left camera-relative. In the role of GVHMR's SimpleVO,
+corner features outside the person are followed between every sixth frame with
+forward-backward agreement, each pair is fitted with the rotation homography K R K⁻¹
+under the job's assumed lens, and the nearest rotation is chained and interpolated to
+every frame. That rotation replaces the still-camera value in both places the C# port
+already accepted one: the temporal network's conditioning and the gravity-view world
+rollout. Pairs with under 40 agreeing features, or turning over 25°, claim no rotation,
+and unless 80% of pairs solve the capture stays camera-relative.
+
+This was checked against a known answer. The tripod kata clip was re-rendered through a
+synthetic handheld camera (a ±5° pan with tilt, roll and shake, rendered at a different
+focal length from the one the worker assumes, then cropped), so the still-camera result
+of the original is the reference. The accumulated rotation was recovered within 0.7° on
+average and 2.0° at worst over a 5.6° sweep, with 48 of 50 pairs solved.
+
+| Handling of the handheld fixture | Pelvis path error, mean / max | Heading error, mean | Height error, mean | Travel (reference 8.53 m) |
+| --- | --- | --- | --- | --- |
+| Wrongly assumed still | 32.1 / 67.0 cm | 5.4° | 20.1 cm | 8.57 m |
+| Rotation followed, root unanchored | 25.6 / 94.4 cm | 3.1° | 7.9 cm | 6.65 m |
+| Rotation followed, root anchored | 21.5 / 71.1 cm | 3.1° | 2.2 cm | 7.69 m |
+
+Paths were compared after one rigid 2D alignment. The anchored row applies when at least
+80% of background features fit a single rotation, meaning little parallax and a camera
+turning about a nearly fixed point: camera-space pelvis positions, turned back by the
+followed rotation, then anchor the root exactly as for a still camera. With more parallax
+the camera also travelled, its position is unknown, and the unanchored row applies. Part of
+the remaining error is not camera handling at all, since the cropped fixture gives the
+networks a different image from the reference. On the real tennis clip, a pan of under a
+degree with all 52 pairs solved, predicted-static foot steps went from 0.71–0.92 cm per
+frame camera-relative to 0.003–0.031 cm, with feet at floor height. Camera translation and
+scene scale are never recovered; this is rotation following, not camera tracking.
+
 Following the subject also changed. The face-and-hips person detector sees the whole
 frame at 224 pixels; on the kata clip it flickered on the distant performer and handed the
 track to a bystander walking past, ending the job at 4.4 s. It now only finds the

@@ -202,7 +202,10 @@ frame with four threads and 0.64 s with eight on the Ryzen 7 7800X3D. The table 
 predates this and used four threads. WiLoR additionally runs its transformer blocks in
 bfloat16 where that is measurably faster on the machine (`HUMANOID_MOCAP_PRECISION=float32`
 or `bfloat16` overrides the timing), which brought it to about 0.37 s per hand and 2.8 GB
-peak memory on the same processor.
+peak memory on the same processor. The body job's ViTPose-H and HMR2 backbones use the same
+rule: 1.50 s per frame for both networks against 3.52 s, with 2D joints moving by at most
+0.23 px in a 256 px crop and image-feature cosine similarity of at least 0.999997 across
+20 real crops.
 
 Fresh runs with the corrected video decoder recorded the following on the Ryzen 7
 7800X3D, 32 GB RAM, using four CPU inference threads and no GPU:

@@ -16,9 +16,13 @@ public sealed class VisionModel : IDisposable
     public enum Kind{Hmr2Features,VitPoseHeatmaps}
     readonly Dictionary<string,Tensor> weights=new(StringComparer.Ordinal);
     readonly Kind kind;bool disposed;int running;
-    public VisionModel(string checkpointPath,Kind kind,CancellationToken cancellation=default,Action<int,int>? loading=null)
+    /// <summary>Numeric type of the 32 backbone blocks' matrix products; see <see cref="WilorModel.ChoosePrecision"/>.</summary>
+    public string Precision { get; }
+    public VisionModel(string checkpointPath,Kind kind,CancellationToken cancellation=default,Action<int,int>? loading=null,string? precision=null)
     {
-        this.kind=kind;
+        this.kind=kind;Precision=precision??WilorModel.ChoosePrecision();
+        if(Precision is not (WilorModel.Float32 or WilorModel.BFloat16))throw new ArgumentException("Unsupported vision precision.");
+        static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
         var expected=kind==Kind.Hmr2Features?"2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e":"50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc";
         using(var input=File.OpenRead(checkpointPath))if(!Convert.ToHexString(SHA256.HashData(input)).Equals(expected,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Vision checkpoint checksum mismatch.");
         using var checkpoint=new TorchCheckpoint(checkpointPath);
@@ -31,15 +35,17 @@ public sealed class VisionModel : IDisposable
                 cancellation.ThrowIfCancellationRequested();
                 var values=checkpoint.ReadFloat(name,cancellation);
                 if(values.Any(v=>!float.IsFinite(v)))throw new InvalidDataException("Non-finite vision weights.");
-                using var original=tensor(values);
-                weights.Add(name,original.reshape(info.Shape.Select(v=>(long)v).ToArray()).DetachFromDisposeScope());
-                loading?.Invoke(++count,required.Length);
+                using var original=tensor(values);using var shaped=original.reshape(info.Shape.Select(v=>(long)v).ToArray());
+                // Reduced block matrices are converted as they are read, so no second full copy exists.
+                weights.Add(name,(Precision==WilorModel.BFloat16&&BlockMatrix(name)?shaped.to(ScalarType.BFloat16):shaped.clone()).DetachFromDisposeScope());
+                loading?.Invoke(++count,required.Length);if(count%48==0)GC.Collect();
             }
         }
         catch{Dispose();throw;}
     }
     Tensor Weight(string name)=>weights.TryGetValue(name,out var value)?value:throw new InvalidDataException("Missing vision weight: "+name);
     Tensor Linear(Tensor x,string name)=>F.linear(x,Weight(name+".weight"),weights.GetValueOrDefault(name+".bias"));
+    Tensor BlockLinear(Tensor x,string name)=>Linear(Precision==WilorModel.Float32?x:x.to(ScalarType.BFloat16),name);
     Tensor Norm(Tensor x,string name,int width,double epsilon)=>F.layer_norm(x,new long[]{width},Weight(name+".weight"),Weight(name+".bias"),epsilon);
     /// <summary>RGB input normalized with ImageNet mean/std, channel-first 256x192.
     /// Caller owns image crop calibration and must preserve it when decoding observations.</summary>
@@ -58,11 +64,12 @@ public sealed class VisionModel : IDisposable
             for(var block=0;block<32;block++)
             {
                 cancellation.ThrowIfCancellationRequested();using var blockScope=NewDisposeScope();
-                var name="backbone.blocks."+block;var qkv=Linear(Norm(x,name+".norm1",1280,1e-6),name+".attn.qkv").reshape(1,192,3,16,80).permute(2,0,3,1,4);
+                // Layer norms, softmax and the residual stream stay float32 at either precision.
+                var name="backbone.blocks."+block;var qkv=BlockLinear(Norm(x,name+".norm1",1280,1e-6),name+".attn.qkv").reshape(1,192,3,16,80).permute(2,0,3,1,4);
                 var q=qkv.select(0,0)*(float)(1/Math.Sqrt(80));var k=qkv.select(0,1);var v=qkv.select(0,2);
-                var attention=q.matmul(k.transpose(-2,-1)).softmax(-1).matmul(v).transpose(1,2).reshape(1,192,1280);
-                var residual=x+Linear(attention,name+".attn.proj");
-                var mlp=Linear(F.gelu(Linear(Norm(residual,name+".norm2",1280,1e-6),name+".mlp.fc1")),name+".mlp.fc2");
+                var attention=q.matmul(k.transpose(-2,-1)).to(ScalarType.Float32).softmax(-1).to(v.dtype).matmul(v).transpose(1,2).reshape(1,192,1280);
+                var residual=x+BlockLinear(attention,name+".attn.proj").to(ScalarType.Float32);
+                var mlp=BlockLinear(F.gelu(BlockLinear(Norm(residual,name+".norm2",1280,1e-6),name+".mlp.fc1")),name+".mlp.fc2").to(ScalarType.Float32);
                 var previous=x;x=(residual+mlp).MoveToOuterDisposeScope();previous.Dispose();progress?.Invoke($"Vision transformer {block+1}/32");
             }
             x=Norm(x,"backbone.last_norm",1280,1e-6);

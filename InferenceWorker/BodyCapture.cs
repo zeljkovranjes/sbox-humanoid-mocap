@@ -28,6 +28,8 @@ public static class BodyCapture
         public long PeakRamBytes { get; set; }
         public CameraMotionCheck.Result? CameraMotion { get; set; }
         public string? CameraMotionVersion { get; set; }
+        public CameraRotationTrack.Result? CameraRotation { get; set; }
+        public string? CameraRotationVersion { get; set; }
     }
     public static string Run(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress=null)
     {
@@ -37,7 +39,9 @@ public static class BodyCapture
         using var video=File.OpenRead(request.Video);var sourceSha=Convert.ToHexString(SHA256.HashData(video));
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{
             version="gvhmr-csharp-person-crop-v2",detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,
-            temporal=GvhmrTemporalNetwork.CheckpointSha256,hmr="2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",pose="50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc"
+            temporal=GvhmrTemporalNetwork.CheckpointSha256,hmr="2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",pose="50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc",
+            // Reduced precision changes image features slightly, so it keeps its own cache.
+            visionPrecision=WilorModel.ChoosePrecision()
         }))));
         var folder=Path.Combine(request.Output,key);Directory.CreateDirectory(folder);var statePath=Path.Combine(folder,"reconstruction.json");
         using var jobLock=new FileStream(Path.Combine(folder,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -161,6 +165,15 @@ public static class BodyCapture
                 });
             }
             state.Seconds["poseThisRun"]=watch.Elapsed.TotalSeconds;GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
+            var focalLength=MathF.Sqrt(metadata.Width*metadata.Width+metadata.Height*metadata.Height);
+            if(!state.CameraMotion!.Stationary&&(state.CameraRotation is null||state.CameraRotationVersion!=CameraRotationTrack.Version))
+            {
+                progress?.Invoke("Following the moving camera's rotation from the background");
+                using var rotation=new CameraRotationTrack(focalLength);
+                Visit((frame,index)=>rotation.Add(frame,state.Frames[index].Person!.Crop,index==count-1));
+                state.CameraRotation=rotation.Finish();state.CameraRotationVersion=CameraRotationTrack.Version;
+                state.Seconds["cameraRotationThisRun"]=watch.Elapsed.TotalSeconds;Save("camera-rotation-followed");watch.Restart();
+            }
             if(state.Frames.Any(f=>f.ImageFeatures is null))
             {
                 using var hmr=new VisionModel(Path.Combine(request.Models,"hmr2/hmr2.ckpt"),VisionModel.Kind.Hmr2Features,cancellation);
@@ -171,13 +184,18 @@ public static class BodyCapture
                 });
             }
             state.Seconds["imageFeaturesThisRun"]=watch.Elapsed.TotalSeconds;GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
-            Save("temporal-inference");var camera=new GvhmrDecoder.Camera(MathF.Sqrt(metadata.Width*metadata.Width+metadata.Height*metadata.Height),metadata.Width*.5f,metadata.Height*.5f);
+            Save("temporal-inference");var camera=new GvhmrDecoder.Camera(focalLength,metadata.Width*.5f,metadata.Height*.5f);
             var boxes=state.Frames.Select(f=>f.Person!.Crop).ToArray();var cameras=Enumerable.Repeat(camera,count).ToArray();
             var identityCondition=Enumerable.Range(0,count).SelectMany(_=>new[]{1f,0,0,0,1,0}).ToArray();
-            var conditions=GvhmrDecoder.Prepare(state.Frames.SelectMany(f=>f.Observations!).ToArray(),boxes,cameras,identityCondition);
+            // A still camera, or one whose rotation could not be followed, is conditioned as not rotating.
+            var followedRotation=!state.CameraMotion.Stationary&&state.CameraRotation is {Usable:true} solvedRotation&&solvedRotation.AngularVelocity6d.Length==count*6?solvedRotation.AngularVelocity6d:null;
+            var conditions=GvhmrDecoder.Prepare(state.Frames.SelectMany(f=>f.Observations!).ToArray(),boxes,cameras,followedRotation??identityCondition);
             var network=new GvhmrTemporalNetwork(Path.Combine(request.Models,"gvhmr/gvhmr_siga24_release.ckpt"),cancellation);
             var prediction=network.Run(count,conditions.Observations,conditions.CliffCamera,conditions.NormalizedAngularVelocity,state.Frames.SelectMany(f=>f.ImageFeatures!).ToArray(),cancellation);
             File.WriteAllText(Path.Combine(folder,"raw-predictions.json"),JsonSerializer.Serialize(prediction));
+            var rotationPath=Path.Combine(folder,BodyRefinement.CameraRotationFile);
+            if(followedRotation is null)File.Delete(rotationPath);
+            else File.WriteAllText(rotationPath,JsonSerializer.Serialize(new BodyRefinement.CameraRotation(followedRotation,state.CameraRotation!.RotationOnly)));
             var decoded=GvhmrDecoder.Decode(prediction.PredX,count);var translation=GvhmrDecoder.CameraTranslation(prediction.PredCam,boxes,cameras);
             var skeleton=new SmplxSkeleton(Path.Combine(request.Models,"smplx/SMPLX_NEUTRAL.npz"),cancellation);
             var motion=BodyMotionBuilder.CameraRelative(skeleton,decoded,translation,state.Frames.Select(f=>f.Time).ToArray(),Path.GetFileNameWithoutExtension(request.Video),request.Video,sourceSha,metadata.FrameRate,camera);
@@ -187,6 +205,13 @@ public static class BodyCapture
                 ?$"Automatic single-person image crops ({PersonDetector.Version}): the detector located the subject in {state.Frames.Count(f=>f.Person!.Evidence=="detected")} frame(s), crops then followed the previous frame's 2D body joints, and {state.Frames.Count(f=>f.Person!.Evidence=="held crop")} frame(s) briefly held the last crop. Two centered five-frame crop averages follow. Crop evidence is saved separately in reconstruction.json; it is not joint confidence or camera calibration."
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             motion.Diagnostics.Add(state.CameraMotion.Diagnostic);
+            if(!state.CameraMotion.Stationary&&state.CameraRotation is not null)motion.Diagnostics.Add(state.CameraRotation.Diagnostic);
+            if(followedRotation is not null)
+            {
+                // The builder's default note describes a still-camera conditioning that was not used here.
+                motion.Diagnostics.RemoveAll(d=>d.StartsWith("Camera-relative reconstruction with identity camera-angular-velocity",StringComparison.Ordinal));
+                motion.Diagnostics.Add("Camera-relative reconstruction conditioned on the followed camera rotation; camera translation has not been recovered.");
+            }
             var result=Path.Combine(folder,"raw-body.hmotion");File.WriteAllText(result+".partial",motion.ToJson());File.Move(result+".partial",result,true);
             state.Seconds["temporalAndDecodeThisRun"]=watch.Elapsed.TotalSeconds;Save("complete");return result;
         }

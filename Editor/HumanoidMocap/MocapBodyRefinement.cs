@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,6 +13,8 @@ public sealed partial class RetargetWindow
 {
     /// <summary>Written by the worker's background-feature test; see InferenceWorker/CameraMotionCheck.cs.</summary>
     const string StationaryCameraPrefix="Stationary recording camera:";
+    /// <summary>Written when the worker followed a moving camera's rotation; see InferenceWorker/CameraRotationTrack.cs.</summary>
+    const string FollowedCameraPrefix="Moving recording camera followed:";
     global::Editor.Button _bodyRefinementButton;
     void RefreshBodyRefinementButton()
     {
@@ -19,7 +22,8 @@ public sealed partial class RetargetWindow
         if(_stabilizeFeetControl.IsValid())
             _stabilizeFeetControl.Enabled=_rawMotion is {Space:MotionSpace.WorldRelative,StationaryJoints.Count:>0};
         var restore=_rawMotion?.OriginalReconstruction is not null;
-        _bodyRefinementButton.Text=restore?"Restore original capture":"Refine · stationary camera";
+        var followedCamera=_rawMotion?.Diagnostics.Any(d=>d.StartsWith(FollowedCameraPrefix,StringComparison.Ordinal))==true;
+        _bodyRefinementButton.Text=restore?"Restore original capture":followedCamera?"Refine · followed camera":"Refine · stationary camera";
         _bodyRefinementButton.Enabled=restore||_rawMotion is {Space:MotionSpace.CameraRelative}&&_rawMotion.Backend.StartsWith("GVHMR",StringComparison.Ordinal);
         _bodyRefinementButton.ToolTip=restore?"Reopen the unchanged original reconstruction. Adjustments remain saved separately with each motion file.":
             "Applied automatically when the recording measured as still. Use it yourself only when you know the camera did not move. Reuses saved GVHMR predictions; keeps the original and opens a separate result. Review contacts before exporting.";
@@ -46,7 +50,9 @@ public sealed partial class RetargetWindow
                 },token);
                 refined=origin.Path;
             }
-            else refined=await NativeCapture.RefineBodyAsync(original,ReceiveWorkerProgress,token);
+            // The manual action is the stationary assumption unless the capture followed its camera.
+            else refined=await NativeCapture.RefineBodyAsync(original,ReceiveWorkerProgress,token,
+                _rawMotion!.Diagnostics.Any(d=>d.StartsWith(FollowedCameraPrefix,StringComparison.Ordinal)));
             token.ThrowIfCancellationRequested();await EditorPipeline.SwitchToMainThread();
             if(!this.IsValid())return;
             await LoadMotionAsync(refined);

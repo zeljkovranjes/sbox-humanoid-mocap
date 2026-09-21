@@ -97,8 +97,13 @@ public sealed partial class RetargetWindow
                 // refinement straight away. The untouched capture stays beside it and
                 // Advanced → Restore original capture reopens it.
                 var bodyPath=motionPath;
-                if(await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(bodyPath)).Diagnostics.Any(d=>d.StartsWith(StationaryCameraPrefix,StringComparison.Ordinal)),token))
+                // A moving camera whose rotation the worker followed gets the same refinement from
+                // GVHMR's world rollout; one that could not be followed stays camera-relative.
+                var diagnostics=await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(bodyPath)).Diagnostics,token);
+                if(diagnostics.Any(d=>d.StartsWith(StationaryCameraPrefix,StringComparison.Ordinal)))
                     motionPath=await NativeCapture.RefineBodyAsync(motionPath,ReceiveWorkerProgress,token);
+                else if(diagnostics.Any(d=>d.StartsWith(FollowedCameraPrefix,StringComparison.Ordinal)))
+                    motionPath=await NativeCapture.RefineBodyAsync(motionPath,ReceiveWorkerProgress,token,followedCameraRotation:true);
             }
             token.ThrowIfCancellationRequested();
             await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;

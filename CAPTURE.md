@@ -56,7 +56,10 @@ For body capture, record one person with their feet and head inside the frame. A
 stationary camera and an unobstructed view are useful for reviewing ground contact.
 Put the camera on a tripod or a steady surface whenever you can: a still camera is
 detected automatically and gets foot-contact anchoring and a level floor, which removes
-most foot sliding. Automatic GVHMR jobs detect a prominent person and then follow that
+most foot sliding. Handheld footage works best when you stand in one place and turn to
+follow the subject, with a textured background in view: the camera's rotation is followed
+from that background. Walking with the camera is handled less well, because how far the
+camera travelled cannot be recovered from the video. Automatic GVHMR jobs detect a prominent person and then follow that
 person's 2D body joints through the selected range. Record one clear foreground subject; ambiguous people
 or prolonged tracking loss stop processing with a useful error. Crop tracking does not
 recover camera motion, calibrated world scale or reliable world root motion. The default

@@ -92,10 +92,12 @@ internal static class NativeCapture
         return await Job(worker,"hand",jobs=>new { Video=video,Models=models,Output=jobs,Backend=backend,Start=start,End=end,Camera=camera,EstimateFocal=recordingHorizontalFov is null },progress,token);
     }
 
-    public static async Task<string> RefineBodyAsync(string motion,Action<string> progress,CancellationToken token)
+    /// <param name="followedCameraRotation">Use the camera rotation the capture followed from the
+    /// background instead of assuming the camera stood still.</param>
+    public static async Task<string> RefineBodyAsync(string motion,Action<string> progress,CancellationToken token,bool followedCameraRotation=false)
     {
         var (worker,models)=await Prepare(progress,token);
-        return await Job(worker,"body-refinement",jobs=>new {Motion=motion,Models=models,Output=jobs,AssumeStationaryCamera=true},
+        return await Job(worker,"body-refinement",jobs=>new {Motion=motion,Models=models,Output=jobs,AssumeStationaryCamera=!followedCameraRotation,UseCameraRotation=followedCameraRotation},
             progress,token,command:"body-refine");
     }
 
