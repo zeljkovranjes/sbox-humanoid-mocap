@@ -11,6 +11,10 @@ public sealed class CleanupSettings
     public float Arms { get; set; } = .1f;
     public float Fingers { get; set; } = .025f;
     public double MaximumGapSeconds { get; set; } = .1;
+    /// <summary>Longer losses between two observations are bridged with an eased glide over
+    /// at most this many seconds, ending at the reacquired pose, instead of a frozen pose that
+    /// snaps. Zero restores hold-and-snap. Bridged samples are labelled inferred, never observed.</summary>
+    public double BridgeSeconds { get; set; } = 1.5;
     public float PreserveAngularSpeed { get; set; } = 6f;
 }
 
@@ -23,7 +27,8 @@ public static class MotionCleanup
         if (!float.IsFinite(settings.Root)||!float.IsFinite(settings.Arms)||!float.IsFinite(settings.Fingers)
             ||!float.IsFinite(settings.PreserveAngularSpeed)||settings.PreserveAngularSpeed<0
             ||settings.Root<0 || settings.Root>1 || settings.Arms<0 || settings.Arms>1 || settings.Fingers<0 || settings.Fingers>1
-            || !double.IsFinite(settings.MaximumGapSeconds) || settings.MaximumGapSeconds<0)
+            || !double.IsFinite(settings.MaximumGapSeconds) || settings.MaximumGapSeconds<0
+            || !double.IsFinite(settings.BridgeSeconds) || settings.BridgeSeconds<0)
             throw new ArgumentException("Invalid cleanup settings.");
         bool Protected(int i) => raw.Contacts.Any(c => c.Review != ContactReview.Disabled
             && raw.Frames[i].Time >= c.Start-.05 && raw.Frames[i].Time <= c.End+.05);
@@ -37,11 +42,15 @@ public static class MotionCleanup
                 if(i>=raw.Frames.Count || raw.Frames[first-1].Evidence[j]!=JointEvidence.Reconstructed
                     || raw.Frames[i].Evidence[j]!=JointEvidence.Reconstructed)continue;
                 var a=raw.Frames[first-1];var b=raw.Frames[i];
-                if(b.Time-a.Time>settings.MaximumGapSeconds)continue;
+                var bridged=b.Time-a.Time>settings.MaximumGapSeconds;
+                if(bridged&&settings.BridgeSeconds<=0)continue;
+                // A long loss holds the last pose, then glides into the reacquired one.
+                var glideStart=bridged?Math.Max(a.Time,b.Time-settings.BridgeSeconds):a.Time;
                 for(var k=first;k<i;k++)
                 {
                     if(Protected(k))continue;
-                    var t=(float)((raw.Frames[k].Time-a.Time)/(b.Time-a.Time));
+                    var t=(float)Math.Clamp((raw.Frames[k].Time-glideStart)/(b.Time-glideStart),0,1);
+                    if(bridged)t=t*t*(3-2*t);
                     output.Frames[k].Positions[j]=MotionDocument.A(Vector3.Lerp(MotionDocument.V(a.Positions[j]),MotionDocument.V(b.Positions[j]),t));
                     output.Frames[k].Rotations[j]=MotionDocument.A(Quaternion.Slerp(MotionDocument.Q(a.Rotations[j]),MotionDocument.Q(b.Rotations[j]),t));
                     output.Frames[k].Evidence[j]=JointEvidence.InferredGap;

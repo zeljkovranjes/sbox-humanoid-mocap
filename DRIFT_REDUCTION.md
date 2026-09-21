@@ -12,6 +12,16 @@ samples are capped at 3 mm. Finger cleanup remains separate and conservative. Th
 root amount is now 0.25; saved settings remain respected. Reopen a capture and use
 **Advanced → Apply adjustments** to rebuild from its original observations.
 
+A hand lost for more than 0.1 second used to freeze in its last pose and snap to the next
+observation. Such losses now hold, then glide into the reacquired pose with an eased
+blend over at most 1.5 seconds. Bridged samples are labelled **inferred gap**, carry no
+confidence, and are never counted as observed; contact-protected samples are left alone
+and `BridgeSeconds = 0` restores the old behaviour. In `video_0`, where both hands leave
+the image for about a second, the default WiLoR path previously showed crossed, frozen
+arms in the middle of the loss; with the corrected right-hand track and the glide it shows
+uncrossed arms moving toward where the hands reappear. The motion inside a loss is
+unknown, so this is a presentable guess rather than recovered movement.
+
 This reduces small tracking fluctuations. It cannot remove sustained depth bias or
 recover world motion from camera-relative hands. MediaPipe still uses an assumed wrist
 plane; native MANO backends still infer monocular depth. Confirmed contacts with explicit
