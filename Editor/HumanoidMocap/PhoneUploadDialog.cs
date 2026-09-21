@@ -23,7 +23,7 @@ public sealed class PhoneUploadDialog : Dialog
     public PhoneUploadDialog(Widget parent,Action<string> received):base(parent)
     {
         this.received=received;Window.WindowTitle="Receive from Phone";Window.SetWindowIcon("qr_code_2");
-        Window.MinimumSize=new Vector2(440,640);
+        Window.MinimumSize=new Vector2(440,680);
         Layout=Layout.Column();Layout.Margin=20;Layout.Spacing=12;
         SetStyles($"background-color: {Theme.WindowBackground.Hex}; color: {Theme.Text.Hex};");
         Layout.Add(new Label.Subtitle("Receive from Phone"){Alignment=TextFlag.Center});
@@ -38,7 +38,7 @@ public sealed class PhoneUploadDialog : Dialog
         address=Layout.Add(new LineEdit(this));address.ReadOnly=true;
         status=Layout.Add(new Label("",this){Alignment=TextFlag.Center});
         status.SetStyles($"color: {Theme.Green.Hex};");
-        var help=Layout.Add(new Label("Connect your phone to the same router as this PC.\nUse Wi-Fi or Ethernet above, not a WSL/VPN adapter.\nKeep this window open to receive more videos.",this){Alignment=TextFlag.Center,WordWrap=true});
+        var help=Layout.Add(new Label("Connect your phone to the same router as this PC.\nUse Wi-Fi or Ethernet above, not a WSL/VPN adapter.\nIf the phone page never loads, allow s&box through\nWindows Firewall for private and public networks.\nKeep this window open to receive more videos.",this){Alignment=TextFlag.Center,WordWrap=true});
         help.SetStyles($"color: {Theme.TextLight.Hex};");
         var row=Layout.AddRow();row.Spacing=8;
         var renew=row.Add(new Button.Primary("New one-hour pairing"){Icon="refresh"},1);renew.Clicked=Start;
