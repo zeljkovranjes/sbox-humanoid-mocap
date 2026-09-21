@@ -16,7 +16,10 @@ public sealed record HandCaptureRequest(string Video,string Models,string Output
 /// corrections are deliberately excluded from the expensive prediction cache.</summary>
 public static class HandCapture
 {
-    public const string ImplementationVersion="native-mano-v5-hand-scale-focal";
+    public const string ImplementationVersion="native-mano-v6-followed-hands";
+    public const string FollowedSource="WiLoR followed through detector loss";
+    /// <summary>A hand WiLoR is following by itself after the landmark detector lost it.</summary>
+    public sealed record FollowedHand(string Side,float[][] Image,float[] GlobalRotation,float CropSize,double Since);
     public sealed record CropObservation(string Side,float Presence,float Handedness,float[][] Image,float[][] World,bool Tracked)
     {
         public static CropObservation From(HandObservation hand)=>new(hand.Side,hand.Presence,hand.Handedness,
@@ -30,6 +33,8 @@ public static class HandCapture
         public string? Error { get; set; }
         public List<ManoFrameSample> Frames { get; set; }=new();
         public List<CropObservation> Tracking { get; set; }=new();
+        /// <summary>Per-side WiLoR result of the last completed frame, detected or followed.</summary>
+        public List<FollowedHand> Following { get; set; }=new();
         /// <summary>Camera the predictions were made with. Persisted so a resumed
         /// WildHands job keeps the camera-ray encodings of its completed frames.</summary>
         public WildHandsCrop.Camera? InferenceCamera { get; set; }
@@ -55,7 +60,9 @@ public static class HandCapture
         var modelHash=mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256;
         // Verify cached jobs too; a different file must not masquerade as pinned weights.
         if(Hash(checkpointPath)!=modelHash)throw new InvalidDataException("Hand model checksum mismatch.");
-        var implementation=ImplementationVersion+(wild?"; "+WildHandsCrop.ImplementationVersion:"");
+        // Reduced precision changes predictions slightly, so it keeps its own cache.
+        var wilorPrecision=!wild&&!mobile?WilorModel.ChoosePrecision():null;
+        var implementation=ImplementationVersion+(wild?"; "+WildHandsCrop.ImplementationVersion:"")+(wilorPrecision is null or WilorModel.Float32?"":"; wilor-blocks-"+wilorPrecision);
         var keyData=JsonSerializer.Serialize(new{pipeline=implementation,decoder=WindowsVideoDecoder.ImplementationVersion,detectorImplementation=ManagedHands.ImplementationVersion,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyData))).ToLowerInvariant();
         var directory=Path.Combine(Path.GetFullPath(request.Output),key);Directory.CreateDirectory(directory);
@@ -92,7 +99,7 @@ public static class HandCapture
                     Save("running");
                 }
                 using var wildModel=wild?new WildHandsModel(checkpointPath,cancellation):null;
-                using var wilorModel=!wild&&!mobile?new WilorModel(checkpointPath,cancellation):null;
+                using var wilorModel=!wild&&!mobile?new WilorModel(checkpointPath,cancellation,wilorPrecision):null;
                 using var mobileModel=mobile?new MobileHandModel(checkpointPath,cancellation):null;
                 using var decoder=new WindowsVideoDecoder(request.Video);
                 for(var i=state.Frames.Count;i<times.Length;i++)
@@ -126,14 +133,37 @@ public static class HandCapture
                         reconstructed.Add(new(observed.Side,hand.RotationMatrices,hand.Shape,hand.WeakCamera,crop.Box,observed.Presence,observed.Handedness,
                             observed.Tracked?"MediaPipe tracked landmark ROI":"MediaPipe palm detector",hand.Parameters,observed.ImageLandmarks.Select(MotionDocument.A).ToArray()));
                     }
-                    else if(!wild)foreach(var observed in observations)
+                    else if(!wild)
                     {
-                        var crop=WilorCrop.Prepare(frame,Bounds(observed),observed.Side=="R");
-                        var hand=wilorModel!.Run(crop.Image,cancellation);
-                        reconstructed.Add(new(observed.Side,hand.RotationMatrices,hand.Shape,hand.WeakCamera,crop.Box,observed.Presence,observed.Handedness,
-                            observed.Tracked?"MediaPipe tracked landmark ROI":"MediaPipe palm detector",DetectorImageLandmarks:observed.ImageLandmarks.Select(MotionDocument.A).ToArray()));
+                        var following=new List<FollowedHand>();
+                        foreach(var observed in observations)
+                        {
+                            var crop=WilorCrop.Prepare(frame,Bounds(observed),observed.Side=="R");
+                            var hand=wilorModel!.Run(crop.Image,cancellation);
+                            reconstructed.Add(new(observed.Side,hand.RotationMatrices,hand.Shape,hand.WeakCamera,crop.Box,observed.Presence,observed.Handedness,
+                                observed.Tracked?"MediaPipe tracked landmark ROI":"MediaPipe palm detector",DetectorImageLandmarks:observed.ImageLandmarks.Select(MotionDocument.A).ToArray()));
+                            following.Add(HandFollowing.Describe(observed.Side,hand,crop.Box,frame.Width,frame.Height,frame.Time));
+                        }
+                        // The landmark detector gives up on hands that are partly hidden, for example gripping
+                        // an object edge-on, although they are in plain view. WiLoR keeps reconstructing such a
+                        // hand from its own projected joints while it stays inside the image and moves plausibly.
+                        foreach(var last in state.Following.Where(f=>observations.All(o=>o.Side!=f.Side)))
+                        {
+                            var bounds=new WildHandsCrop.Box(last.Image.Min(p=>p[0]),last.Image.Min(p=>p[1]),last.Image.Max(p=>p[0]),last.Image.Max(p=>p[1]));
+                            if(!(bounds.Right>bounds.Left)||!(bounds.Bottom>bounds.Top))continue;
+                            var crop=WilorCrop.Prepare(frame,bounds,last.Side=="R");var hand=wilorModel!.Run(crop.Image,cancellation);
+                            var next=HandFollowing.Describe(last.Side,hand,crop.Box,frame.Width,frame.Height,last.Since);
+                            if(!HandFollowing.Plausible(last,next,frame.Width,frame.Height,frame.Time))continue;
+                            reconstructed.Add(new(last.Side,hand.RotationMatrices,hand.Shape,hand.WeakCamera,crop.Box,0,1,FollowedSource));
+                            following.Add(next);
+                        }
+                        state.Following=following;
                     }
                     state.InferenceSeconds+=clock.Elapsed.TotalSeconds;
+                    // A followed hand keeps its place in the tracker: its projected joints are the next
+                    // frame's first search region, so the detector reacquires it under the same side.
+                    observations=observations.Concat(state.Following.Where(f=>observations.All(o=>o.Side!=f.Side)).Select(f=>
+                        new HandObservation(f.Side,0,1,f.Image.Select(p=>new System.Numerics.Vector3(p[0],p[1],0)).ToArray(),new System.Numerics.Vector3[21],true))).ToArray();
                     state.Tracking=observations.Select(CropObservation.From).ToList();state.Frames.Add(new(frame.Time,reconstructed));Save("running");
                     progress?.Invoke($"Reconstructed {state.Frames.Count}/{times.Length} frames · {reconstructed.Count} hand(s)");
                 }

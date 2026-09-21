@@ -74,20 +74,7 @@ public sealed class ManagedHands
         foreach(var prior in previous.Take(2))
         {
             if(prior.ImageLandmarks.Length!=21)continue;
-            var points=prior.ImageLandmarks;
-            var direction=(points[5]+points[13]+2*points[9])*.25f-points[0];
-            var angle=MathF.PI/2+MathF.Atan2(direction.Y,direction.X);
-            var cos=MathF.Cos(angle);var sin=MathF.Sin(angle);
-            // MediaPipe's HandLandmarksToRect partial set and ROI graph: the
-            // palm/proximal landmarks, square-long scale 2 and local y shift -0.1.
-            var subset=new[]{0,1,2,3,5,6,9,10,13,14,17,18};
-            var rotated=subset.Select(i=>new Vector2(cos*points[i].X+sin*points[i].Y,-sin*points[i].X+cos*points[i].Y)).ToArray();
-            var min=new Vector2(rotated.Min(p=>p.X),rotated.Min(p=>p.Y));
-            var max=new Vector2(rotated.Max(p=>p.X),rotated.Max(p=>p.Y));
-            var center=(min+max)*.5f;center.Y-=(max.Y-min.Y)*.1f;
-            var size=Math.Max(max.X-min.X,max.Y-min.Y)*2;
-            if(!float.IsFinite(size)||size<2||size>Math.Max(width,height)*2)continue;
-            regions.Add(new(cos*center.X-sin*center.Y,sin*center.X+cos*center.Y,size,angle,true));
+            if(RegionFromLandmarks(prior.ImageLandmarks,width,height) is { } region)regions.Add(region);
         }
         if(regions.Count<2)
             foreach(var candidate in PalmRects(rgba,width,height,token))
@@ -102,6 +89,33 @@ public sealed class ManagedHands
         current=HandIdentity.PreserveSeparatedTracks(current,previous);
         current=HandIdentity.ResolveConflicts(current,previous);
         return current.GroupBy(h=>h.Side).Select(g=>g.OrderByDescending(h=>h.Presence).First()).ToList();
+    }
+
+    /// <summary>Landmark inference in the region implied by 21 image landmarks from any source,
+    /// for example another model's projected joints. Returns the landmark model's own presence
+    /// score and its observation even below the usual 0.5 acceptance, so a caller can weigh it.</summary>
+    public (float Presence,HandObservation? Observation) Probe(byte[] rgba,int width,int height,Vector3[] imageLandmarks,CancellationToken token=default)
+    {
+        if(rgba.Length!=width*height*4)throw new ArgumentException("RGBA buffer size mismatch.");
+        if(imageLandmarks.Length!=21||RegionFromLandmarks(imageLandmarks,width,height) is not { } r)return(0,null);
+        var observation=Landmarks(rgba,width,height,r.X,r.Y,r.Size,r.Angle,token,0);
+        return(observation?.Presence??0,observation is null?null:observation with{Tracked=true});
+    }
+    static HandRect? RegionFromLandmarks(Vector3[] points,int width,int height)
+    {
+        var direction=(points[5]+points[13]+2*points[9])*.25f-points[0];
+        var angle=MathF.PI/2+MathF.Atan2(direction.Y,direction.X);
+        var cos=MathF.Cos(angle);var sin=MathF.Sin(angle);
+        // MediaPipe's HandLandmarksToRect partial set and ROI graph: the
+        // palm/proximal landmarks, square-long scale 2 and local y shift -0.1.
+        var subset=new[]{0,1,2,3,5,6,9,10,13,14,17,18};
+        var rotated=subset.Select(i=>new Vector2(cos*points[i].X+sin*points[i].Y,-sin*points[i].X+cos*points[i].Y)).ToArray();
+        var min=new Vector2(rotated.Min(p=>p.X),rotated.Min(p=>p.Y));
+        var max=new Vector2(rotated.Max(p=>p.X),rotated.Max(p=>p.Y));
+        var center=(min+max)*.5f;center.Y-=(max.Y-min.Y)*.1f;
+        var size=Math.Max(max.X-min.X,max.Y-min.Y)*2;
+        if(!float.IsFinite(size)||size<2||size>Math.Max(width,height)*2)return null;
+        return new(cos*center.X-sin*center.Y,sin*center.X+cos*center.Y,size,angle,true);
     }
 
     List<HandObservation> Observe(byte[] rgba,int width,int height,IEnumerable<HandRect> regions,CancellationToken token)
@@ -122,11 +136,11 @@ public sealed class ManagedHands
         var intersection=width*height;return intersection/(a.Size*a.Size+b.Size*b.Size-intersection);
     }
 
-    HandObservation? Landmarks(byte[] rgba,int width,int height,float cx,float cy,float size,float angle,CancellationToken token)
+    HandObservation? Landmarks(byte[] rgba,int width,int height,float cx,float cy,float size,float angle,CancellationToken token,float minimumPresence=.5f)
     {
             var cos=MathF.Cos(angle);var sin=MathF.Sin(angle);
             var predictions=hands.Run(Crop(rgba,width,height,224,cx,cy,size,angle,replicateBorder:true),token);
-            if(predictions[1][0]<.5f)return null;
+            if(predictions[1][0]<minimumPresence)return null;
             var screen=new Vector3[21];var world=new Vector3[21];
             for(var i=0;i<21;i++)
             {

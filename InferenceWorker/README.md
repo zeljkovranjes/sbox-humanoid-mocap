@@ -199,7 +199,10 @@ uncalibrated. It does not estimate lens calibration or recover wrist depth.
 Hand and body jobs use one inference thread per two logical processors, between 2 and
 12; set `HUMANOID_MOCAP_THREADS` (1–64) to override. WiLoR measured 1.54 s per hand per
 frame with four threads and 0.64 s with eight on the Ryzen 7 7800X3D. The table below
-predates this and used four threads.
+predates this and used four threads. WiLoR additionally runs its transformer blocks in
+bfloat16 where that is measurably faster on the machine (`HUMANOID_MOCAP_PRECISION=float32`
+or `bfloat16` overrides the timing), which brought it to about 0.37 s per hand and 2.8 GB
+peak memory on the same processor.
 
 Fresh runs with the corrected video decoder recorded the following on the Ryzen 7
 7800X3D, 32 GB RAM, using four CPU inference threads and no GPU:

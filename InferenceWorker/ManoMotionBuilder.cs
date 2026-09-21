@@ -156,6 +156,9 @@ public static class ManoMotionBuilder
             $"Recording lens assumed {2*MathF.Atan(width/(2*camera.Fx))*180/MathF.PI:F0} degrees horizontal from {count} hand-size samples: the median hand is placed {CaptureCameraFraming.TypicalHandDistance:F2} m from the camera and the farthest within {CaptureCameraFraming.MaximumHandDistance:F2} m. This is an anthropometric first-person prior, not calibration; set Recording FOV to override it."));
         document.Diagnostics.Add(FormattableString.Invariant(
             $"Wrist placement: {anchored} observed wrists were moved sideways onto the detected palm's viewing ray at unchanged depth. {(depthGain is float gain?$"WildHands' clip-wide depth was multiplied by {gain:F2} to meet the first-person hand-distance prior":wild?"Too few hands to apply the hand-distance depth prior":"Depth is the backend's own")}. Placement remains estimated, not measured."));
+        var followedHands=samples.SelectMany(f=>f.Hands).Count(h=>h.CropSource==HandCapture.FollowedSource);
+        if(followedHands>0)document.Diagnostics.Add(FormattableString.Invariant(
+            $"{followedHands} hand samples were reconstructed by WiLoR following a hand after the landmark detector lost it, while its projected joints stayed inside the image and moved plausibly. These are reconstructions of partly hidden hands without detector confirmation; review them against the video."));
         if(mobile)document.Diagnostics.Add("MobileHand is a small single-image model. Sample videos showed large rotation and estimated-depth jumps; no temporal or occlusion accuracy is established. Original 39-parameter predictions remain in the raw cache.");
         if(palmResiduals.Count>0)
         {

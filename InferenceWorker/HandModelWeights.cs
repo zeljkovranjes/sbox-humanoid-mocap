@@ -10,12 +10,14 @@ namespace HumanoidMocap.Worker;
 internal sealed class HandModelWeights : IDisposable
 {
     readonly Dictionary<string,Tensor> values=new(StringComparer.Ordinal);
-    public HandModelWeights(string path,string sha256,Func<string,bool> include,CancellationToken cancellation)
+    /// <param name="reduce">Tensors to keep only in a reduced type. They are converted as they
+    /// are read, so a second full-precision copy never exists.</param>
+    public HandModelWeights(string path,string sha256,Func<string,bool> include,CancellationToken cancellation,Func<string,ScalarType?>? reduce=null)
     {
         using(var input=File.OpenRead(path))
             if(!Convert.ToHexString(SHA256.HashData(input)).Equals(sha256,StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Hand model checkpoint checksum mismatch.");
-        using var checkpoint=new TorchCheckpoint(path);
+        using var checkpoint=new TorchCheckpoint(path);var loaded=0;
         try
         {
             foreach(var (name,info) in checkpoint.Tensors.Where(p=>include(p.Key)))
@@ -23,8 +25,10 @@ internal sealed class HandModelWeights : IDisposable
                 cancellation.ThrowIfCancellationRequested();
                 var data=checkpoint.ReadFloat(name,cancellation);
                 if(data.Any(v=>!float.IsFinite(v)))throw new InvalidDataException("Non-finite hand model weights: "+name);
-                using var flat=tensor(data);
-                values.Add(name,flat.reshape(info.Shape.Select(x=>(long)x).ToArray()).DetachFromDisposeScope());
+                using var flat=tensor(data);using var shaped=flat.reshape(info.Shape.Select(x=>(long)x).ToArray());
+                values.Add(name,(reduce?.Invoke(name) is { } type?shaped.to(type):shaped.clone()).DetachFromDisposeScope());
+                // Checkpoint arrays are large-object garbage; collect before the next ones pile up.
+                if(++loaded%48==0)GC.Collect();
             }
         }
         catch{Dispose();throw;}

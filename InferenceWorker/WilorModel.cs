@@ -15,13 +15,46 @@ public sealed class WilorModel : IDisposable
     readonly HandModelWeights weights;
     readonly ManoDecoder mano;
     int running;bool disposed;
-    public sealed record Prediction(float[] RotationMatrices,float[] Shape,float[] WeakCamera,ManoDecoder.DecodedHand Hand);
-    public WilorModel(string checkpointPath,CancellationToken cancellation=default)
+    public const string Float32="float32",BFloat16="bfloat16";
+    /// <summary>Numeric type of the 32 transformer blocks. Everything else stays float32.</summary>
+    public string Precision { get; }
+    static string? measured;
+    /// <summary>bfloat16 matrix products are more than twice as fast as float32 on processors
+    /// with native support (AVX-512 BF16, AMX) and far slower where they are emulated, so the
+    /// choice is timed on this machine with one block's MLP shapes. HUMANOID_MOCAP_PRECISION
+    /// (float32 or bfloat16) overrides it. bfloat16 must win by 30% to be chosen.</summary>
+    public static string ChoosePrecision()
     {
-        weights=new(checkpointPath,CheckpointSha256,name=>name.StartsWith("backbone.")||name.StartsWith("refine_net."),cancellation);
-        try{using var checkpoint=new TorchCheckpoint(checkpointPath);mano=new(checkpoint,"mano.");}
-        catch{weights.Dispose();throw;}
+        var requested=Environment.GetEnvironmentVariable("HUMANOID_MOCAP_PRECISION");
+        if(requested is Float32 or BFloat16)return requested;
+        if(measured is not null)return measured;
+        using var noGrad=no_grad();using var scope=NewDisposeScope();
+        double Time(ScalarType type)
+        {
+            try
+            {
+                var x=randn(1,210,1280).to(type);var up=randn(5120,1280).to(type);var down=randn(1280,5120).to(type);
+                for(var i=0;i<2;i++)F.linear(F.linear(x,up),down).Dispose();
+                var clock=System.Diagnostics.Stopwatch.StartNew();
+                for(var i=0;i<6;i++)F.linear(F.linear(x,up),down).Dispose();
+                return clock.Elapsed.TotalSeconds;
+            }
+            catch(Exception){return double.PositiveInfinity;}
+        }
+        return measured=Time(ScalarType.BFloat16)<Time(ScalarType.Float32)*.7?BFloat16:Float32;
     }
+    public sealed record Prediction(float[] RotationMatrices,float[] Shape,float[] WeakCamera,ManoDecoder.DecodedHand Hand);
+    public WilorModel(string checkpointPath,CancellationToken cancellation=default,string? precision=null)
+    {
+        Precision=precision??ChoosePrecision();
+        if(Precision is not (Float32 or BFloat16))throw new ArgumentException("Unsupported WiLoR precision.");
+        static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
+        weights=new(checkpointPath,CheckpointSha256,name=>name.StartsWith("backbone.")||name.StartsWith("refine_net."),cancellation,
+            Precision==BFloat16?name=>BlockMatrix(name)?ScalarType.BFloat16:null:null);
+        try{using var checkpoint=new TorchCheckpoint(checkpointPath);mano=new(checkpoint,"mano.");}
+        catch{Dispose();throw;}
+    }
+    Tensor BlockLinear(Tensor input,string name)=>weights.Linear(Precision==Float32?input:input.to(ScalarType.BFloat16),name);
     /// <summary>RGB ImageNet-normalized CHW 256x192, from the central columns of
     /// the 256x256 hand crop. Left hands must be horizontally flipped before this call.</summary>
     public Prediction Run(float[] image,CancellationToken cancellation=default)
@@ -42,11 +75,12 @@ public sealed class WilorModel : IDisposable
             {
                 cancellation.ThrowIfCancellationRequested();using var layer=NewDisposeScope();
                 var name="backbone.blocks."+block;
-                var qkv=weights.Linear(weights.Norm(x,name+".norm1",1280),name+".attn.qkv").reshape(1,210,3,16,80).permute(2,0,3,1,4);
+                // Layer norms, softmax and the residual stream stay float32 at either precision.
+                var qkv=BlockLinear(weights.Norm(x,name+".norm1",1280),name+".attn.qkv").reshape(1,210,3,16,80).permute(2,0,3,1,4);
                 var q=qkv.select(0,0)*(float)(1/Math.Sqrt(80));var k=qkv.select(0,1);var v=qkv.select(0,2);
-                var attended=q.matmul(k.transpose(-2,-1)).softmax(-1).matmul(v).transpose(1,2).reshape(1,210,1280);
-                var residual=x+weights.Linear(attended,name+".attn.proj");
-                var feedforward=weights.Linear(F.gelu(weights.Linear(weights.Norm(residual,name+".norm2",1280),name+".mlp.fc1")),name+".mlp.fc2");
+                var attended=q.matmul(k.transpose(-2,-1)).to(ScalarType.Float32).softmax(-1).to(v.dtype).matmul(v).transpose(1,2).reshape(1,210,1280);
+                var residual=x+BlockLinear(attended,name+".attn.proj").to(ScalarType.Float32);
+                var feedforward=BlockLinear(F.gelu(BlockLinear(weights.Norm(residual,name+".norm2",1280),name+".mlp.fc1")),name+".mlp.fc2").to(ScalarType.Float32);
                 var previous=x;x=(residual+feedforward).MoveToOuterDisposeScope();previous.Dispose();
             }
             x=weights.Norm(x,"backbone.last_norm",1280);

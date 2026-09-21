@@ -47,6 +47,52 @@ WildHands on this clip and for none of the other five jobs checked. It compares 
 estimates; it cannot certify a pose as correct. A recording in which one hand never
 appears beside a well-tracked hand is reported as one-handed rather than as a fault.
 
+## Hidden hands, dropouts and speed
+
+On the HOT3D view the detector lost the right hand for 62 consecutive frames while it
+gripped a keyboard edge-on in plain view, so 238 of 300 visible hands were reconstructed.
+WiLoR was run on those frames from its own previously projected joints and compared with
+the reference: 67 mm wrist and 50 mm wrist-relative fingertip disagreement, against 48 and
+39 mm on detected frames. The detector's own presence score was no use as confirmation
+(0.01–0.5 on that real hand), and sampled skin colour did not separate real from absent
+hands either. What did separate them, on this clip and on two where hands really leave
+the picture, was geometry: the hidden hand's projected joints stayed 28–36% of the image
+away from its border with small changes between frames, while departing hands reached the
+border or turned 50–150° within a few frames.
+
+With WiLoR selected, a hand the detector drops is therefore followed while every
+projected joint stays at least 5% inside the image, the wrist moves under 0.35 crop
+widths, the hand turns under 45°, the crop changes by 0.55–1.8× per frame, and no more than
+3 seconds pass without the detector confirming it. Its projected joints also become the
+detector's first search region on the next frame, under the same side label. That second
+part did most of the work: the detector reacquired the hidden hand from WiLoR's region
+in all but 2 of the 62 frames. All 300 visible hands are now reconstructed, and mean
+camera-wrist disagreement with the automatic lens went from 53.2 to 38.2 mm (p95 112.9 to
+79.1 mm), counting the 62 harder hands. With the published lens it is 41.8 mm over 300
+hands, against 39.4 mm over the easier 238. `video_0` gained 15 hand samples, including
+single-frame dropouts that are now reconstructed rather than interpolated. Followed
+samples carry no detector landmarks, are counted in the capture details, and are
+reconstructions without confirmation. A hand fully behind an object or outside the image
+is still not recovered; it is bridged as an inferred gap.
+
+Remaining dropouts of up to 0.1 s are filled through the movement instead of along a
+straight chord: positions use a Hermite curve whose end velocities average the observed
+one-sided velocity and the secant across the gap, which is exact for constant
+acceleration. They stay labelled inferred.
+
+WiLoR's 32 transformer blocks hold nearly all of its arithmetic. Their matrix products run
+in bfloat16 when a timing of one block's shapes at start-up shows it at least 30% faster
+than float32, which is the case on processors with native support (AVX-512 BF16, AMX) and
+not where it is emulated; layer norms, softmax and the residual stream stay float32, and
+`HUMANOID_MOCAP_PRECISION` forces either. On the Ryzen 7 7800X3D a block MLP took 5.2 ms
+against 11.8 ms. Across 28 real crops from the finger clip the two precisions differed by
+0.07° per joint rotation at the median (0.21° p95, 1.7° worst) and 0.05 mm per landmark
+(0.74 mm worst). Weights are converted as they are read, so peak worker memory fell from
+4.7–6.7 GB to 2.8 GB. Reduced precision keeps its own reconstruction cache. With eight
+threads and bfloat16, detection plus inference for `video_0` (121 frames, 176 hand
+samples) takes about 65 s, 0.37 s per hand, against 330 s for a comparable job with four
+float32 threads. Batching both hands gave under 6% in the same timing and was not pursued.
+
 The earlier default change separated hand detection from pose reconstruction; it was not
 a claim that the WildHands port faithfully reproduces every FPS performance.
 On the complete 121-frame `video_0` sample, it produced 157 observed hand instances

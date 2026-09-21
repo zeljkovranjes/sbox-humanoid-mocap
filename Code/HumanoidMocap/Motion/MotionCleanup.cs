@@ -51,7 +51,22 @@ public static class MotionCleanup
                     if(Protected(k))continue;
                     var t=(float)Math.Clamp((raw.Frames[k].Time-glideStart)/(b.Time-glideStart),0,1);
                     if(bridged)t=t*t*(3-2*t);
-                    output.Frames[k].Positions[j]=MotionDocument.A(Vector3.Lerp(MotionDocument.V(a.Positions[j]),MotionDocument.V(b.Positions[j]),t));
+                    var position=Vector3.Lerp(MotionDocument.V(a.Positions[j]),MotionDocument.V(b.Positions[j]),t);
+                    // A short dropout inside continuing movement: carry the velocity on both sides through
+                    // it (Catmull-Rom on actual timestamps) so the fill neither stalls nor kinks.
+                    if(!bridged&&first>=2&&i+1<raw.Frames.Count&&raw.Frames[first-2].Evidence[j]==JointEvidence.Reconstructed&&raw.Frames[i+1].Evidence[j]==JointEvidence.Reconstructed)
+                    {
+                        var before=raw.Frames[first-2];var after=raw.Frames[i+1];var span=(float)(b.Time-a.Time);
+                        var p0=MotionDocument.V(a.Positions[j]);var p1=MotionDocument.V(b.Positions[j]);
+                        // Mean of the observed one-sided velocity and the secant across the gap:
+                        // exact for constant acceleration, which a secant alone is not.
+                        var pb=MotionDocument.V(before.Positions[j]);var pa=MotionDocument.V(after.Positions[j]);
+                        var m0=((p1-pb)/(float)(b.Time-before.Time)+(p0-pb)/(float)(a.Time-before.Time))*.5f*span;
+                        var m1=((pa-p0)/(float)(after.Time-a.Time)+(pa-p1)/(float)(after.Time-b.Time))*.5f*span;
+                        var t2=t*t;var t3=t2*t;
+                        position=p0*(2*t3-3*t2+1)+m0*(t3-2*t2+t)+p1*(-2*t3+3*t2)+m1*(t3-t2);
+                    }
+                    output.Frames[k].Positions[j]=MotionDocument.A(position);
                     output.Frames[k].Rotations[j]=MotionDocument.A(Quaternion.Slerp(MotionDocument.Q(a.Rotations[j]),MotionDocument.Q(b.Rotations[j]),t));
                     output.Frames[k].Evidence[j]=JointEvidence.InferredGap;
                     if(output.Frames[k].Confidence is { } confidence)confidence[j]=null;
