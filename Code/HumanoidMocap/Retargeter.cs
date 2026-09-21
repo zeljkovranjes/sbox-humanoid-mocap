@@ -828,6 +828,13 @@ public static class Retargeter
                 // outside the cm-tuned Kovar thresholds. Composes with the position pinning
                 // below (this rotates feet about their own joints; the pinning preserves
                 // foot world rotations).
+                // Reconstructed bodies: restore the performer's stance width on differently
+                // proportioned hips before anything is levelled or anchored.
+                if(scene.CaptureSpace is not null)
+                {
+                    var stance=Motion.CaptureStanceProportion.Apply(frames,scene,map,target.Rig,feet.Left,feet.Right);
+                    if(stance.Samples>0)AddNote(report,$"Stance proportion: each foot moved {stance.HalfWidthCorrection:F2} target units toward the body's centre line, because this target's hip joints are wider relative to its legs than the performer's. Leg lengths and foot orientation are preserved.");
+                }
                 GroundAlignFeet(frames, scene, map, target.Rig.Skeleton, feet, up, solved.Fps, take);
 
                 var plantOptions=ScaledPlantOptions(target);
@@ -848,6 +855,13 @@ public static class Retargeter
             {
                 AddNote(report, "Foot-plant cleanup skipped: " + context.UpOrChainProblem);
             }
+        }
+
+        // A reconstructed body has no finger tracks; give its hands a resting shape, not the bind pose.
+        if(scene.CaptureSpace is not null&&!handCapture)
+        {
+            var relaxed=Motion.RelaxedHands.Apply(frames,map,target.Rig);
+            if(relaxed>0)AddNote(report,$"Hands: this body capture has no finger tracks, so {relaxed} target finger joints hold one authored, slightly curled resting pose instead of the bind pose. It is not captured finger motion.");
         }
 
         // ---- optional arm effector IK (default off: the solver already matches anatomical
