@@ -860,6 +860,8 @@ public static class Retargeter
         // A reconstructed body has no finger tracks; give its hands a resting shape, not the bind pose.
         if(scene.CaptureSpace is not null&&!handCapture)
         {
+            var shoulders=Motion.CaptureShoulderCarriage.Apply(frames,scene.Clips[take].Frames,scene.Skeleton,map,target.Rig);
+            if(shoulders>0)AddNote(report,$"Shoulders: {shoulders} clavicle samples carry the performer's change from their own rest shoulder line onto this target's rest shoulder line, instead of copying a differently built clavicle's direction. Arms keep their solved orientation.");
             var relaxed=Motion.RelaxedHands.Apply(frames,map,target.Rig);
             if(relaxed>0)AddNote(report,$"Hands: this body capture has no finger tracks, so {relaxed} target finger joints hold one authored, slightly curled resting pose instead of the bind pose. It is not captured finger motion.");
         }

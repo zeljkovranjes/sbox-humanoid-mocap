@@ -228,7 +228,19 @@ FBX that compiled and played; five synchronized frames matched the performer's s
 Static intervals are model predictions, and one clip is not a guarantee for other floors,
 stairs or moving cameras.
 
-Two retargeting faults made the kata character look wrong even with correct contacts.
+Three retargeting faults made the kata character look wrong even with correct contacts.
+It shrugged when the performer did not. Body captures had copied the reconstructed
+clavicle's direction outright, but an SMPL clavicle starts low in the chest and points
+upward even at rest, while Human's is nearly level. In the performer's neutral opening
+stance her shoulder line sat 6° and 3° below her own skeleton's rest, yet Human's sat 12°
+and 30° above its rest. The clavicle's change from the performer's own rest is now
+measured in an anatomical chest frame (up, left-right, forward) carried by each
+skeleton's chest bone and applied to the target's own rest clavicle; the arms keep their
+solved world orientation, and depression below rest is limited to 4° because a T-pose
+rest already holds shoulders higher than a standing body does. The same frame now
+measures 5° below and 1° above rest, and the frame with a genuinely raised arm still
+lifts that shoulder 23° (18° in the source). This supersedes the earlier
+captured-direction policy for clavicles; explicit transfer modes are unaffected.
 Its legs were splayed: the reconstructed performer's hip joints sit 0.15 leg-lengths apart
 and Human's 0.25, so copying leg rotations carried both feet outward by the extra
 half-width and a 0.62 leg-length stance became 0.73. Body captures now move each ankle
@@ -237,7 +249,7 @@ levelling and anchoring, which gives 0.64 on the same frame with limb lengths wi
 0.0001 cm and unchanged foot anchoring. Its fingers were a splayed claw, because a body
 capture has no finger tracks and the rig stayed in its bind pose; such hands now hold one
 authored, slightly curled resting shape, never applied when the source has finger tracks.
-Both appear in the capture details. The arms in that clip's opening stance sit wider than
+All three appear in the capture details. The arms in that clip's opening stance sit wider than
 the performer's because GVHMR itself reconstructs the wrists 45 cm apart; that is left as
 reconstructed.
 
