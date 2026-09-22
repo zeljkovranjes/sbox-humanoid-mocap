@@ -14,15 +14,16 @@ namespace HumanoidMocap.Worker;
 /// the residual stream, layer norms, softmax and GELU stay float32.</summary>
 public sealed class GpuBackbone : IDisposable
 {
-    public const string BuilderVersion="vit-backbone-v3";
+    public const string BuilderVersion="vit-backbone-v4";
     /// <summary>What the graph takes and returns. <see cref="Tokens"/>: embedded tokens in, normalized tokens out (WiLoR,
     /// whose extra hand tokens are made in TorchSharp). <see cref="Hmr2Features"/>: a 256x192 image in, the 1024 HMR2 head
     /// features out. <see cref="Heatmaps"/>: a 256x192 image in, the 17 ViTPose joint heatmaps out.</summary>
-    public enum Variant{Tokens,Hmr2Features,Heatmaps}
+    /// <see cref="WilorMaps"/>: WiLoR tokens in, normalized tokens plus its refinement feature maps out.
+    public enum Variant{Tokens,Hmr2Features,Heatmaps,WilorMaps}
     /// <summary>A card needs this much dedicated memory; smaller or shared-memory GPUs are slower than the CPU path or run out.</summary>
     public const long MinimumDedicatedBytes=3L<<30;
     const int Width=1280,Blocks=32,Heads=16,HeadWidth=80;
-    readonly InferenceSession session;readonly int inputLength;readonly long[] inputShape;readonly string inputName,outputName;
+    readonly InferenceSession session;readonly int inputLength;readonly long[] inputShape;readonly string inputName,outputName;readonly string[] outputNames;
     public string Adapter { get; }
 
     static (int Index,string Name)? chosen;static bool probed;static int simulated;
@@ -66,10 +67,12 @@ public sealed class GpuBackbone : IDisposable
     }
     GpuBackbone(string checkpointPath,string checkpointSha256,Variant variant,int tokens,string cache,(int Index,string Name) device,CancellationToken cancellation)
     {
-        if(variant!=Variant.Tokens&&tokens!=192)throw new ArgumentException("Image input embeds 192 patches.");
-        Adapter=device.Name;Directory.CreateDirectory(cache);
-        inputShape=variant==Variant.Tokens?new long[]{1,tokens,Width}:new long[]{1,3,256,192};inputLength=(int)inputShape.Aggregate(1L,(a,b)=>a*b);
-        inputName=variant==Variant.Tokens?"tokens":"image";outputName=variant==Variant.Heatmaps?"heatmaps":"features";
+        if(variant is Variant.Hmr2Features or Variant.Heatmaps&&tokens!=192)throw new ArgumentException("Image input embeds 192 patches.");
+        Adapter=device.Name;Directory.CreateDirectory(cache);RemoveStale(cache);
+        var tokenInput=variant is Variant.Tokens or Variant.WilorMaps;
+        inputShape=tokenInput?new long[]{1,tokens,Width}:new long[]{1,3,256,192};inputLength=(int)inputShape.Aggregate(1L,(a,b)=>a*b);
+        inputName=tokenInput?"tokens":"image";outputName=variant==Variant.Heatmaps?"heatmaps":"features";
+        outputNames=variant==Variant.WilorMaps?new[]{"features","low","middle","high"}:new[]{outputName};
         var stem=$"vit-h-{checkpointSha256[..16].ToLowerInvariant()}-{variant.ToString().ToLowerInvariant()}-{tokens}t-fp16-{BuilderVersion}";var graphPath=Path.Combine(cache,stem+".onnx");
         if(!File.Exists(graphPath))Build(checkpointPath,cache,stem,variant,tokens,cancellation);
         using var options=new SessionOptions{GraphOptimizationLevel=GraphOptimizationLevel.ORT_ENABLE_ALL,EnableMemoryPattern=false,ExecutionMode=ExecutionMode.ORT_SEQUENTIAL,LogSeverityLevel=OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR};
@@ -90,8 +93,26 @@ public sealed class GpuBackbone : IDisposable
         using var outputs=session.Run(run,new[]{inputName},new[]{value},new[]{outputName});
         return outputs[0].GetTensorDataAsSpan<float>().ToArray();
     }
+    /// <summary>Every output of the graph, in the order of <see cref="Variant"/>'s description.</summary>
+    public float[][] RunAll(float[] input)
+    {
+        if(input.Length!=inputLength)throw new ArgumentException("Unexpected backbone input size.");
+        if(int.TryParse(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_TEST_GPU_FAILURE"),out var failAfter)&&Interlocked.Increment(ref simulated)>failAfter)
+            throw new InvalidOperationException("Simulated graphics-card failure.");
+        using var value=OrtValue.CreateTensorValueFromMemory(input,inputShape);
+        using var run=new RunOptions();
+        using var outputs=session.Run(run,new[]{inputName},new[]{value},outputNames);
+        return outputs.Select(o=>o.GetTensorDataAsSpan<float>().ToArray()).ToArray();
+    }
     public void Dispose()=>session.Dispose();
 
+    /// <summary>Graphs from earlier builder versions are 1.3 GB each and never used again.</summary>
+    static void RemoveStale(string cache)
+    {
+        foreach(var file in Directory.EnumerateFiles(cache,"vit-h-*"))
+            if(!Path.GetFileName(file).Contains("-"+BuilderVersion+".",StringComparison.Ordinal))
+                try{File.Delete(file);}catch(IOException){}catch(UnauthorizedAccessException){}
+    }
     static void Build(string checkpointPath,string cache,string stem,Variant variant,int tokens,CancellationToken cancellation)
     {
         using var checkpoint=new TorchCheckpoint(checkpointPath);
@@ -135,7 +156,7 @@ public sealed class GpuBackbone : IDisposable
             string Single(string x)=>graph.Node("Cast",new[]{x},a=>a.Int("to",OnnxGraph.Float));
 
             string x;
-            if(variant==Variant.Tokens){graph.Input("tokens",OnnxGraph.Float,1,tokens,Width);x="tokens";}
+            if(variant is Variant.Tokens or Variant.WilorMaps){graph.Input("tokens",OnnxGraph.Float,1,tokens,Width);x="tokens";}
             else
             {
                 graph.Input("image",OnnxGraph.Float,1,3,256,192);
@@ -149,6 +170,10 @@ public sealed class GpuBackbone : IDisposable
             if(variant==Variant.Heatmaps)graph.Output("heatmaps",OnnxGraph.Float,1,17,64,48);
             else if(variant==Variant.Hmr2Features)graph.Output("features",OnnxGraph.Float,1024);
             else graph.Output("features",OnnxGraph.Float,1,tokens,Width);
+            if(variant==Variant.WilorMaps)
+            {
+                graph.Output("low",OnnxGraph.Float,1,640,16,12);graph.Output("middle",OnnxGraph.Float,1,320,32,24);graph.Output("high",OnnxGraph.Float,1,160,64,48);
+            }
             var scale=graph.Scalar((float)(1/Math.Sqrt(HeadWidth)),OnnxGraph.Float);
             var rootHalf=graph.Scalar((float)(1/Math.Sqrt(2)),OnnxGraph.Float);var halfScalar=graph.Scalar(.5f,OnnxGraph.Float);var one=graph.Scalar(1f,OnnxGraph.Float);
             var heads=graph.Constant(1,tokens,Heads,HeadWidth);var flat=graph.Constant(1,tokens,Width);
@@ -171,6 +196,23 @@ public sealed class GpuBackbone : IDisposable
             }
             x=Norm(x,"backbone.last_norm");
             if(variant==Variant.Tokens)graph.Identity(x,"features");
+            else if(variant==Variant.WilorMaps)
+            {
+                // WiLoR's refinement feature maps from the 192 image tokens, as WilorModel.Refine computes them. Float32.
+                graph.Identity(x,"features");
+                var image=graph.Node("Slice",new[]{x,graph.Constant(18),graph.Constant(210),graph.Constant(1)});
+                image=graph.Node("Reshape",new[]{graph.Node("Transpose",new[]{image},a=>a.Ints("perm",0,2,1)),graph.Constant(1,Width,16,12)});
+                const string refine="refine_net.deconv.";
+                var low=graph.Node("Conv",new[]{image,Load(refine+"first_conv.0.weight"),Load(refine+"first_conv.0.bias")},a=>a.Ints("kernel_shape",1,1));
+                string Up(string input,string convolution,string norm)
+                {
+                    var up=graph.Node("ConvTranspose",new[]{input,Load(convolution+".weight")},a=>a.Ints("kernel_shape",4,4).Ints("strides",2,2).Ints("pads",1,1,1,1));
+                    return graph.Node("Relu",new[]{graph.Node("BatchNormalization",new[]{up,Load(norm+".weight"),Load(norm+".bias"),Load(norm+".running_mean"),Load(norm+".running_var")},a=>a.Float("epsilon",1e-5f))});
+                }
+                graph.Identity(low,"low");
+                graph.Identity(Up(low,refine+"deconv.0.0",refine+"deconv.0.1"),"middle");
+                graph.Identity(Up(Up(low,refine+"deconv.1.0",refine+"deconv.1.1"),refine+"deconv.1.3",refine+"deconv.1.4"),"high");
+            }
             else if(variant==Variant.Hmr2Features)
             {
                 // The HMR2 head: six layers of self-attention on one query token, cross-attention onto the 192 image

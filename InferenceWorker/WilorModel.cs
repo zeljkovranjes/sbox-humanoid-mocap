@@ -52,7 +52,7 @@ public sealed class WilorModel : IDisposable
     {
         this.checkpointPath=checkpointPath;this.report=report;Precision=precision??ChoosePrecision();
         if(Precision is not (Float32 or BFloat16))throw new ArgumentException("Unsupported WiLoR precision.");
-        if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,CheckpointSha256,GpuBackbone.Variant.Tokens,210,gpuCache,report,cancellation);
+        if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,CheckpointSha256,GpuBackbone.Variant.WilorMaps,210,gpuCache,report,cancellation);
         // With a GPU the blocks and final norm live there and are not loaded here.
         var onGpu=gpu is not null;
         weights=LoadWeights(onGpu,cancellation);
@@ -80,16 +80,20 @@ public sealed class WilorModel : IDisposable
             var shapeToken=weights.Linear(weights["backbone.init_betas"],"backbone.shape_emb").unsqueeze(1);
             var cameraToken=weights.Linear(weights["backbone.init_cam"],"backbone.cam_emb").unsqueeze(1);
             x=cat(new[]{poseToken,shapeToken,cameraToken,x},1);
-            float[]? onCard=null;
+            float[]? onCard=null;float[][]? maps=null;
             if(gpu is not null)
             {
                 cancellation.ThrowIfCancellationRequested();
-                try{onCard=gpu.Run(x.contiguous().data<float>().ToArray());if(onCard.Any(v=>!float.IsFinite(v)))throw new ArithmeticException("Non-finite graphics-card prediction.");}
+                try
+                {
+                    var all=gpu.RunAll(x.contiguous().data<float>().ToArray());onCard=all[0];maps=all[1..];
+                    if(all.Any(o=>o.Any(v=>!float.IsFinite(v))))throw new ArithmeticException("Non-finite graphics-card prediction.");
+                }
                 catch(Exception error) when(error is not OperationCanceledException)
                 {
                     // A driver reset or lost device mid-job: finish on the processor rather than fail the capture.
                     report?.Invoke($"The graphics card failed ({error.Message.Split('\n')[0]}); continuing on the processor");
-                    GpuBackbone.Disable(gpu.Adapter,error);gpu.Dispose();gpu=null;onCard=null;
+                    GpuBackbone.Disable(gpu.Adapter,error);gpu.Dispose();gpu=null;onCard=null;maps=null;
                     var full=LoadWeights(false,cancellation);weights.Dispose();weights=full;
                 }
             }
@@ -113,7 +117,9 @@ public sealed class WilorModel : IDisposable
             var features=x.slice(1,18,210,1).transpose(1,2).reshape(1,1280,16,12);
             var preliminary=mano.Decode(HandModelWeights.Array(RotationMatrices(pose)),HandModelWeights.Array(shape),false,cancellation);
             var vertices=tensor(preliminary.Vertices.SelectMany(v=>new[]{v.X,v.Y,v.Z}).ToArray()).reshape(1,778,3);
-            var refinement=Refine(features,vertices,camera,cancellation);
+            var refinement=maps is not null
+                ?Sample(new[]{tensor(maps[2]).reshape(1,160,64,48),tensor(maps[1]).reshape(1,320,32,24),tensor(maps[0]).reshape(1,640,16,12)},vertices,camera,cancellation)
+                :Refine(features,vertices,camera,cancellation);
             pose=pose+weights.Linear(refinement,"refine_net.dec_pose");
             shape=shape+weights.Linear(refinement,"refine_net.dec_shape");
             camera=camera+weights.Linear(refinement,"refine_net.dec_cam");
@@ -135,8 +141,13 @@ public sealed class WilorModel : IDisposable
         var high=Upsample(low,"refine_net.deconv.deconv.1");
         high=F.conv_transpose2d(high,weights["refine_net.deconv.deconv.1.3.weight"],strides:new long[]{2,2},padding:new long[]{1,1});
         high=F.relu(weights.BatchNorm(high,"refine_net.deconv.deconv.1.4"));
+        return Sample(new[]{high,middle,low},vertices,camera,cancellation);
+    }
+    /// <summary>Samples each refinement map at the projected vertices (high, middle, low resolution).</summary>
+    static Tensor Sample(Tensor[] maps,Tensor vertices,Tensor camera,CancellationToken cancellation)
+    {
         var samples=new List<Tensor>();
-        foreach(var map in new[]{high,middle,low})
+        foreach(var map in maps)
         {
             cancellation.ThrowIfCancellationRequested();var height=map.shape[2];var width=map.shape[3];
             const float focal=5000;

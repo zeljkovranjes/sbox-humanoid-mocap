@@ -172,9 +172,9 @@ public static class BodyCapture
         }
         void Visit(Action<DecodedVideoFrame,int> process)
         {
-            using var decoder=new WindowsVideoDecoder(request.Video);DecodedVideoFrame? frame;var index=0;
-            var wanted=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
-            while((frame=decoder.Read(cancellation))is not null)
+            var index=0;var wanted=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
+            // Decoding runs a few frames ahead on its own thread, overlapping the inference below.
+            foreach(var frame in PrefetchedFrames.Read(request.Video,cancellation,wanted.Length>0?wanted[0]:0))
             {
                 // Follow the sample table rather than comparing decoded times with the range: the decoder
                 // rounds to 100 ns, so a range that starts exactly on a frame (after a cut) would lose it.
