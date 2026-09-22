@@ -883,6 +883,12 @@ public static class Retargeter
         {
             var locking=Motion.CaptureFootLock.Apply(frames,scene,map,target.Rig,target.UpAxis);
             if(locking.ConstrainedSamples>0)AddNote(report,$"Final target foot anchors: {locking.ConstrainedSamples} leg samples; maximum reach residual {locking.MaximumReachResidual:F4} target units; level-floor height drift of up to {locking.MaximumFloorDrift:F2} target units removed from the root. Backend static probabilities are contact suggestions, not measured ground truth.");
+            // Keep the whole clip on the floor, including camera-relative captures and dance with few plants.
+            if(scene.CaptureSpace is not null)
+            {
+                var grounded=Motion.CaptureGround.Apply(frames,target.Rig,target.UpAxis,solved.Fps);
+                if(grounded>0)AddNote(report,FormattableString.Invariant($"Floor followed through the clip: up to {grounded:F1} cm of drift toward or away from the floor removed."));
+            }
         }
         ApplyRootMotion(request.RootMotion, frames, context, report);
 
