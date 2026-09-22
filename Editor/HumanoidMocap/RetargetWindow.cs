@@ -27,7 +27,15 @@ public sealed partial class RetargetWindow : Widget
         MinimumSize = new Vector2(760, 480);
         Size = new Vector2(960, 640);
         Layout = Layout.Column();
-        BuildMocapUi(); TrySelectSboxTarget();
+        BuildMocapUi();
+        if(s_chosenTarget is { } chosen)
+        {_target=chosen;_targetChosen=true;FitMocapPlacementToTarget();RefreshTargetPickers();RefreshStatus();}
+        else
+        {
+            TrySelectSboxTarget();
+            // The window opens in First Person, which animates the viewmodel arms games use.
+            if(_firstPerson)UseFirstPersonArms(false);
+        }
     }
     [Event("tools.editorwindow.createview")]
     static void RegisterViewMenu(Menu menu) => EditorWindow.DockManager.RegisterDockType(new DockManager.DockInfo
@@ -133,6 +141,7 @@ public sealed partial class RetargetWindow : Widget
 	void ApplyPickedTarget( TargetPickers.ResolvedTarget resolved, string error,
 		TargetPickers.RejectedTarget rejected = null )
 	{
+		_targetRequests++;_targetChosen=true;
 		if ( resolved is null )
 		{
 			// Skeleton loaded but wasn't auto-recognized: any humanoid-LIKE rig (a paw,
@@ -149,7 +158,7 @@ public sealed partial class RetargetWindow : Widget
 			return;
 		}
 
-		_target = resolved;
+		_target = resolved;RememberChosenTarget();
 		RefreshTargetPickers();
 		FitMocapPlacementToTarget();
 		_targetError = null;

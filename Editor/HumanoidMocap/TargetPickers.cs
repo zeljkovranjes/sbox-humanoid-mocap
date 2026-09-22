@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using System.Numerics;
 using Editor;
 using HumanoidMocap.Formats.Fbx;
@@ -224,7 +225,49 @@ public static class TargetPickers
 		return BuildModelTarget( asset, skeleton, map );
 	}
 
+	/// <summary>The first-person viewmodel arms s&amp;box games use, as cloud packages.</summary>
+	public const string HumanArmsPackage = "facepunch.v_first_person_arms_human";
+	public const string CitizenArmsPackage = "facepunch.v_first_person_arms_citizen";
+	public const string HumanArmsPath = "models/first_person/v_first_person_arms_human.vmdl";
+	public const string CitizenArmsPath = "models/first_person/v_first_person_arms_citizen.vmdl";
+
+	/// <summary>The human (5-finger) or citizen (4-finger) first-person arms, mounted from their package
+	/// when needed. Arms-only rigs map as partial targets: clavicles, arms, hands and fingers.</summary>
+	public static async Task<ResolvedTarget> FirstPersonArmsAsync( bool citizen )
+	{
+		var path = citizen ? CitizenArmsPath : HumanArmsPath;
+		var model = Model.Load( path );
+		if ( model is null || model.IsError || model.BoneCount == 0 )
+		{
+			await Package.MountAsync( citizen ? CitizenArmsPackage : HumanArmsPackage, false );
+			await EditorPipeline.SwitchToMainThread();
+		}
+		var target = FromModelPath( path, citizen ? "s&box Citizen arms (first person)" : "s&box Human arms (first person)", out var error );
+		return target ?? throw new InvalidOperationException( error ?? "Could not load the first-person arms." );
+	}
+
+	/// <summary>Builds a target from a compiled model loaded by path, such as a mounted cloud model that
+	/// is not a project asset.</summary>
+	public static ResolvedTarget FromModelPath( string path, string description, out string error )
+	{
+		error = null;
+		var model = Model.Load( path );
+		if ( model is null || model.IsError || model.BoneCount == 0 )
+		{
+			error = $"Could not load model '{path}'.";
+			return null;
+		}
+		var skeleton = SkeletonFromModel( model );
+		var map = DetectHumanoid( skeleton, out error, out _ );
+		if ( map is null ) return null;
+		var target = BuildModelTarget( path, description, skeleton, map );
+		return target;
+	}
+
 	static ResolvedTarget BuildModelTarget( Asset asset, SkeletonModel skeleton, MappingResult map )
+		=> BuildModelTarget( asset.Path, $"Custom model: {asset.Name}", skeleton, map );
+
+	static ResolvedTarget BuildModelTarget( string path, string description, SkeletonModel skeleton, MappingResult map )
 	{
 		var rig = TargetRig.FromSkeleton( skeleton, map );
 		return new ResolvedTarget
@@ -233,13 +276,13 @@ public static class TargetPickers
 			{
 				Rig = rig,
 				VmdlScale = 1.0f,                       // engine units already
-				BaseModelPath = asset.Path,
+				BaseModelPath = path,
 				DefaultRootBone = RootBoneName( skeleton, map ),
 				UpAxis = TargetUpAxis.ZUpEngine,        // Model.Bones bind pose is engine space
 				DlWeights = DlAssets.TryLoadWeights(),
 			},
-			Description = $"Custom model: {asset.Name}",
-			PreviewModelPath = asset.Path,
+			Description = description,
+			PreviewModelPath = path,
 			PreviewPositionScale = 1.0f,
 		};
 	}

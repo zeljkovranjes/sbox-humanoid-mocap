@@ -93,6 +93,8 @@ public sealed partial class RetargetWindow
         _previewTargetPicker=viewBar.Add(new ComboBox(animationPanel){FixedWidth=104,ToolTip="Preview and export character. Citizen is Terry (citizen.vmdl). Changing character reuses the captured motion."});
         _previewTargetPicker.AddItem("Human",onSelected:()=>SelectBuiltinPreviewTarget(false),selected:true);
         _previewTargetPicker.AddItem("Citizen",onSelected:()=>SelectBuiltinPreviewTarget(true),description:"Terry · models/citizen/citizen.vmdl");
+        _previewTargetPicker.AddItem("Human arms",onSelected:()=>SelectFirstPersonArms(false),description:"First-person viewmodel · "+TargetPickers.HumanArmsPackage);
+        _previewTargetPicker.AddItem("Citizen arms",onSelected:()=>SelectFirstPersonArms(true),description:"First-person viewmodel, 4 fingers · "+TargetPickers.CitizenArmsPackage);
         _previewTargetPicker.AddItem("Custom",enabled:false);
         _targetHost=animationPanel.Layout.Add(new Widget(animationPanel),1);_targetHost.Layout=Layout.Column();
         _targetHost.Layout.Add(new Label("Preparing animation…",_targetHost){Alignment=TextFlag.Center},1);
@@ -126,6 +128,8 @@ public sealed partial class RetargetWindow
         var target=_advancedTargetPicker=advancedTop.Add(new ComboBox(this));
         target.AddItem("s&box Human","person",()=>SelectBuiltinPreviewTarget(false),selected:true);
         target.AddItem("s&box Citizen","person",()=>SelectBuiltinPreviewTarget(true));
+        target.AddItem("s&box Human arms","pan_tool",()=>SelectFirstPersonArms(false));
+        target.AddItem("s&box Citizen arms","pan_tool",()=>SelectFirstPersonArms(true));
         target.AddItem("Custom VMDL…","folder_open",()=>{if(!_updatingTargetPickers){PickCustomModelTarget();RefreshTargetPickers();}});
         target.AddItem("Custom FBX / GLB…","folder_open",()=>{if(!_updatingTargetPickers){PickCustomFbxTarget();RefreshTargetPickers();}});
         var captured=advancedTop.Add(new Checkbox("Export captured skeleton"));
@@ -221,7 +225,17 @@ public sealed partial class RetargetWindow
         _firstPerson=firstPerson;_firstOptions.Visible=firstPerson;_thirdOptions.Visible=!firstPerson;
         _swapHandsControl.Enabled=firstPerson&&_handBackend=="mediapipe";
         if(_workspacePicker.SelectedIndex!=(firstPerson?0:1))_workspacePicker.SelectedIndex=firstPerson?0:1;
-        if(changed){FitMocapPlacementToTarget();SetPreviewView(firstPerson);RefreshContacts();_=RefreshMocapPreviewAsync();}
+        if(changed)
+        {
+            // First Person animates the viewmodel arms games use; Third Person the whole character.
+            // Only the default follows the workspace: a target the user picked is kept.
+            var path=_target?.PreviewModelPath;
+            if(!_targetChosen&&firstPerson&&(path==RetargetTargetSpec.SboxHumanMalePath||path==RetargetTargetSpec.SboxCitizenPath))
+            {UseFirstPersonArms(path==RetargetTargetSpec.SboxCitizenPath);}
+            else if(!_targetChosen&&!firstPerson&&IsFirstPersonArms(path))
+            {UseBuiltinTarget(path==TargetPickers.CitizenArmsPath);}
+            FitMocapPlacementToTarget();SetPreviewView(firstPerson);RefreshContacts();_=RefreshMocapPreviewAsync();
+        }
     }
     public void SetPreviewView(bool firstPerson)
     {
