@@ -105,7 +105,7 @@ public static class HandCapture
                 using var wildModel=wild?new WildHandsModel(checkpointPath,cancellation):null;
                 using var wilorModel=!wild&&!mobile?new WilorModel(checkpointPath,cancellation,GpuBackbone.Device is null?wilorPrecision:null,Path.Combine(request.Models,"gpu"),progress):null;
                 using var mobileModel=mobile?new MobileHandModel(checkpointPath,cancellation):null;
-                using var decoder=new WindowsVideoDecoder(request.Video);
+                using var decoder=new WindowsVideoDecoder(request.Video);var saved=Stopwatch.StartNew();
                 for(var i=state.Frames.Count;i<times.Length;i++)
                 {
                     cancellation.ThrowIfCancellationRequested();DecodedVideoFrame? frame;
@@ -168,7 +168,9 @@ public static class HandCapture
                     // frame's first search region, so the detector reacquires it under the same side.
                     observations=observations.Concat(state.Following.Where(f=>observations.All(o=>o.Side!=f.Side)).Select(f=>
                         new HandObservation(f.Side,0,1,f.Image.Select(p=>new System.Numerics.Vector3(p[0],p[1],0)).ToArray(),new System.Numerics.Vector3[21],true))).ToArray();
-                    state.Tracking=observations.Select(CropObservation.From).ToList();state.Frames.Add(new(frame.Time,reconstructed));Save("running");
+                    state.Tracking=observations.Select(CropObservation.From).ToList();state.Frames.Add(new(frame.Time,reconstructed));
+                    // The checkpoint holds every frame so far; rewriting it per frame grows with the square of the clip length.
+                    if(saved.Elapsed.TotalSeconds>=5||i==times.Length-1){Save("running");saved.Restart();}
                     progress?.Invoke($"Reconstructed {state.Frames.Count}/{times.Length} frames · {reconstructed.Count} hand(s)");
                 }
             }

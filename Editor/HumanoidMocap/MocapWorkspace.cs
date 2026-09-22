@@ -100,8 +100,8 @@ public sealed partial class RetargetWindow
         _trackingStatus=Layout.Add(new Label("",this){Visible=false,FixedHeight=18});
         _transportBar=Layout.Add(new Widget(this){Visible=false});_transportBar.Layout=Layout.Row();
         var transport=_transportBar.Layout;transport.Spacing=8;
-        var play=_playButton=transport.Add(new Button("","play_arrow"){FixedWidth=28,ToolTip="Play / pause",Clicked=TogglePlayback});
-        play.SetStyles("min-width: 20px; padding: 3px;");
+        // IconButton centers the play/pause glyph; a Button keeps a text gap even with no label.
+        _playButton=transport.Add(new IconButton("play_arrow",TogglePlayback,this){FixedSize=28,IconSize=16,ToolTip="Play / pause"});
         var tracks=transport.Add(new Widget(this),1);tracks.Layout=Layout.Column();tracks.Layout.Spacing=2;
         _timeline=tracks.Layout.Add(new FloatSlider(tracks));_timeline.Minimum=0;_timeline.Maximum=1;
         _timeline.OnValueEdited=()=>SeekPlaybackFraction(_timeline.Value);

@@ -52,7 +52,7 @@ public sealed class WilorModel : IDisposable
         Precision=precision??ChoosePrecision();
         if(Precision is not (Float32 or BFloat16))throw new ArgumentException("Unsupported WiLoR precision.");
         static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
-        if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,CheckpointSha256,210,gpuCache,report,cancellation);
+        if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,CheckpointSha256,GpuBackbone.Variant.Tokens,210,gpuCache,report,cancellation);
         // With a GPU the blocks and final norm live there and are not loaded here.
         var onGpu=gpu is not null;
         weights=new(checkpointPath,CheckpointSha256,name=>(name.StartsWith("backbone.")||name.StartsWith("refine_net."))&&!(onGpu&&(name.StartsWith("backbone.blocks.")||name.StartsWith("backbone.last_norm."))),cancellation,

@@ -133,10 +133,19 @@ public static class BodyCapture
         }
         if(state.Frames.Count==0&&seed is not null&&seed.Count<=count&&!seed.Where((f,i)=>Math.Abs(f.Time-expected[i])>.0005).Any())
             state.Frames.AddRange(seed.Select(f=>new FrameState{Time=f.Time,Observations=f.Observations,Detections=f.Detections,Person=f.Person}));
+        var lastWrite=Stopwatch.StartNew();
         void Save(string status)
         {
             state.Status=status;state.PeakRamBytes=Math.Max(state.PeakRamBytes,Process.GetCurrentProcess().PeakWorkingSet64);
-            File.WriteAllText(statePath+".partial",JsonSerializer.Serialize(state));File.Move(statePath+".partial",statePath,true);progress?.Invoke(status);
+            File.WriteAllText(statePath+".partial",JsonSerializer.Serialize(state));File.Move(statePath+".partial",statePath,true);lastWrite.Restart();progress?.Invoke(status);
+        }
+        // Per-frame progress. The checkpoint holds every frame so far (megabytes by the end of a long clip),
+        // and rewriting it for each frame made saving grow with the square of the clip length: on a
+        // 708-frame clip it cost more time than the graphics card's inference. It is written every few
+        // seconds instead; a stage end, cancellation or failure always writes it.
+        void Progress(string status)
+        {
+            if(lastWrite.Elapsed.TotalSeconds>=5)Save(status);else{state.Status=status;progress?.Invoke(status);}
         }
         void Visit(Action<DecodedVideoFrame,int> process)
         {
@@ -222,7 +231,7 @@ public static class BodyCapture
                         // must neither move the crop nor extend how long the subject may stay unseen.
                         if(current.Person!.Evidence!="held crop"&&PersonCropTrack.FromJoints(current.Observations) is { } next)
                         {followed=PersonCropTrack.Continue(followed,next,PersonCropTrack.ConfidentJoints(current.Observations));lastSeen=current.Time;span=PersonCropTrack.Span(current.Observations,frame.Width,frame.Height)??span;}
-                        Save($"Followed person and reconstructed 2D pose {index+1}/{count}");
+                        Progress($"Followed person and reconstructed 2D pose {index+1}/{count}");
                     });
                     if(state.Frames[^1].Person!.Evidence=="held crop")
                     {
@@ -260,10 +269,10 @@ public static class BodyCapture
                     var crop=VideoCrop.Prepare(frame,box);var heatmap=VideoCrop.AverageFlippedHeatmaps(pose.Run(crop,cancellation),pose.Run(VideoCrop.FlipImage(crop),cancellation));
                     state.Frames[index].Observations=VideoCrop.DecodeHeatmaps(heatmap,box);
                     if(index==0||index==count-1)VideoCrop.SaveOverlay(frame,state.Frames[index].Observations!,Path.Combine(folder,$"observations-{index}.png"));
-                    Save($"Reconstructed 2D pose {index+1}/{count}");
+                    Progress($"Reconstructed 2D pose {index+1}/{count}");
                 });
             }
-            state.Seconds["poseThisRun"]=watch.Elapsed.TotalSeconds;GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
+            state.Seconds["poseThisRun"]=watch.Elapsed.TotalSeconds;Save("pose-ready");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
             var wilorPath=Path.Combine(request.Models,"wilor/wilor_final.ckpt");
             if(File.Exists(wilorPath)&&state.Frames.Any(f=>f.Hands is null))
             {
@@ -276,9 +285,9 @@ public static class BodyCapture
                     for(var side=0;side<2;side++)
                         if(BodyHandTracks.Region(current.Observations!,side==0,frame.Width,frame.Height) is { } box)
                             hands[side]=BodyHandTracks.Reconstruct(wilor,frame,box,side==0,cancellation);
-                    current.Hands=hands;Save($"Reconstructed fingers {index+1}/{count}");
+                    current.Hands=hands;Progress($"Reconstructed fingers {index+1}/{count}");
                 });
-                state.Seconds["fingersThisRun"]=watch.Elapsed.TotalSeconds;GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
+                state.Seconds["fingersThisRun"]=watch.Elapsed.TotalSeconds;Save("fingers-ready");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
             }
             var focalLength=MathF.Sqrt(metadata.Width*metadata.Width+metadata.Height*metadata.Height);
             if(!state.CameraMotion!.Stationary&&(state.CameraRotation is null||state.CameraRotationVersion!=CameraRotationTrack.Version))
@@ -295,10 +304,10 @@ public static class BodyCapture
                 Visit((frame,index)=>
                 {
                     if(state.Frames[index].ImageFeatures is not null)return;
-                    state.Frames[index].ImageFeatures=hmr.Run(VideoCrop.Prepare(frame,state.Frames[index].Person!.Crop),cancellation);Save($"Reconstructed image features {index+1}/{count}");
+                    state.Frames[index].ImageFeatures=hmr.Run(VideoCrop.Prepare(frame,state.Frames[index].Person!.Crop),cancellation);Progress($"Reconstructed image features {index+1}/{count}");
                 });
             }
-            state.Seconds["imageFeaturesThisRun"]=watch.Elapsed.TotalSeconds;GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
+            state.Seconds["imageFeaturesThisRun"]=watch.Elapsed.TotalSeconds;Save("image-features-ready");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
             Save("temporal-inference");var camera=new GvhmrDecoder.Camera(focalLength,metadata.Width*.5f,metadata.Height*.5f);
             var boxes=state.Frames.Select(f=>f.Person!.Crop).ToArray();var cameras=Enumerable.Repeat(camera,count).ToArray();
             var identityCondition=Enumerable.Range(0,count).SelectMany(_=>new[]{1f,0,0,0,1,0}).ToArray();

@@ -9,7 +9,7 @@ public sealed partial class RetargetWindow
     double _playhead;
     float _previewFps=30;
     bool _playing=true;
-    Button _playButton;
+    IconButton _playButton;
 
     (double Start,double Last,double End) PlaybackRange
     {
@@ -24,6 +24,8 @@ public sealed partial class RetargetWindow
     internal double PlaybackTime=>_playhead;
     internal double? SourcePlaybackTime=>_video?.FrameTime;
     internal bool SourcePlaybackPaused=>!_playing;
+    internal string PlayButtonIcon=>_playButton.Icon;
+    internal bool PlayButtonIsIconButton=>_playButton is IconButton;
     internal byte[] SourceFramePng()=>_video?.FramePng();
     internal void SeekPlaybackFraction(float fraction)
     {
@@ -59,7 +61,7 @@ public sealed partial class RetargetWindow
         _clock.Text=$"{_playhead:F2} s";
         _timeline.Value=range.Last>range.Start?(float)Math.Clamp((_playhead-range.Start)/(range.Last-range.Start),0,1):0;
         _contactTimeline?.SetPlayhead(_playhead);
-        _playButton.Icon=_playing?"pause":"play_arrow";
+        _playButton.Icon=_playing?"pause":"play_arrow";_playButton.Update();
     }
     void SynchronizePreview()
     {
