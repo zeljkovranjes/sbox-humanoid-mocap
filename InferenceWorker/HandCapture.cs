@@ -109,11 +109,12 @@ public static class HandCapture
                 using var wildModel=wild?new WildHandsModel(checkpointPath,cancellation):null;
                 using var wilorModel=!wild&&!mobile?new WilorModel(checkpointPath,cancellation,GpuBackbone.Device is null?wilorPrecision:null,Path.Combine(request.Models,"gpu"),progress):null;
                 using var mobileModel=mobile?new MobileHandModel(checkpointPath,cancellation):null;
-                using var decoder=new WindowsVideoDecoder(request.Video);var saved=Stopwatch.StartNew();
+                // Decoding runs a few frames ahead on its own thread, overlapping inference.
+                using var frames=PrefetchedFrames.Read(request.Video,cancellation,state.Frames.Count<times.Length?times[state.Frames.Count]:0).GetEnumerator();var saved=Stopwatch.StartNew();
                 for(var i=state.Frames.Count;i<times.Length;i++)
                 {
-                    cancellation.ThrowIfCancellationRequested();DecodedVideoFrame? frame;
-                    do{frame=decoder.Read(cancellation);if(frame is null)throw new InvalidDataException("Video ended before the selected range.");}while(frame.Time<times[i]-.00001);
+                    cancellation.ThrowIfCancellationRequested();DecodedVideoFrame frame;
+                    do{if(!frames.MoveNext())throw new InvalidDataException("Video ended before the selected range.");frame=frames.Current;}while(frame.Time<times[i]-.00001);
                     if(Math.Abs(frame.Time-times[i])>.001)throw new InvalidDataException("Decoded timestamps differ from the video sample table.");
                     var clock=Stopwatch.StartNew();
                     var observations=detector.DetectTracked(frame.Rgba,frame.Width,frame.Height,state.Tracking.Select(h=>h.ToObservation()).ToArray(),cancellation)
