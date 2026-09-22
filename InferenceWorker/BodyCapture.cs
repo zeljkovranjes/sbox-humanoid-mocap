@@ -7,7 +7,8 @@ using HumanoidMocap.Inference;
 
 namespace HumanoidMocap.Worker;
 
-public sealed record BodyCaptureRequest(string Video,string Models,string Output,double Start,double End,GvhmrDecoder.Box? PersonCrop=null);
+/// <param name="HorizontalFov">The recording lens in degrees when the camera wrote it; null assumes GVHMR's default (focal = image diagonal).</param>
+public sealed record BodyCaptureRequest(string Video,string Models,string Output,double Start,double End,GvhmrDecoder.Box? PersonCrop=null,float? HorizontalFov=null);
 public static class BodyCapture
 {
     sealed class FrameState
@@ -110,7 +111,7 @@ public static class BodyCapture
         if(count<1)throw new ArgumentException("No shot of at least half a second was found in the selected range.");
         using var video=File.OpenRead(request.Video);var sourceSha=Convert.ToHexString(SHA256.HashData(video));
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{
-            version="gvhmr-csharp-person-crop-v2"+(metadata.CaptureStride>1?"-every"+metadata.CaptureStride:""),detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,
+            version="gvhmr-csharp-person-crop-v2"+(metadata.CaptureStride>1?"-every"+metadata.CaptureStride:""),detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,request.HorizontalFov,
             temporal=GvhmrTemporalNetwork.CheckpointSha256,hmr="2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",pose="50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc",
             // Reduced precision changes image features slightly, so it keeps its own cache.
             // The graphics-card path agrees to about four digits, not bit for bit; it keeps its own cache too.
@@ -289,7 +290,8 @@ public static class BodyCapture
                 });
                 state.Seconds["fingersThisRun"]=watch.Elapsed.TotalSeconds;Save("fingers-ready");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
             }
-            var focalLength=MathF.Sqrt(metadata.Width*metadata.Width+metadata.Height*metadata.Height);
+            // A wrong lens scales depth-wise travel: a 20% narrower crop of the kata clip lost 10% of its 8.5 m.
+            var focalLength=request.HorizontalFov is float fov&&fov is >=20 and <=150?metadata.Width/2f/MathF.Tan(fov*MathF.PI/360):MathF.Sqrt(metadata.Width*metadata.Width+metadata.Height*metadata.Height);
             if(!state.CameraMotion!.Stationary&&(state.CameraRotation is null||state.CameraRotationVersion!=CameraRotationTrack.Version))
             {
                 progress?.Invoke("Following the moving camera's rotation from the background");
@@ -335,6 +337,8 @@ public static class BodyCapture
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             if(shotNote is not null)motion.Diagnostics.Add(shotNote);
             if(visibilityNote is not null)motion.Diagnostics.Add(visibilityNote);
+            motion.Diagnostics.Add(request.HorizontalFov is float lens?FormattableString.Invariant($"Lens: the camera recorded a {lens:F0} degree horizontal field of view, used for depth and travel."):
+                "Lens: not recorded by the camera; assumed from the picture size (about 53 degrees across the diagonal). Distances toward and away from the camera scale with this assumption.");
             motion.Diagnostics.Add(GpuBackbone.DeviceNote);
             if(metadata.SamplingNote is { } sampling)motion.Diagnostics.Add(sampling);
             motion.Diagnostics.Add(state.CameraMotion.Diagnostic);

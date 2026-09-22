@@ -11,6 +11,14 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
 {
     public double[] Times { get; init; } = Array.Empty<double>();
     public int RotationDegrees { get; init; }
+    /// <summary>The recording lens as a 35 mm-equivalent focal length, when the camera wrote one
+    /// (iPhones store com.apple.quicktime.camera.focal_length.35mm_equivalent). Null otherwise.</summary>
+    public double? FocalLength35mm { get; init; }
+    /// <summary>The lens in pixels for this picture: 35 mm-equivalent focal lengths are defined on the 43.27 mm
+    /// diagonal of a full-frame sensor, so the pixel focal length is that fraction of the picture diagonal.</summary>
+    public float? FocalLengthPixels=>FocalLength35mm is double f?(float)(f/43.2666*Math.Sqrt((double)Width*Width+(double)Height*Height)):null;
+    /// <summary>The horizontal field of view the recorded lens gives, in degrees, or null.</summary>
+    public float? HorizontalFov=>FocalLengthPixels is float f?(float)(2*Math.Atan(Width/2d/f)*180/Math.PI):null;
     /// <summary>Capture keeps every frame up to this rate. Faster footage (60 fps phones, slow motion) is
     /// sampled down to about 30 per second: the body network was trained at 30, game animation needs no
     /// more, and the work and the 1,800-frame limit then cover the same seconds as ordinary footage.</summary>
@@ -54,6 +62,51 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
             if(boxes.Count>100000)throw new FormatException("Too many MP4 boxes.");
         }
         return boxes;
+    }
+    /// <summary>The 35 mm-equivalent focal length from QuickTime metadata keys (moov/meta: keys + ilst), if present
+    /// and plausible (8 to 400 mm).</summary>
+    static double? Lens(BinaryReader r,Box moov)
+    {
+        try
+        {
+            // iPhones write QuickTime's moov/meta; other writers use moov/udta/meta, an ISO full box with four version bytes.
+            var top=Boxes(r,moov.Start,moov.End);var metas=top.Where(b=>b.Type=="meta").ToList();
+            foreach(var udta in top.Where(b=>b.Type=="udta"))metas.AddRange(Boxes(r,udta.Start,udta.End).Where(b=>b.Type=="meta"));
+            Box keys=null,list=null;
+            foreach(var meta in metas)foreach(var skip in new[]{0,4})
+            {
+                List<Box> parts;try{parts=Boxes(r,meta.Start+skip,meta.End);}catch(FormatException){continue;}
+                if(parts.FirstOrDefault(b=>b.Type=="keys") is { } k&&parts.FirstOrDefault(b=>b.Type=="ilst") is { } l){keys=k;list=l;break;}
+            }
+            if(keys is null||list is null)return null;
+            var stream=r.BaseStream;stream.Position=keys.Start+4;var count=U32(r);var wanted=0L;
+            for(var i=1;i<=count&&stream.Position<keys.End;i++)
+            {
+                var start=stream.Position;var size=U32(r);if(size<8)return null;stream.Position+=4;
+                var name=Encoding.UTF8.GetString(r.ReadBytes((int)size-8));
+                if(name=="com.apple.quicktime.camera.focal_length.35mm_equivalent")wanted=i;
+                stream.Position=start+size;
+            }
+            if(wanted==0)return null;
+            foreach(var item in Boxes(r,list.Start,list.End))
+            {
+                // ilst entries are named by their 1-based key index.
+                stream.Position=item.Start-4;if(U32(r)!=wanted)continue;
+                var data=Boxes(r,item.Start,item.End).FirstOrDefault(b=>b.Type=="data");if(data is null)return null;
+                stream.Position=data.Start;var type=U32(r)&0xFFFFFF;stream.Position=data.Start+8;var length=(int)(data.End-data.Start-8);
+                var bytes=r.ReadBytes(length);double? value=type switch
+                {
+                    1=>double.TryParse(Encoding.UTF8.GetString(bytes).Trim(),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var v)?v:null,
+                    23 when length==4=>BinaryPrimitives.ReadSingleBigEndian(bytes),
+                    24 when length==8=>BinaryPrimitives.ReadDoubleBigEndian(bytes),
+                    21 or 22 when length is 1 or 2 or 4 or 8=>length switch{1=>bytes[0],2=>BinaryPrimitives.ReadInt16BigEndian(bytes),4=>BinaryPrimitives.ReadInt32BigEndian(bytes),_=>BinaryPrimitives.ReadInt64BigEndian(bytes)},
+                    _=>null
+                };
+                return value is double f&&f>=8&&f<=400?f:null;
+            }
+        }
+        catch(Exception error) when(error is EndOfStreamException or FormatException or ArgumentException){}
+        return null;
     }
     public static Mp4Metadata Read(string path)
     {
@@ -125,7 +178,7 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
                 }
             }
             Array.Sort(times);var first=times[0];for(var i=0;i<times.Length;i++)times[i]+=delay-first;
-            var seconds=(double)duration/scale;return new(seconds,width,height,count/seconds){Times=times,RotationDegrees=rotation};
+            var seconds=(double)duration/scale;return new(seconds,width,height,count/seconds){Times=times,RotationDegrees=rotation,FocalLength35mm=Lens(r,moov)};
         }
         throw new FormatException("No video track.");
     }

@@ -106,7 +106,8 @@ internal static class NativeCapture
             if(index>=7||file.LastWriteTimeUtc<DateTime.UtcNow.AddDays(-14))try{file.Delete();}catch(IOException){}catch(UnauthorizedAccessException){}
     }
 
-    public static async Task<string> BodyAsync(string video,double start,double end,int width,int height,Action<string> progress,CancellationToken token)
+    /// <param name="horizontalFov">The lens the camera recorded, when known; otherwise the worker assumes one.</param>
+    public static async Task<string> BodyAsync(string video,double start,double end,int width,int height,float? horizontalFov,Action<string> progress,CancellationToken token)
     {
         await Task.Run(()=>EnsureDecodable(video),token);
         var (worker,models)=await Prepare(progress,token);
@@ -118,7 +119,7 @@ internal static class NativeCapture
         catch(Exception){progress?.Invoke("Finger model unavailable; capturing the body without finger motion");}
         // Omitting PersonCrop enables the worker's automatic image-space subject track.
         // This does not recover camera motion or calibrate world scale.
-        return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end },progress,token);
+        return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end, HorizontalFov = horizontalFov },progress,token);
     }
 
     public static async Task<string> HandsAsync(string video,string backend,double start,double end,int width,int height,Action<string> progress,CancellationToken token,float? recordingHorizontalFov=null)

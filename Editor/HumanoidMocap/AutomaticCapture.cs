@@ -68,6 +68,12 @@ public sealed partial class RetargetWindow
         try
         {
             _captureStatus.Text = "Preparing video…";
+            // The lens the camera recorded (iPhones write it), read before any conversion drops the metadata.
+            // A lens typed under Advanced still wins.
+            float? recordedFov=null;
+            try{recordedFov=await Task.Run(()=>Mp4Metadata.Read(video).HorizontalFov,token);}catch(FormatException){}catch(IOException){}
+            if(recordedFov is float lensFov&&!(lensFov>=20&&lensFov<=150))recordedFov=null;
+            if(firstPerson&&recordingFov is null)recordingFov=recordedFov;
             // Footage Windows cannot decode (iPhone HEVC, 10-bit exports) is converted once and used in its place.
             var playable=await NativeCapture.PlayableVideoAsync(video,ReceiveWorkerProgress,token);
             await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
@@ -107,7 +113,7 @@ public sealed partial class RetargetWindow
             }
             else
             {
-                motionPath = await NativeCapture.BodyAsync(video, start, end ?? metadata.Duration, metadata.Width, metadata.Height,
+                motionPath = await NativeCapture.BodyAsync(video, start, end ?? metadata.Duration, metadata.Width, metadata.Height, recordedFov,
                     ReceiveWorkerProgress, token);
                 // A camera the worker measured as still gets world-relative root and foot-contact
                 // refinement straight away. The untouched capture stays beside it and
