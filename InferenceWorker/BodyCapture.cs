@@ -1,3 +1,4 @@
+using HumanoidMocap.Mapping;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -351,6 +352,13 @@ public static class BodyCapture
             {
                 BodyHandTracks.Append(motion,state.Frames.Select(f=>f.Hands!).ToArray());
                 motion.ModelVersion+="; "+BodyHandTracks.Version+" "+WilorModel.CheckpointSha256;
+            }
+            // Floor sits read as crouches by the network: mark them for the retargeter to seat the hips.
+            if(SeatedDetection.Detect(motion,state.Frames.Select(f=>f.Observations!).ToArray(),prediction.StaticConfidenceLogits,focalLength,metadata.Width*.5f,metadata.Height*.5f) is float[] seatedWeights
+                &&seatedWeights.Count(w=>w>=1) is var seatedFrames&&seatedFrames>0)
+            {
+                motion.StationaryJoints.Add(new(){Bone=motion.Bones.First(b=>b.Role==BoneRole.Hips).Name,Source=SeatedDetection.Source,Probability=seatedWeights});
+                motion.Diagnostics.Add(FormattableString.Invariant($"Sitting on the floor: seated in {seatedFrames} of {count} frames. Retargeting lowers the hips onto the floor there and keeps the feet and resting hands in place."));
             }
             motion.ModelVersion+="; "+WindowsVideoDecoder.ImplementationVersion;
             motion.ModelVersion+="; "+(request.PersonCrop is null?PersonDetector.Version:"manual-person-crop");

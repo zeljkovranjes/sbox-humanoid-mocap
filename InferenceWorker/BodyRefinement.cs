@@ -16,8 +16,8 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v6";
-    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v3";
+    public const string Version="gvhmr-stationary-contact-ccd-v7";
+    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v4";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
     public const string CameraRotationFile="camera-rotation.json";
@@ -95,6 +95,9 @@ public static class BodyRefinement
         }
         // Finger tracks hang beneath the wrists, unaffected by root or limb refinement, and arrive with the copied source.
         BodyHandTracks.CarryFingerNotes(source,raw);BodyHandTracks.CarryFingerNotes(source,refined);
+        // Seated moments found by the capture carry over; the refinement rebuilds the stationary joints.
+        foreach(var seated in source.StationaryJoints.Where(s=>s.Source==SeatedDetection.Source))
+            foreach(var doc in new[]{raw,refined})if(doc.StationaryJoints.All(s=>s.Source!=SeatedDetection.Source))doc.StationaryJoints.Add(seated);
         raw.OriginalReconstruction=new(){Path=Path.GetFullPath(request.Motion),Sha256=rawHash};
         refined.OriginalReconstruction=new(){Path=Path.GetFullPath(request.Motion),Sha256=rawHash};
         refined.ModelVersion+="; "+(moving?MovingVersion:Version);

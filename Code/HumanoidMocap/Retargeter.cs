@@ -888,6 +888,8 @@ public static class Retargeter
             {
                 var grounded=Motion.CaptureGround.Apply(frames,target.Rig,target.UpAxis,solved.Fps);
                 if(grounded>0)AddNote(report,FormattableString.Invariant($"Floor followed through the clip: up to {grounded:F1} cm of drift toward or away from the floor removed."));
+                var seatedFrames=Motion.CaptureSeat.Apply(frames,scene,map,target.Rig,target.UpAxis);
+                if(seatedFrames>0)AddNote(report,$"Seated on the floor in {seatedFrames} frames: hips lowered onto the floor, feet and resting hands held in place.");
             }
         }
         ApplyRootMotion(request.RootMotion, frames, context, report);
