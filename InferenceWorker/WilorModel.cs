@@ -14,7 +14,9 @@ public sealed class WilorModel : IDisposable
     public const string CheckpointSha256="3e97aafc7dd08d883a4cc5a027df61fdb6fda6136dbd1319405413862ada6bb2";
     readonly HandModelWeights weights;
     readonly ManoDecoder mano;
-    int running;bool disposed;
+    int running;bool disposed;readonly GpuBackbone? gpu;
+    /// <summary>The graphics card running the transformer blocks, or "CPU".</summary>
+    public string Device=>gpu?.Adapter??"CPU";
     public const string Float32="float32",BFloat16="bfloat16";
     /// <summary>Numeric type of the 32 transformer blocks. Everything else stays float32.</summary>
     public string Precision { get; }
@@ -44,12 +46,16 @@ public sealed class WilorModel : IDisposable
         return measured=Time(ScalarType.BFloat16)<Time(ScalarType.Float32)*.7?BFloat16:Float32;
     }
     public sealed record Prediction(float[] RotationMatrices,float[] Shape,float[] WeakCamera,ManoDecoder.DecodedHand Hand);
-    public WilorModel(string checkpointPath,CancellationToken cancellation=default,string? precision=null)
+    /// <param name="gpuCache">Folder for the graphics-card graph; null keeps everything on the CPU.</param>
+    public WilorModel(string checkpointPath,CancellationToken cancellation=default,string? precision=null,string? gpuCache=null,Action<string>? report=null)
     {
         Precision=precision??ChoosePrecision();
         if(Precision is not (Float32 or BFloat16))throw new ArgumentException("Unsupported WiLoR precision.");
         static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
-        weights=new(checkpointPath,CheckpointSha256,name=>name.StartsWith("backbone.")||name.StartsWith("refine_net."),cancellation,
+        if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,CheckpointSha256,210,gpuCache,report,cancellation);
+        // With a GPU the blocks and final norm live there and are not loaded here.
+        var onGpu=gpu is not null;
+        weights=new(checkpointPath,CheckpointSha256,name=>(name.StartsWith("backbone.")||name.StartsWith("refine_net."))&&!(onGpu&&(name.StartsWith("backbone.blocks.")||name.StartsWith("backbone.last_norm."))),cancellation,
             Precision==BFloat16?name=>BlockMatrix(name)?ScalarType.BFloat16:null:null);
         try{using var checkpoint=new TorchCheckpoint(checkpointPath);mano=new(checkpoint,"mano.");}
         catch{Dispose();throw;}
@@ -71,7 +77,12 @@ public sealed class WilorModel : IDisposable
             var shapeToken=weights.Linear(weights["backbone.init_betas"],"backbone.shape_emb").unsqueeze(1);
             var cameraToken=weights.Linear(weights["backbone.init_cam"],"backbone.cam_emb").unsqueeze(1);
             x=cat(new[]{poseToken,shapeToken,cameraToken,x},1);
-            for(var block=0;block<32;block++)
+            if(gpu is not null)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                x=tensor(gpu.Run(x.contiguous().data<float>().ToArray())).reshape(1,210,1280);
+            }
+            else for(var block=0;block<32;block++)
             {
                 cancellation.ThrowIfCancellationRequested();using var layer=NewDisposeScope();
                 var name="backbone.blocks."+block;
@@ -83,7 +94,7 @@ public sealed class WilorModel : IDisposable
                 var feedforward=BlockLinear(F.gelu(BlockLinear(weights.Norm(residual,name+".norm2",1280),name+".mlp.fc1")),name+".mlp.fc2").to(ScalarType.Float32);
                 var previous=x;x=(residual+feedforward).MoveToOuterDisposeScope();previous.Dispose();
             }
-            x=weights.Norm(x,"backbone.last_norm",1280);
+            if(gpu is null)x=weights.Norm(x,"backbone.last_norm",1280);
             var pose=weights.Linear(x.slice(1,0,16,1),"backbone.decpose").reshape(1,96)+weights["backbone.init_hand_pose"];
             var shape=weights.Linear(x.slice(1,16,17,1),"backbone.decshape").reshape(1,10)+weights["backbone.init_betas"];
             var camera=weights.Linear(x.slice(1,17,18,1),"backbone.deccam").reshape(1,3)+weights["backbone.init_cam"];
@@ -138,5 +149,5 @@ public sealed class WilorModel : IDisposable
             first.select(1,0)*second.select(1,1)-first.select(1,1)*second.select(1,0)},1);
         return stack(new[]{first,second,third},2);
     }
-    public void Dispose(){if(disposed)return;disposed=true;weights.Dispose();}
+    public void Dispose(){if(disposed)return;disposed=true;gpu?.Dispose();weights.Dispose();}
 }

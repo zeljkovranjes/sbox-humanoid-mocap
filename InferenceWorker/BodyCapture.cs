@@ -75,7 +75,7 @@ public static class BodyCapture
     static double? FirstSubjectTime(BodyCaptureRequest request,double after,CancellationToken cancellation)
     {
         using var detector=new PersonDetector(Path.Combine(request.Models,"person/person_detection_mediapipe_2023mar.onnx"));
-        using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation);
+        using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"));
         using var decoder=new WindowsVideoDecoder(request.Video);var next=after+.25;DecodedVideoFrame? frame;
         while((frame=decoder.Read(cancellation)) is not null&&frame.Time<request.End)
         {
@@ -113,7 +113,8 @@ public static class BodyCapture
             version="gvhmr-csharp-person-crop-v2"+(metadata.CaptureStride>1?"-every"+metadata.CaptureStride:""),detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,
             temporal=GvhmrTemporalNetwork.CheckpointSha256,hmr="2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",pose="50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc",
             // Reduced precision changes image features slightly, so it keeps its own cache.
-            visionPrecision=WilorModel.ChoosePrecision(),
+            // The graphics-card path agrees to about four digits, not bit for bit; it keeps its own cache too.
+            visionPrecision=GpuBackbone.KeySuffix??WilorModel.ChoosePrecision(),
             // Fingers need the WiLoR checkpoint; a capture made without it is a different result.
             fingers=File.Exists(Path.Combine(request.Models,"wilor/wilor_final.ckpt"))?BodyHandTracks.Version:"none"
         }))));
@@ -171,7 +172,7 @@ public static class BodyCapture
                 if(state.Frames.Count<count||state.Frames.Any(f=>f.Observations is null||f.Person is null))
                 {
                     using var detector=new PersonDetector(Path.Combine(request.Models,"person/person_detection_mediapipe_2023mar.onnx"));
-                    using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation);
+                    using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
                     GvhmrDecoder.Box? followed=null;var lastSeen=double.NaN;float? span=null;
                     float[] Observe(DecodedVideoFrame frame,GvhmrDecoder.Box box)
                     {
@@ -251,7 +252,7 @@ public static class BodyCapture
             }
             if(state.Frames.Count<count||state.Frames.Any(f=>f.Observations is null))
             {
-                using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation);
+                using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
                 Visit((frame,index)=>
                 {
                     if(state.Frames[index].Observations is not null)return;
@@ -267,7 +268,7 @@ public static class BodyCapture
             if(File.Exists(wilorPath)&&state.Frames.Any(f=>f.Hands is null))
             {
                 progress?.Invoke("Loading WiLoR for finger capture");
-                using var wilor=new WilorModel(wilorPath,cancellation);
+                using var wilor=new WilorModel(wilorPath,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
                 Visit((frame,index)=>
                 {
                     var current=state.Frames[index];if(current.Hands is not null)return;
@@ -290,7 +291,7 @@ public static class BodyCapture
             }
             if(state.Frames.Any(f=>f.ImageFeatures is null))
             {
-                using var hmr=new VisionModel(Path.Combine(request.Models,"hmr2/hmr2.ckpt"),VisionModel.Kind.Hmr2Features,cancellation);
+                using var hmr=new VisionModel(Path.Combine(request.Models,"hmr2/hmr2.ckpt"),VisionModel.Kind.Hmr2Features,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
                 Visit((frame,index)=>
                 {
                     if(state.Frames[index].ImageFeatures is not null)return;
@@ -325,6 +326,7 @@ public static class BodyCapture
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             if(shotNote is not null)motion.Diagnostics.Add(shotNote);
             if(visibilityNote is not null)motion.Diagnostics.Add(visibilityNote);
+            motion.Diagnostics.Add(GpuBackbone.DeviceNote);
             if(metadata.SamplingNote is { } sampling)motion.Diagnostics.Add(sampling);
             motion.Diagnostics.Add(state.CameraMotion.Diagnostic);
             if(!state.CameraMotion.Stationary&&state.CameraRotation is not null)motion.Diagnostics.Add(state.CameraRotation.Diagnostic);

@@ -15,18 +15,24 @@ public sealed class VisionModel : IDisposable
 {
     public enum Kind{Hmr2Features,VitPoseHeatmaps}
     readonly Dictionary<string,Tensor> weights=new(StringComparer.Ordinal);
-    readonly Kind kind;bool disposed;int running;
+    readonly Kind kind;bool disposed;int running;readonly GpuBackbone? gpu;
+    /// <summary>The graphics card running the transformer blocks, or "CPU".</summary>
+    public string Device=>gpu?.Adapter??"CPU";
     /// <summary>Numeric type of the 32 backbone blocks' matrix products; see <see cref="WilorModel.ChoosePrecision"/>.</summary>
     public string Precision { get; }
-    public VisionModel(string checkpointPath,Kind kind,CancellationToken cancellation=default,Action<int,int>? loading=null,string? precision=null)
+    /// <param name="gpuCache">Folder for the graphics-card graph; null keeps everything on the CPU.</param>
+    public VisionModel(string checkpointPath,Kind kind,CancellationToken cancellation=default,Action<int,int>? loading=null,string? precision=null,string? gpuCache=null,Action<string>? report=null)
     {
         this.kind=kind;Precision=precision??WilorModel.ChoosePrecision();
         if(Precision is not (WilorModel.Float32 or WilorModel.BFloat16))throw new ArgumentException("Unsupported vision precision.");
         static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
         var expected=kind==Kind.Hmr2Features?"2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e":"50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc";
         using(var input=File.OpenRead(checkpointPath))if(!Convert.ToHexString(SHA256.HashData(input)).Equals(expected,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Vision checkpoint checksum mismatch.");
+        if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,expected,192,gpuCache,report,cancellation);
         using var checkpoint=new TorchCheckpoint(checkpointPath);
-        var required=checkpoint.Tensors.Where(p=>p.Key.StartsWith("backbone.")||p.Key.StartsWith(kind==Kind.Hmr2Features?"smpl_head.transformer.":"keypoint_head.")).ToArray();
+        // With a GPU the blocks and final norm live there; only the patch embedding and head are needed here.
+        bool OnGpu(string name)=>gpu is not null&&(name.StartsWith("backbone.blocks.")||name.StartsWith("backbone.last_norm."));
+        var required=checkpoint.Tensors.Where(p=>(p.Key.StartsWith("backbone.")||p.Key.StartsWith(kind==Kind.Hmr2Features?"smpl_head.transformer.":"keypoint_head."))&&!OnGpu(p.Key)).ToArray();
         try
         {
             var count=0;
@@ -61,7 +67,12 @@ public sealed class VisionModel : IDisposable
             var x=F.conv2d(pixels,Weight("backbone.patch_embed.proj.weight"),Weight("backbone.patch_embed.proj.bias"),strides:new long[]{16,16});
             x=x.flatten(2).transpose(1,2);
             x=x+Weight("backbone.pos_embed").slice(1,1,193,1)+Weight("backbone.pos_embed").slice(1,0,1,1);
-            for(var block=0;block<32;block++)
+            if(gpu is not null)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                x=tensor(gpu.Run(x.contiguous().data<float>().ToArray())).reshape(1,192,1280);
+            }
+            else for(var block=0;block<32;block++)
             {
                 cancellation.ThrowIfCancellationRequested();using var blockScope=NewDisposeScope();
                 // Layer norms, softmax and the residual stream stay float32 at either precision.
@@ -72,7 +83,7 @@ public sealed class VisionModel : IDisposable
                 var mlp=BlockLinear(F.gelu(BlockLinear(Norm(residual,name+".norm2",1280,1e-6),name+".mlp.fc1")),name+".mlp.fc2").to(ScalarType.Float32);
                 var previous=x;x=(residual+mlp).MoveToOuterDisposeScope();previous.Dispose();progress?.Invoke($"Vision transformer {block+1}/32");
             }
-            x=Norm(x,"backbone.last_norm",1280,1e-6);
+            if(gpu is null)x=Norm(x,"backbone.last_norm",1280,1e-6);
             var output=kind==Kind.Hmr2Features?FeatureHead(x,cancellation):HeatmapHead(x);
             cancellation.ThrowIfCancellationRequested();
             var result=output.contiguous().data<float>().ToArray();
@@ -117,5 +128,5 @@ public sealed class VisionModel : IDisposable
         }
         return F.conv2d(x,Weight("keypoint_head.final_layer.weight"),Weight("keypoint_head.final_layer.bias"));
     }
-    public void Dispose(){if(disposed)return;disposed=true;foreach(var weight in weights.Values)weight.Dispose();weights.Clear();}
+    public void Dispose(){if(disposed)return;disposed=true;gpu?.Dispose();foreach(var weight in weights.Values)weight.Dispose();weights.Clear();}
 }

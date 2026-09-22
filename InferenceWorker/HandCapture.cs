@@ -61,7 +61,7 @@ public static class HandCapture
         // Verify cached jobs too; a different file must not masquerade as pinned weights.
         if(Hash(checkpointPath)!=modelHash)throw new InvalidDataException("Hand model checksum mismatch.");
         // Reduced precision changes predictions slightly, so it keeps its own cache.
-        var wilorPrecision=!wild&&!mobile?WilorModel.ChoosePrecision():null;
+        var wilorPrecision=!wild&&!mobile?GpuBackbone.KeySuffix??WilorModel.ChoosePrecision():null;
         var implementation=ImplementationVersion+(wild?"; "+WildHandsCrop.ImplementationVersion:"")+(wilorPrecision is null or WilorModel.Float32?"":"; wilor-blocks-"+wilorPrecision);
         var keyData=JsonSerializer.Serialize(new{pipeline=implementation+(metadata.CaptureStride>1?"; every"+metadata.CaptureStride:""),decoder=WindowsVideoDecoder.ImplementationVersion,detectorImplementation=ManagedHands.ImplementationVersion,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyData))).ToLowerInvariant();
@@ -103,7 +103,7 @@ public static class HandCapture
                     Save("running");
                 }
                 using var wildModel=wild?new WildHandsModel(checkpointPath,cancellation):null;
-                using var wilorModel=!wild&&!mobile?new WilorModel(checkpointPath,cancellation,wilorPrecision):null;
+                using var wilorModel=!wild&&!mobile?new WilorModel(checkpointPath,cancellation,GpuBackbone.Device is null?wilorPrecision:null,Path.Combine(request.Models,"gpu"),progress):null;
                 using var mobileModel=mobile?new MobileHandModel(checkpointPath,cancellation):null;
                 using var decoder=new WindowsVideoDecoder(request.Video);
                 for(var i=state.Frames.Count;i<times.Length;i++)
@@ -195,6 +195,7 @@ public static class HandCapture
             var motion=ManoMotionBuilder.Build(state.Frames,request.Backend,checkpointPath,Path.GetFileNameWithoutExtension(request.Video),
                 Path.GetFullPath(request.Video),sourceHash,metadata.CaptureFrameRate,camera,metadata.Width,metadata.Height,cancellation,estimated?state.FocalEstimateSamples:null);
             if(metadata.SamplingNote is { } sampling)motion.Diagnostics.Add(sampling);
+            if(request.Backend=="wilor")motion.Diagnostics.Add(GpuBackbone.DeviceNote);
             motion.ModelVersion+="; "+implementation+"; crop detector "+ManagedHands.ImplementationVersion+"; "+WindowsVideoDecoder.ImplementationVersion;
             var motionPath=Path.Combine(directory,"raw-hands-v5-camera.hmotion");Atomic(motionPath,motion.ToJson());
             state.Error=null;Save("complete");return motionPath;

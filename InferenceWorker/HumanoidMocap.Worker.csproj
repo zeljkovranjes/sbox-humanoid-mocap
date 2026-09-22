@@ -8,6 +8,7 @@
     <Compile Include="../Editor/HumanoidMocap/Inference/*.cs" />
     <Compile Include="../Code/HumanoidMocap/**/*.cs" />
     <Compile Include="../Editor/HumanoidMocap/Mp4Metadata.cs" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
     <PackageReference Include="TorchSharp" Version="0.107.0" />
     <PackageReference Include="libtorch-cpu-win-x64" Version="2.10.0" />
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
