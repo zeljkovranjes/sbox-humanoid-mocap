@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" fill="none">
+  <title>Humanoid Mocap</title>
+  <desc>An articulated white figure in mid-motion with gold joint markers and faint motion trails, surrounded by a circular capture guide on a dark rounded square.</desc>
+  <rect width="128" height="128" rx="25" fill="#19191F"/>
+
+  <!-- Broken circular guide and cardinal marks. -->
+  <g stroke="#606168" stroke-width="1.5" stroke-linecap="round">
+    <path d="M15 46A52 52 0 0 1 46 15"/>
+    <path d="M82 15A52 52 0 0 1 113 46"/>
+    <path d="M113 82A52 52 0 0 1 82 113"/>
+    <path d="M46 113A52 52 0 0 1 15 82"/>
+  </g>
+  <g stroke="#FFBE36" stroke-width="1.8" stroke-linecap="round">
+    <path d="M64 7V13M64 115V121M7 64H13M115 64H121"/>
+  </g>
+
+  <!-- Motion trails behind the raised hand and the swinging foot. -->
+  <g stroke="#606168" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="2 4">
+    <path d="M30 44A30 30 0 0 1 36 27"/>
+    <path d="M78 99A30 30 0 0 0 95 101"/>
+  </g>
+
+  <!-- Spine, shoulders, hips and limb chains. -->
+  <g stroke="#F4F4F5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 33L62 48L60 63"/>
+    <path d="M51 38L64 33L77 37"/>
+    <path d="M53 65L60 63L68 63"/>
+    <path d="M51 38L42 30L39 24"/>
+    <path d="M77 37L88 47L97 42"/>
+    <path d="M53 65L50 83L44 99L36 101"/>
+    <path d="M68 63L84 71L90 88L98 89"/>
+  </g>
+
+  <!-- Gold markers on the captured joints. -->
+  <g fill="#FFBE36">
+    <circle cx="64" cy="33" r="2.8"/>
+    <circle cx="62" cy="48" r="2.6"/>
+    <circle cx="60" cy="63" r="2.8"/>
+    <circle cx="51" cy="38" r="2.8"/>
+    <circle cx="77" cy="37" r="2.8"/>
+    <circle cx="42" cy="30" r="2.6"/>
+    <circle cx="88" cy="47" r="2.6"/>
+    <circle cx="53" cy="65" r="2.8"/>
+    <circle cx="68" cy="63" r="2.8"/>
+    <circle cx="50" cy="83" r="2.6"/>
+    <circle cx="84" cy="71" r="2.6"/>
+    <circle cx="44" cy="99" r="2.6"/>
+    <circle cx="90" cy="88" r="2.6"/>
+  </g>
+  <g fill="#F4F4F5">
+    <circle cx="67" cy="22" r="6.5"/>
+    <circle cx="39" cy="24" r="3.1"/>
+    <circle cx="97" cy="42" r="3.1"/>
+    <circle cx="36" cy="101" r="3.1"/>
+    <circle cx="98" cy="89" r="3.1"/>
+  </g>
+</svg>
