@@ -34,6 +34,7 @@ try
         Console.WriteLine(fov is float f?$"FOV {f:F2} deg, focal {metadata.Width/2/Math.Tan(f*Math.PI/360):F1} px, {clock.Elapsed.TotalSeconds:F1}s":"no estimate");
     }
     else if(args.Length==2&&args[0]=="hands-bench")LiteOnnx.Bench(args[1],Console.WriteLine);
+    else if(args.Length==1&&args[0]=="adapters")foreach(var a in GpuBackbone.ListAdapters())Console.WriteLine(a);
     else if(args.Length==2&&args[0]=="gpu-bench")GpuBackbone.Bench(args[1],Console.WriteLine);
     else if(args.Length==3&&args[0]=="download-hand-models")
         await HandModelDownloads.Ensure(Path.GetFullPath(args[1]),args[2],cancellation.Token);

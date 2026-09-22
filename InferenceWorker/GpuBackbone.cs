@@ -34,6 +34,9 @@ public sealed class GpuBackbone : IDisposable
         {
             if(probed)return chosen;probed=true;
             if(string.Equals(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_DEVICE"),"cpu",StringComparison.OrdinalIgnoreCase))return null;
+            // HUMANOID_MOCAP_ADAPTER picks a DXGI adapter by index (for PCs with two GPUs, and for testing on others).
+            if(int.TryParse(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_ADAPTER"),out var forced)&&Dxgi.Adapters().FirstOrDefault(a=>a.Index==forced) is { Name: not null } pick)
+                return chosen=(pick.Index,pick.Name);
             try{chosen=Dxgi.LargestAdapter() is { } a&&a.DedicatedBytes>=MinimumDedicatedBytes?(a.Index,a.Name):null;}
             catch(Exception){chosen=null;}
             return chosen;
@@ -45,6 +48,7 @@ public sealed class GpuBackbone : IDisposable
     {
         failure=$"{adapter}: {error.Message.Split('\n')[0].Trim()}";probed=true;chosen=null;
     }
+    public static IEnumerable<string> ListAdapters()=>Dxgi.Adapters().Select(a=>$"{a.Index}: {a.Name} ({a.DedicatedBytes/1048576} MB dedicated)");
     /// <summary>One line for a capture's notes saying where the transformer ran.</summary>
     public static string DeviceNote=>failure is not null?$"Vision transformers started on the graphics card and finished on the processor after it failed ({failure}).":Device is { } d?$"Vision transformers ran on the graphics card ({d.Name}, DirectML, float16 matrix products).":"Vision transformers ran on the processor; no DirectX 12 graphics card with 3 GB or more of its own memory was available, or HUMANOID_MOCAP_DEVICE=cpu was set.";
     /// <summary>Joins cache keys: GPU results differ from the CPU path in the last digits, so each keeps its own cache.</summary>
@@ -313,26 +317,29 @@ public sealed class GpuBackbone : IDisposable
         }
         static T Method<T>(IntPtr self,int slot) where T:Delegate=>Marshal.GetDelegateForFunctionPointer<T>(Marshal.ReadIntPtr(Marshal.ReadIntPtr(self),slot*IntPtr.Size));
         static void Release(IntPtr p){if(p!=IntPtr.Zero)Method<ReleaseFn>(p,2)(p);}
-        public static (int Index,string Name,long DedicatedBytes)? LargestAdapter()
+        public static (int Index,string Name,long DedicatedBytes)? LargestAdapter()=>Adapters(skipSoftware:true).OrderByDescending(a=>a.DedicatedBytes).Cast<(int,string,long)?>().FirstOrDefault();
+        /// <summary>Every DXGI adapter with its index, name and dedicated memory.</summary>
+        public static List<(int Index,string Name,long DedicatedBytes)> Adapters(bool skipSoftware=false)
         {
+            var list=new List<(int,string,long)>();
             var iid=new Guid("770aae78-f26f-4dba-a829-253c83d1b387");
-            if(CreateDXGIFactory1(ref iid,out var factory)<0)return null;
+            if(CreateDXGIFactory1(ref iid,out var factory)<0)return list;
             try
             {
-                (int,string,long)? best=null;
                 // IDXGIFactory1::EnumAdapters1 is slot 12; IDXGIAdapter1::GetDesc1 is slot 10.
                 for(var i=0;Method<EnumAdapters1>(factory,12)(factory,i,out var adapter)>=0;i++)
                 {
                     try
                     {
-                        if(Method<GetDesc1>(adapter,10)(adapter,out var desc)<0||(desc.Flags&2)!=0)continue; // DXGI_ADAPTER_FLAG_SOFTWARE
-                        var bytes=(long)desc.DedicatedVideoMemory;if(best is not { } b||bytes>b.Item3)best=(i,desc.Description.Trim(),bytes);
+                        if(Method<GetDesc1>(adapter,10)(adapter,out var desc)<0)continue;
+                        if(skipSoftware&&(desc.Flags&2)!=0)continue; // DXGI_ADAPTER_FLAG_SOFTWARE
+                        list.Add((i,desc.Description.Trim(),(long)desc.DedicatedVideoMemory));
                     }
                     finally{Release(adapter);}
                 }
-                return best;
             }
             finally{Release(factory);}
+            return list;
         }
     }
 }
