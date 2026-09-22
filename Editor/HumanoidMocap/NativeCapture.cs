@@ -74,6 +74,38 @@ internal static class NativeCapture
     /// (typically HEVC from an iPhone) is reported in seconds rather than after gigabytes of models.</summary>
     static void EnsureDecodable(string video){using var decoder=new Inference.WindowsVideoDecoder(video);decoder.Read(CancellationToken.None);}
 
+    /// <summary>The video itself when Windows can decode it; otherwise a converted H.264 copy. iPhones record
+    /// HEVC, which Windows decodes only with a Store extension, and some editors export 10-bit or 4:4:4 H.264.
+    /// The worker re-encodes such files once; the copy is cached by source path, size and time.</summary>
+    public static async Task<string> PlayableVideoAsync(string video,Action<string> progress,CancellationToken token)
+    {
+        NotSupportedException undecodable;
+        try{await Task.Run(()=>EnsureDecodable(video),token);return video;}
+        catch(NotSupportedException error){undecodable=error;}
+        var info=new FileInfo(video);
+        var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{info.FullName}|{info.Length}|{info.LastWriteTimeUtc.Ticks}")))[..24];
+        var folder=Path.Combine(CacheRoot,"converted");var output=Path.Combine(folder,key+".mp4");
+        if(!File.Exists(output))
+        {
+            PruneConversions(folder);
+            var (worker,_)=await Prepare(progress,token);
+            await Notify(progress,"Converting the video to H.264 for this PC");
+            try{await RunProcess(worker,new[]{"convert-video",video,output},progress,token);}
+            catch(OperationCanceledException){throw;}
+            catch(Exception error){throw new NotSupportedException(undecodable.Message+" Automatic conversion did not work either: "+error.Message,error);}
+        }
+        await Task.Run(()=>EnsureDecodable(output),token);
+        return output;
+    }
+    /// <summary>Converted copies are large; keep those used in the last two weeks, at most eight.</summary>
+    static void PruneConversions(string folder)
+    {
+        if(!Directory.Exists(folder))return;
+        var files=new DirectoryInfo(folder).GetFiles("*.mp4").OrderByDescending(f=>f.LastWriteTimeUtc).ToArray();
+        foreach(var (file,index) in files.Select((f,i)=>(f,i)))
+            if(index>=7||file.LastWriteTimeUtc<DateTime.UtcNow.AddDays(-14))try{file.Delete();}catch(IOException){}catch(UnauthorizedAccessException){}
+    }
+
     public static async Task<string> BodyAsync(string video,double start,double end,int width,int height,Action<string> progress,CancellationToken token)
     {
         await Task.Run(()=>EnsureDecodable(video),token);

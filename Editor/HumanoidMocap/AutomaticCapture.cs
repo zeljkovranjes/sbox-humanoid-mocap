@@ -68,6 +68,14 @@ public sealed partial class RetargetWindow
         try
         {
             _captureStatus.Text = "Preparing video…";
+            // Footage Windows cannot decode (iPhone HEVC, 10-bit exports) is converted once and used in its place.
+            var playable=await NativeCapture.PlayableVideoAsync(video,ReceiveWorkerProgress,token);
+            await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
+            if(playable!=video)
+            {
+                var fov=_recordingFov.Text;LoadVideo(playable);_recordingFov.Text=fov;
+                _videoName.Text=Path.GetFileName(video)+" · converted";_videoName.ToolTip=video;video=playable;
+            }
             var metadata = await Task.Run(() => Mp4Metadata.Read(video), token);
             await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
             // A long video is not refused: the first 1,800 captured frames (about a minute) are processed
