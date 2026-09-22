@@ -135,12 +135,14 @@ public static class MotionCleanup
                     var range=Enumerable.Range(start,end-start).ToArray();
                     if(settings.Smoothing>0)
                     {
-                        var smoothed=MocapSmooth.Quaternions(range.Select(i=>MotionDocument.Q(output.Frames[i].Rotations[j])).ToArray(),Cutoff(settings.Smoothing),rate);
+                        var track=range.Select(i=>MotionDocument.Q(output.Frames[i].Rotations[j])).ToArray();MocapSmooth.RemoveSpikes(track);
+                        var smoothed=MocapSmooth.Quaternions(track,Cutoff(settings.Smoothing),rate);
                         for(var k=0;k<range.Length;k++)output.Frames[range[k]].Rotations[j]=MotionDocument.A(smoothed[k]);
                     }
                     if(root&&settings.PositionSmoothing>0)
                     {
-                        var smoothed=MocapSmooth.Positions(range.Select(i=>MotionDocument.V(output.Frames[i].Positions[j])).ToArray(),Cutoff(settings.PositionSmoothing),rate);
+                        var track=range.Select(i=>MotionDocument.V(output.Frames[i].Positions[j])).ToArray();MocapSmooth.RemoveSpikes(track,.015f);
+                        var smoothed=MocapSmooth.Positions(track,Cutoff(settings.PositionSmoothing),rate);
                         for(var k=0;k<range.Length;k++)output.Frames[range[k]].Positions[j]=MotionDocument.A(smoothed[k]);
                     }
                 }

@@ -101,6 +101,37 @@ public static class MocapSmooth
         if(shape==Shape.Gaussian)return Gaussian(x,cutoff,sampleRate);
         var (b,a)=ButterLowpass(order,cutoff,sampleRate);return FiltFilt(b,a,x);
     }
+    /// <summary>Replaces single-frame spikes: a sample far from both neighbours while the neighbours agree with each
+    /// other. A low-pass filter would spread such a flip over several frames instead of removing it. Fast real motion
+    /// moves the neighbours apart too, so it is never taken for a spike. Returns how many samples were replaced.</summary>
+    public static int RemoveSpikes(Quaternion[] q,float minimumDegrees=15,float ratio=3)
+    {
+        static float Angle(Quaternion a,Quaternion b)=>2*MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(a,b)),0,1))*180/MathF.PI;
+        var replaced=0;
+        for(var i=1;i+1<q.Length;i++)
+        {
+            var before=Angle(q[i-1],q[i]);var after=Angle(q[i],q[i+1]);var across=Angle(q[i-1],q[i+1]);
+            if(Math.Min(before,after)>Math.Max(minimumDegrees,ratio*across)){q[i]=Quaternion.Slerp(q[i-1],q[i+1],.5f);replaced++;}
+        }
+        // The first and last samples have one neighbour: a jump far larger than the next step is a spike too,
+        // and the filter's edge padding would otherwise keep it exactly.
+        if(q.Length>=3&&Angle(q[0],q[1])>Math.Max(minimumDegrees,ratio*Angle(q[1],q[2]))){q[0]=q[1];replaced++;}
+        var n=q.Length;if(n>=3&&Angle(q[n-1],q[n-2])>Math.Max(minimumDegrees,ratio*Angle(q[n-2],q[n-3]))){q[n-1]=q[n-2];replaced++;}
+        return replaced;
+    }
+    /// <summary>The same for positions; <paramref name="minimumDistance"/> in the track's units.</summary>
+    public static int RemoveSpikes(Vector3[] p,float minimumDistance,float ratio=3)
+    {
+        var replaced=0;
+        for(var i=1;i+1<p.Length;i++)
+        {
+            var before=Vector3.Distance(p[i-1],p[i]);var after=Vector3.Distance(p[i],p[i+1]);var across=Vector3.Distance(p[i-1],p[i+1]);
+            if(Math.Min(before,after)>Math.Max(minimumDistance,ratio*across)){p[i]=(p[i-1]+p[i+1])*.5f;replaced++;}
+        }
+        if(p.Length>=3&&Vector3.Distance(p[0],p[1])>Math.Max(minimumDistance,ratio*Vector3.Distance(p[1],p[2]))){p[0]=p[1];replaced++;}
+        var n=p.Length;if(n>=3&&Vector3.Distance(p[n-1],p[n-2])>Math.Max(minimumDistance,ratio*Vector3.Distance(p[n-2],p[n-3]))){p[n-1]=p[n-2];replaced++;}
+        return replaced;
+    }
     /// <summary>Smooths a quaternion track (xyzw). Signs are made continuous first, since q and -q are the same rotation.</summary>
     public static Quaternion[] Quaternions(IReadOnlyList<Quaternion> track,double cutoff,double sampleRate,Shape shape=Shape.Butterworth,int order=2)
     {

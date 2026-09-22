@@ -12,7 +12,7 @@ namespace HumanoidMocap.Worker;
 /// whose forearm was not confidently seen, are skipped and labelled unobserved rather than guessed.</summary>
 public static class BodyHandTracks
 {
-    public const string Version="body-wilor-fingers-v2-zero-phase";
+    public const string Version="body-wilor-fingers-v6-smooth-edges";
     /// <summary>A forearm shorter than this many source pixels gives WiLoR too little hand to read.</summary>
     public const float MinimumForearmPixels=36;
     static readonly string[] Roles={"IndexProx","IndexMid","IndexDist","MiddleProx","MiddleMid","MiddleDist",
@@ -52,6 +52,13 @@ public static class BodyHandTracks
     /// <summary>Adds finger bones beneath HandL/HandR for each side seen in at least a tenth of the frames.
     /// Short losses glide into the reacquired pose and are labelled inferred; the rest stay unobserved.</summary>
     /// <returns>Observed samples per side, left then right.</returns>
+    /// <summary>Consecutive frames a hand must be seen for its fingers to be used, about a third of a second at 25 fps.</summary>
+    public const int MinimumRunFrames=8;
+    static int RunLength(IReadOnlyList<Sample?[]> samples,int side,int t)
+    {
+        int start=t,end=t;while(start>0&&samples[start-1][side] is not null)start--;while(end+1<samples.Count&&samples[end+1][side] is not null)end++;
+        return end-start+1;
+    }
     public static int[] Append(MotionDocument document,IReadOnlyList<Sample?[]> samples)
     {
         if(samples.Count!=document.Frames.Count)throw new ArgumentException("Hand samples do not match the motion sample count.");
@@ -59,7 +66,11 @@ public static class BodyHandTracks
         for(var side=0;side<2;side++)
         {
             var suffix=side==0?"L":"R";var wrist=document.Bones.FindIndex(b=>b.Role==(side==0?BoneRole.HandL:BoneRole.HandR));
-            var observed=Enumerable.Range(0,samples.Count).Where(t=>samples[t][side] is not null).ToArray();counts[side]=observed.Length;
+            // Sightings shorter than MinimumRunFrames are dropped: a small hand seen in scattered moments gave
+            // fingers that disagreed by 25-60 degrees from frame to frame on the kata sample. Longer runs are kept
+            // and the gaps glide between them.
+            var seen=Enumerable.Range(0,samples.Count).Where(t=>samples[t][side] is not null).ToArray();
+            var observed=seen.Where(t=>RunLength(samples,side,t)>=MinimumRunFrames).ToArray();counts[side]=observed.Length;
             if(wrist<0||observed.Length<Math.Max(5,samples.Count/10))continue;
             var rest=new float[45];
             foreach(var t in observed)for(var i=0;i<45;i++)rest[i]+=samples[t][side]!.RestOffsets[i]/observed.Length;
@@ -72,19 +83,12 @@ public static class BodyHandTracks
                 // Reconstructed is the enum's zero value, so unseen frames must be marked explicitly.
                 var track=new Quaternion[samples.Count];var evidence=Enumerable.Repeat(JointEvidence.Unobserved,samples.Count).ToArray();
                 foreach(var t in observed){track[t]=At(t);evidence[t]=JointEvidence.Reconstructed;}
-                // Small hands jitter from frame to frame: zero-phase Butterworth at the First Person default
-                // (Rokoko strength 7, 3.5 Hz) over each run of consecutive observations.
-                var rate=1/Math.Max(1e-3,(document.Frames[^1].Time-document.Frames[0].Time)/Math.Max(1,samples.Count-1));
+                // Single-frame flips go first, within each run of observations.
                 for(var start=0;start<samples.Count;)
                 {
                     if(evidence[start]!=JointEvidence.Reconstructed){start++;continue;}
                     var end=start;while(end<samples.Count&&evidence[end]==JointEvidence.Reconstructed)end++;
-                    if(end-start>=8&&rate>7.8)
-                    {
-                        var run=MocapSmooth.Quaternions(track[start..end],Math.Min(3.5,rate*.45),rate);
-                        Array.Copy(run,0,track,start,run.Length);
-                    }
-                    start=end;
+                    var raw=track[start..end];MocapSmooth.RemoveSpikes(raw);Array.Copy(raw,0,track,start,raw.Length);start=end;
                 }
                 for(var t=0;t<samples.Count;t++)
                 {
@@ -98,6 +102,24 @@ public static class BodyHandTracks
                     var amount=(float)Math.Clamp((document.Frames[t].Time-start)/(end-start),0,1);amount=amount*amount*(3-2*amount);
                     track[t]=Quaternion.Slerp(track[before],track[after],amount);evidence[t]=JointEvidence.InferredGap;
                 }
+                // Then zero-phase Butterworth at the First Person default (Rokoko strength 7, 3.5 Hz) across each
+                // continuous stretch, glides included, so the noisy first frames after a loss are smoothed too.
+                var rate=1/Math.Max(1e-3,(document.Frames[^1].Time-document.Frames[0].Time)/Math.Max(1,samples.Count-1));
+                for(var start=0;start<samples.Count;)
+                {
+                    if(evidence[start]==JointEvidence.Unobserved){start++;continue;}
+                    var end=start;while(end<samples.Count&&evidence[end]!=JointEvidence.Unobserved)end++;
+                    if(end-start>=8&&rate>7.8)
+                    {
+                        var run=MocapSmooth.Quaternions(track[start..end],Math.Min(3.5,rate*.45),rate);
+                        Array.Copy(run,0,track,start,run.Length);
+                    }
+                    start=end;
+                }
+                // Before the first and after the last sighting the hand holds its nearest filtered pose.
+                var firstSeen=observed[0];var lastSeen=observed[^1];
+                for(var t=0;t<firstSeen;t++)track[t]=track[firstSeen];
+                for(var t=lastSeen+1;t<samples.Count;t++)track[t]=track[lastSeen];
                 for(var t=0;t<samples.Count;t++)Extend(document.Frames[t],document.Bones[first+j].RestPosition,track[t],evidence[t]);
             }
         }
