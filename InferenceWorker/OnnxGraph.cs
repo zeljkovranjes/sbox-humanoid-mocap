@@ -58,6 +58,13 @@ public sealed class OnnxGraph
         Message(initializers,5,t=>{Int(t,1,values.Length);Int(t,2,Int64);Text(t,8,name);Bytes(t,9,raw);});
         return name;
     }
+    /// <summary>A small float vector stored in the graph, such as resize scales.</summary>
+    public string Floats(params float[] values)
+    {
+        var name="floats_"+counter++;var raw=new byte[values.Length*4];Buffer.BlockCopy(values,0,raw,0,raw.Length);
+        Message(initializers,5,t=>{Int(t,1,values.Length);Int(t,2,Float);Text(t,8,name);Bytes(t,9,raw);});
+        return name;
+    }
     /// <summary>A scalar in the graph's floating type.</summary>
     public string Scalar(float value,int type)
     {

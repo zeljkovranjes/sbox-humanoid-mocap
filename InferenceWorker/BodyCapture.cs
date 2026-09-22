@@ -107,6 +107,28 @@ public static class BodyCapture
                 request=request with{Start=selected[cut]};
             }
         }
+        // Without a lens from the camera, estimate it from the picture (see MogeLens); the image-diagonal
+        // assumption is the last resort. Done before the cache key so the key records the lens used.
+        string? lensNote=null;
+        if(request.HorizontalFov is null)
+        {
+            var mogePath=Path.Combine(request.Models,"moge/moge-2-vits-normal.pt");
+            if(File.Exists(mogePath))
+            {
+                try
+                {
+                    progress?.Invoke("Estimating the camera lens");
+                    var range=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
+                    if(range.Length>0&&MogeLens.EstimateHorizontalFov(mogePath,request.Video,range,metadata.Width,metadata.Height,5,cancellation) is float estimated)
+                    {
+                        estimated=MathF.Round(estimated,1);request=request with{HorizontalFov=estimated};
+                        lensNote=FormattableString.Invariant($"Lens: estimated from the picture as a {estimated:F0} degree horizontal field of view (MoGe-2), used for depth and travel.");
+                    }
+                }
+                catch(OperationCanceledException){throw;}
+                catch(Exception error){progress?.Invoke("Lens estimate unavailable ("+error.Message.Split('\n')[0]+"); assuming one from the picture size");}
+            }
+        }
         var count=captureTimes.Count(t=>t>=request.Start&&t<request.End);
         if(count<1)throw new ArgumentException("No shot of at least half a second was found in the selected range.");
         using var video=File.OpenRead(request.Video);var sourceSha=Convert.ToHexString(SHA256.HashData(video));
@@ -337,8 +359,8 @@ public static class BodyCapture
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             if(shotNote is not null)motion.Diagnostics.Add(shotNote);
             if(visibilityNote is not null)motion.Diagnostics.Add(visibilityNote);
-            motion.Diagnostics.Add(request.HorizontalFov is float lens?FormattableString.Invariant($"Lens: the camera recorded a {lens:F0} degree horizontal field of view, used for depth and travel."):
-                "Lens: not recorded by the camera; assumed from the picture size (about 53 degrees across the diagonal). Distances toward and away from the camera scale with this assumption.");
+            motion.Diagnostics.Add(lensNote??(request.HorizontalFov is float lens?FormattableString.Invariant($"Lens: the camera recorded a {lens:F0} degree horizontal field of view, used for depth and travel."):
+                "Lens: not recorded by the camera; assumed from the picture size (about 53 degrees across the diagonal). Distances toward and away from the camera scale with this assumption."));
             motion.Diagnostics.Add(GpuBackbone.DeviceNote);
             if(metadata.SamplingNote is { } sampling)motion.Diagnostics.Add(sampling);
             motion.Diagnostics.Add(state.CameraMotion.Diagnostic);

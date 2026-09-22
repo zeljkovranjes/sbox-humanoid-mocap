@@ -117,10 +117,13 @@ public static class BodyHandTracks
     /// source) but writes fresh notes; carry the finger note across and drop the claim that none exist.</summary>
     public static void CarryFingerNotes(MotionDocument source,MotionDocument destination)
     {
+        // Notes about how the capture was made, which the editor status and the reader rely on.
+        string[] kept={"Lens:","Vision transformers","High frame rate footage","Performer not in view","Footage cuts to another shot"};
+        destination.Diagnostics.AddRange(source.Diagnostics.Where(d=>kept.Any(p=>d.StartsWith(p,StringComparison.Ordinal))&&!destination.Diagnostics.Contains(d)));
         var notes=source.Diagnostics.Where(d=>d.StartsWith("Fingers:",StringComparison.Ordinal)).ToArray();
         if(notes.Length==0||destination.Bones.Count<=22)return;
         for(var i=0;i<destination.Diagnostics.Count;i++)
             destination.Diagnostics[i]=destination.Diagnostics[i].Replace(" Detailed fingers and object motion are not captured."," Object motion is not captured.");
-        destination.Diagnostics.AddRange(notes);
+        destination.Diagnostics.AddRange(notes.Where(n=>!destination.Diagnostics.Contains(n)));
     }
 }

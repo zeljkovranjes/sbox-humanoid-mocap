@@ -27,6 +27,12 @@ try
         await BodyModelDownloads.Ensure(Path.GetFullPath(args[1]),cancellation.Token);
     else if(args.Length==3&&args[0]=="convert-video")
     {VideoConvert.Run(args[1],args[2],cancellation.Token,Console.WriteLine);Console.WriteLine("HM_RESULT "+args[2]);}
+    else if(args.Length==3&&args[0]=="lens")
+    {
+        var metadata=HumanoidMocap.Editor.Mp4Metadata.Read(args[2]);var clock=System.Diagnostics.Stopwatch.StartNew();
+        var fov=MogeLens.EstimateHorizontalFov(args[1],args[2],metadata.Times,metadata.Width,metadata.Height,5,cancellation.Token,Console.WriteLine);
+        Console.WriteLine(fov is float f?$"FOV {f:F2} deg, focal {metadata.Width/2/Math.Tan(f*Math.PI/360):F1} px, {clock.Elapsed.TotalSeconds:F1}s":"no estimate");
+    }
     else if(args.Length==2&&args[0]=="hands-bench")LiteOnnx.Bench(args[1],Console.WriteLine);
     else if(args.Length==2&&args[0]=="gpu-bench")GpuBackbone.Bench(args[1],Console.WriteLine);
     else if(args.Length==3&&args[0]=="download-hand-models")
