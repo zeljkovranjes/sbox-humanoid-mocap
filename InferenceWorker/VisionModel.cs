@@ -15,7 +15,8 @@ public sealed class VisionModel : IDisposable
 {
     public enum Kind{Hmr2Features,VitPoseHeatmaps}
     readonly Dictionary<string,Tensor> weights=new(StringComparer.Ordinal);
-    readonly Kind kind;bool disposed;int running;readonly GpuBackbone? gpu;
+    readonly Kind kind;bool disposed;int running;GpuBackbone? gpu;
+    readonly string checkpointPath;readonly Action<string>? report;
     /// <summary>The graphics card running the transformer blocks, or "CPU".</summary>
     public string Device=>gpu?.Adapter??"CPU";
     /// <summary>Numeric type of the 32 backbone blocks' matrix products; see <see cref="WilorModel.ChoosePrecision"/>.</summary>
@@ -23,16 +24,19 @@ public sealed class VisionModel : IDisposable
     /// <param name="gpuCache">Folder for the graphics-card graph; null keeps everything on the CPU.</param>
     public VisionModel(string checkpointPath,Kind kind,CancellationToken cancellation=default,Action<int,int>? loading=null,string? precision=null,string? gpuCache=null,Action<string>? report=null)
     {
-        this.kind=kind;Precision=precision??WilorModel.ChoosePrecision();
+        this.kind=kind;this.checkpointPath=checkpointPath;this.report=report;Precision=precision??WilorModel.ChoosePrecision();
         if(Precision is not (WilorModel.Float32 or WilorModel.BFloat16))throw new ArgumentException("Unsupported vision precision.");
-        static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
         var expected=kind==Kind.Hmr2Features?"2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e":"50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc";
         if(!FileChecksum.Matches(checkpointPath,expected))throw new InvalidDataException("Vision checkpoint checksum mismatch.");
         if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,expected,kind==Kind.VitPoseHeatmaps?GpuBackbone.Variant.Heatmaps:GpuBackbone.Variant.Hmr2Features,192,gpuCache,report,cancellation);
+        // With a GPU the whole network, head included, lives there; nothing is loaded here unless it fails.
+        if(gpu is null)LoadProcessorWeights(cancellation,loading);
+    }
+    void LoadProcessorWeights(CancellationToken cancellation,Action<int,int>? loading=null)
+    {
+        static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
         using var checkpoint=new TorchCheckpoint(checkpointPath);
-        // With a GPU the whole network, head included, lives there; nothing is loaded here.
-        bool OnGpu(string name)=>gpu is not null;
-        var required=checkpoint.Tensors.Where(p=>(p.Key.StartsWith("backbone.")||p.Key.StartsWith(kind==Kind.Hmr2Features?"smpl_head.transformer.":"keypoint_head."))&&!OnGpu(p.Key)).ToArray();
+        var required=checkpoint.Tensors.Where(p=>p.Key.StartsWith("backbone.")||p.Key.StartsWith(kind==Kind.Hmr2Features?"smpl_head.transformer.":"keypoint_head.")).ToArray();
         try
         {
             var count=0;
@@ -64,9 +68,18 @@ public sealed class VisionModel : IDisposable
         {
             if(gpu is not null)
             {
-                var onCard=gpu.Run(image);
-                if(onCard.Any(v=>!float.IsFinite(v)))throw new ArithmeticException("Non-finite vision prediction.");
-                return onCard;
+                try
+                {
+                    var onCard=gpu.Run(image);
+                    if(onCard.Any(v=>!float.IsFinite(v)))throw new ArithmeticException("Non-finite graphics-card prediction.");
+                    return onCard;
+                }
+                catch(Exception error) when(error is not OperationCanceledException)
+                {
+                    // A driver reset or lost device mid-job: finish on the processor rather than fail the capture.
+                    report?.Invoke($"The graphics card failed ({error.Message.Split('\n')[0]}); continuing on the processor");
+                    GpuBackbone.Disable(gpu.Adapter,error);gpu.Dispose();gpu=null;LoadProcessorWeights(cancellation);
+                }
             }
             using var noGrad=no_grad();using var scope=NewDisposeScope();
             var pixels=tensor(image).reshape(1,3,256,192);

@@ -25,7 +25,7 @@ public sealed class GpuBackbone : IDisposable
     readonly InferenceSession session;readonly int inputLength;readonly long[] inputShape;readonly string inputName,outputName;
     public string Adapter { get; }
 
-    static (int Index,string Name)? chosen;static bool probed;
+    static (int Index,string Name)? chosen;static bool probed;static int simulated;
     /// <summary>The GPU this process uses, or null for the CPU. HUMANOID_MOCAP_DEVICE=cpu forces the CPU.</summary>
     public static (int Index,string Name)? Device
     {
@@ -38,8 +38,14 @@ public sealed class GpuBackbone : IDisposable
             return chosen;
         }
     }
+    static string? failure;
+    /// <summary>Stops using the graphics card for the rest of this process after it failed mid-job.</summary>
+    public static void Disable(string adapter,Exception error)
+    {
+        failure=$"{adapter}: {error.Message.Split('\n')[0].Trim()}";probed=true;chosen=null;
+    }
     /// <summary>One line for a capture's notes saying where the transformer ran.</summary>
-    public static string DeviceNote=>Device is { } d?$"Vision transformers ran on the graphics card ({d.Name}, DirectML, float16 matrix products).":"Vision transformers ran on the processor; no DirectX 12 graphics card with 3 GB or more of its own memory was available, or HUMANOID_MOCAP_DEVICE=cpu was set.";
+    public static string DeviceNote=>failure is not null?$"Vision transformers started on the graphics card and finished on the processor after it failed ({failure}).":Device is { } d?$"Vision transformers ran on the graphics card ({d.Name}, DirectML, float16 matrix products).":"Vision transformers ran on the processor; no DirectX 12 graphics card with 3 GB or more of its own memory was available, or HUMANOID_MOCAP_DEVICE=cpu was set.";
     /// <summary>Joins cache keys: GPU results differ from the CPU path in the last digits, so each keeps its own cache.</summary>
     public static string? KeySuffix=>Device is null?null:"directml-fp16-"+BuilderVersion;
     /// <summary>A GPU backbone for this checkpoint, or null when no suitable GPU is available or it fails its first run.
@@ -72,9 +78,13 @@ public sealed class GpuBackbone : IDisposable
     }
     /// <summary>Embedded tokens [tokens,1280] or a CHW 256x192 image, as the variant takes; returns normalized
     /// tokens [tokens,1280], HMR2 features [1024] or heatmaps [17,64,48].</summary>
+
     public float[] Run(float[] input)
     {
         if(input.Length!=inputLength)throw new ArgumentException("Unexpected backbone input size.");
+        // Test hook: simulates the graphics driver failing after this many calls in the process.
+        if(int.TryParse(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_TEST_GPU_FAILURE"),out var failAfter)&&Interlocked.Increment(ref simulated)>failAfter)
+            throw new InvalidOperationException("Simulated graphics-card failure.");
         using var value=OrtValue.CreateTensorValueFromMemory(input,inputShape);
         using var run=new RunOptions();
         using var outputs=session.Run(run,new[]{inputName},new[]{value},new[]{outputName});

@@ -12,9 +12,10 @@ namespace HumanoidMocap.Worker;
 public sealed class WilorModel : IDisposable
 {
     public const string CheckpointSha256="3e97aafc7dd08d883a4cc5a027df61fdb6fda6136dbd1319405413862ada6bb2";
-    readonly HandModelWeights weights;
+    HandModelWeights weights;
+    readonly string checkpointPath;readonly Action<string>? report;
     readonly ManoDecoder mano;
-    int running;bool disposed;readonly GpuBackbone? gpu;
+    int running;bool disposed;GpuBackbone? gpu;
     /// <summary>The graphics card running the transformer blocks, or "CPU".</summary>
     public string Device=>gpu?.Adapter??"CPU";
     public const string Float32="float32",BFloat16="bfloat16";
@@ -49,17 +50,19 @@ public sealed class WilorModel : IDisposable
     /// <param name="gpuCache">Folder for the graphics-card graph; null keeps everything on the CPU.</param>
     public WilorModel(string checkpointPath,CancellationToken cancellation=default,string? precision=null,string? gpuCache=null,Action<string>? report=null)
     {
-        Precision=precision??ChoosePrecision();
+        this.checkpointPath=checkpointPath;this.report=report;Precision=precision??ChoosePrecision();
         if(Precision is not (Float32 or BFloat16))throw new ArgumentException("Unsupported WiLoR precision.");
-        static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
         if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,CheckpointSha256,GpuBackbone.Variant.Tokens,210,gpuCache,report,cancellation);
         // With a GPU the blocks and final norm live there and are not loaded here.
         var onGpu=gpu is not null;
-        weights=new(checkpointPath,CheckpointSha256,name=>(name.StartsWith("backbone.")||name.StartsWith("refine_net."))&&!(onGpu&&(name.StartsWith("backbone.blocks.")||name.StartsWith("backbone.last_norm."))),cancellation,
-            Precision==BFloat16?name=>BlockMatrix(name)?ScalarType.BFloat16:null:null);
+        weights=LoadWeights(onGpu,cancellation);
         try{using var checkpoint=new TorchCheckpoint(checkpointPath);mano=new(checkpoint,"mano.");}
         catch{Dispose();throw;}
     }
+    static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
+    HandModelWeights LoadWeights(bool onGpu,CancellationToken cancellation)=>new(checkpointPath,CheckpointSha256,
+        name=>(name.StartsWith("backbone.")||name.StartsWith("refine_net."))&&!(onGpu&&(name.StartsWith("backbone.blocks.")||name.StartsWith("backbone.last_norm."))),cancellation,
+        Precision==BFloat16?name=>BlockMatrix(name)?ScalarType.BFloat16:null:null);
     Tensor BlockLinear(Tensor input,string name)=>weights.Linear(Precision==Float32?input:input.to(ScalarType.BFloat16),name);
     /// <summary>RGB ImageNet-normalized CHW 256x192, from the central columns of
     /// the 256x256 hand crop. Left hands must be horizontally flipped before this call.</summary>
@@ -77,11 +80,20 @@ public sealed class WilorModel : IDisposable
             var shapeToken=weights.Linear(weights["backbone.init_betas"],"backbone.shape_emb").unsqueeze(1);
             var cameraToken=weights.Linear(weights["backbone.init_cam"],"backbone.cam_emb").unsqueeze(1);
             x=cat(new[]{poseToken,shapeToken,cameraToken,x},1);
+            float[]? onCard=null;
             if(gpu is not null)
             {
                 cancellation.ThrowIfCancellationRequested();
-                x=tensor(gpu.Run(x.contiguous().data<float>().ToArray())).reshape(1,210,1280);
+                try{onCard=gpu.Run(x.contiguous().data<float>().ToArray());if(onCard.Any(v=>!float.IsFinite(v)))throw new ArithmeticException("Non-finite graphics-card prediction.");}
+                catch(Exception error) when(error is not OperationCanceledException)
+                {
+                    // A driver reset or lost device mid-job: finish on the processor rather than fail the capture.
+                    report?.Invoke($"The graphics card failed ({error.Message.Split('\n')[0]}); continuing on the processor");
+                    GpuBackbone.Disable(gpu.Adapter,error);gpu.Dispose();gpu=null;onCard=null;
+                    var full=LoadWeights(false,cancellation);weights.Dispose();weights=full;
+                }
             }
+            if(onCard is not null)x=tensor(onCard).reshape(1,210,1280);
             else for(var block=0;block<32;block++)
             {
                 cancellation.ThrowIfCancellationRequested();using var layer=NewDisposeScope();
@@ -94,7 +106,7 @@ public sealed class WilorModel : IDisposable
                 var feedforward=BlockLinear(F.gelu(BlockLinear(weights.Norm(residual,name+".norm2",1280),name+".mlp.fc1")),name+".mlp.fc2").to(ScalarType.Float32);
                 var previous=x;x=(residual+feedforward).MoveToOuterDisposeScope();previous.Dispose();
             }
-            if(gpu is null)x=weights.Norm(x,"backbone.last_norm",1280);
+            if(onCard is null)x=weights.Norm(x,"backbone.last_norm",1280);
             var pose=weights.Linear(x.slice(1,0,16,1),"backbone.decpose").reshape(1,96)+weights["backbone.init_hand_pose"];
             var shape=weights.Linear(x.slice(1,16,17,1),"backbone.decshape").reshape(1,10)+weights["backbone.init_betas"];
             var camera=weights.Linear(x.slice(1,17,18,1),"backbone.deccam").reshape(1,3)+weights["backbone.init_cam"];
