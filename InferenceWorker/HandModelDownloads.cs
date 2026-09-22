@@ -1,3 +1,4 @@
+using HumanoidMocap.Inference;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -36,7 +37,7 @@ public static class HandModelDownloads
     static async Task Verify(string path,Asset asset,CancellationToken token)
     {
         if(new FileInfo(path).Length!=asset.Bytes)throw new InvalidDataException("Unexpected model size; original preserved: "+path);
-        await using var file=File.OpenRead(path);var hash=Convert.ToHexString(await SHA256.HashDataAsync(file,token));
+        var hash=await Task.Run(()=>FileChecksum.Sha256(path),token);
         if(!hash.Equals(asset.Sha256,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Model checksum mismatch; original preserved: "+path);
     }
 }

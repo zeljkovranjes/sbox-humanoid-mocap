@@ -14,8 +14,7 @@ internal sealed class HandModelWeights : IDisposable
     /// are read, so a second full-precision copy never exists.</param>
     public HandModelWeights(string path,string sha256,Func<string,bool> include,CancellationToken cancellation,Func<string,ScalarType?>? reduce=null)
     {
-        using(var input=File.OpenRead(path))
-            if(!Convert.ToHexString(SHA256.HashData(input)).Equals(sha256,StringComparison.OrdinalIgnoreCase))
+        if(!FileChecksum.Matches(path,sha256))
                 throw new InvalidDataException("Hand model checkpoint checksum mismatch.");
         using var checkpoint=new TorchCheckpoint(path);var loaded=0;
         try

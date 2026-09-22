@@ -40,6 +40,8 @@ public static class HandCapture
         public WildHandsCrop.Camera? InferenceCamera { get; set; }
         public int FocalEstimateSamples { get; set; }
         public double InferenceSeconds { get; set; }
+        /// <summary>Of <see cref="InferenceSeconds"/>, the part spent finding and landmarking hands.</summary>
+        public double DetectionSeconds { get; set; }
         public long PeakRamBytes { get; set; }
     }
     public static string Run(HandCaptureRequest request,CancellationToken cancellation=default,Action<string>? progress=null)
@@ -55,15 +57,17 @@ public static class HandCapture
         var wild=request.Backend=="wildhands";var mobile=request.Backend=="mobilehand";
         var checkpointPath=Path.Combine(request.Models,mobile?"mobilehand/hmr_model_freihand_auc.pth":wild?"wildhands/wildhands.ckpt":"wilor/wilor_final.ckpt");
         var detectorPath=Path.Combine(request.Models,"hand_landmarker.task");
-        string Hash(string path){using var input=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant();}
-        cancellation.ThrowIfCancellationRequested();var sourceHash=Hash(request.Video);var detectorHash=Hash(detectorPath);
+        // Model files keep a remembered checksum beside them; the video is hashed afresh and nothing is written next to it.
+        static string Hash(string path){using var input=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant();}
+        static string ModelHash(string path)=>FileChecksum.Sha256(path).ToLowerInvariant();
+        cancellation.ThrowIfCancellationRequested();var sourceHash=Hash(request.Video);var detectorHash=ModelHash(detectorPath);
         var modelHash=mobile?MobileHandModel.CheckpointSha256:wild?WildHandsModel.CheckpointSha256:WilorModel.CheckpointSha256;
         // Verify cached jobs too; a different file must not masquerade as pinned weights.
-        if(Hash(checkpointPath)!=modelHash)throw new InvalidDataException("Hand model checksum mismatch.");
+        if(ModelHash(checkpointPath)!=modelHash)throw new InvalidDataException("Hand model checksum mismatch.");
         // Reduced precision changes predictions slightly, so it keeps its own cache.
         var wilorPrecision=!wild&&!mobile?GpuBackbone.KeySuffix??WilorModel.ChoosePrecision():null;
         var implementation=ImplementationVersion+(wild?"; "+WildHandsCrop.ImplementationVersion:"")+(wilorPrecision is null or WilorModel.Float32?"":"; wilor-blocks-"+wilorPrecision);
-        var keyData=JsonSerializer.Serialize(new{pipeline=implementation+(metadata.CaptureStride>1?"; every"+metadata.CaptureStride:""),decoder=WindowsVideoDecoder.ImplementationVersion,detectorImplementation=ManagedHands.ImplementationVersion,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
+        var keyData=JsonSerializer.Serialize(new{pipeline=implementation+(metadata.CaptureStride>1?"; every"+metadata.CaptureStride:""),decoder=WindowsVideoDecoder.ImplementationVersion,detectorImplementation=ManagedHands.ImplementationVersion+"; "+LiteOnnx.KeySuffix,sourceHash,detectorHash,modelHash,request.Backend,request.Start,request.End,request.Camera});
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyData))).ToLowerInvariant();
         var directory=Path.Combine(Path.GetFullPath(request.Output),key);Directory.CreateDirectory(directory);
         using var jobLock=new FileStream(Path.Combine(directory,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -114,6 +118,7 @@ public static class HandCapture
                     var clock=Stopwatch.StartNew();
                     var observations=detector.DetectTracked(frame.Rgba,frame.Width,frame.Height,state.Tracking.Select(h=>h.ToObservation()).ToArray(),cancellation)
                         .GroupBy(h=>h.Side).Select(g=>g.OrderByDescending(h=>h.Presence).First()).ToArray();
+                    state.DetectionSeconds+=clock.Elapsed.TotalSeconds;
                     WildHandsCrop.Box Bounds(HandObservation hand)=>new(hand.ImageLandmarks.Min(p=>p.X),hand.ImageLandmarks.Min(p=>p.Y),hand.ImageLandmarks.Max(p=>p.X),hand.ImageLandmarks.Max(p=>p.Y));
                     var reconstructed=new List<ManoHandSample>();
                     if(wild&&observations.Length>0)

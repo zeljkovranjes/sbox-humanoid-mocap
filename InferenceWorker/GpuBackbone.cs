@@ -66,7 +66,7 @@ public sealed class GpuBackbone : IDisposable
         inputName=variant==Variant.Tokens?"tokens":"image";outputName=variant==Variant.Heatmaps?"heatmaps":"features";
         var stem=$"vit-h-{checkpointSha256[..16].ToLowerInvariant()}-{variant.ToString().ToLowerInvariant()}-{tokens}t-fp16-{BuilderVersion}";var graphPath=Path.Combine(cache,stem+".onnx");
         if(!File.Exists(graphPath))Build(checkpointPath,cache,stem,variant,tokens,cancellation);
-        using var options=new SessionOptions{GraphOptimizationLevel=GraphOptimizationLevel.ORT_ENABLE_ALL,EnableMemoryPattern=false,ExecutionMode=ExecutionMode.ORT_SEQUENTIAL};
+        using var options=new SessionOptions{GraphOptimizationLevel=GraphOptimizationLevel.ORT_ENABLE_ALL,EnableMemoryPattern=false,ExecutionMode=ExecutionMode.ORT_SEQUENTIAL,LogSeverityLevel=OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR};
         options.AppendExecutionProvider_DML(device.Index);
         session=new InferenceSession(graphPath,options);
     }

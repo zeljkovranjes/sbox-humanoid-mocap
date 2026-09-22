@@ -15,6 +15,8 @@ if(Console.IsInputRedirected)
         catch(ObjectDisposedException){}
     });
 }
+// MediaPipe hand models run on ONNX Runtime in the worker; the editor keeps the managed interpreter.
+LiteOnnx.Install(Console.WriteLine);
 // One thread per physical core on typical SMT processors, leaving the rest to the
 // editor. Four threads took 2.4 times longer than eight for WiLoR on a Ryzen 7 7800X3D.
 static int InferenceThreads()=>int.TryParse(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_THREADS"),out var threads)&&threads is >=1 and <=64
@@ -23,6 +25,7 @@ try
 {
     if(args.Length==2&&args[0]=="download-body-models")
         await BodyModelDownloads.Ensure(Path.GetFullPath(args[1]),cancellation.Token);
+    else if(args.Length==2&&args[0]=="hands-bench")LiteOnnx.Bench(args[1],Console.WriteLine);
     else if(args.Length==2&&args[0]=="gpu-bench")GpuBackbone.Bench(args[1],Console.WriteLine);
     else if(args.Length==3&&args[0]=="download-hand-models")
         await HandModelDownloads.Ensure(Path.GetFullPath(args[1]),args[2],cancellation.Token);

@@ -17,15 +17,20 @@ using Vector3 = System.Numerics.Vector3;
 public sealed class ManagedHands
 {
     public const string ImplementationVersion="managed-hands-v9-track-conflicts";
-    readonly LiteInterpreter palms,hands;
+    /// <summary>Runs one TFLite model: NHWC input in, its outputs out.</summary>
+    public delegate float[][] ModelRunner(float[] input,CancellationToken token);
+    /// <summary>Builds the runner for each model. The managed interpreter by default; the capture worker
+    /// substitutes ONNX Runtime, which runs the same operators with optimised native kernels.</summary>
+    public static Func<LiteModel,ModelRunner> RunnerFactory { get; set; }=model=>new LiteInterpreter(model).Run;
+    readonly ModelRunner palms,hands;
     readonly List<Vector2> anchors=new();
     public ManagedHands(byte[] task)
     {
         using var zip=new ZipArchive(new MemoryStream(task),ZipArchiveMode.Read);
-        LiteInterpreter Load(string name)
+        ModelRunner Load(string name)
         {
             using var input=(zip.GetEntry(name)??throw new FormatException("Missing "+name)).Open();
-            using var memory=new MemoryStream();input.CopyTo(memory);return new LiteInterpreter(new LiteModel(memory.ToArray()));
+            using var memory=new MemoryStream();input.CopyTo(memory);return RunnerFactory(new LiteModel(memory.ToArray()));
         }
         palms=Load("hand_detector.tflite");hands=Load("hand_landmarks_detector.tflite");
         foreach(var (size,repeats) in new[]{(24,2),(12,6)})
@@ -39,7 +44,7 @@ public sealed class ManagedHands
     {
         if(rgba.Length!=width*height*4)throw new ArgumentException("RGBA buffer size mismatch.");
         var longest=Math.Max(width,height);var input=Crop(rgba,width,height,192,width/2f,height/2f,longest,0);
-        var output=palms.Run(input,token);var candidates=new List<PalmDetection>();
+        var output=palms(input,token);var candidates=new List<PalmDetection>();
         for(var i=0;i<anchors.Count;i++)
         {
             var score=1/(1+MathF.Exp(-Math.Clamp(output[1][i],-100,100)));if(score<.5f)continue;
@@ -139,7 +144,7 @@ public sealed class ManagedHands
     HandObservation? Landmarks(byte[] rgba,int width,int height,float cx,float cy,float size,float angle,CancellationToken token,float minimumPresence=.5f)
     {
             var cos=MathF.Cos(angle);var sin=MathF.Sin(angle);
-            var predictions=hands.Run(Crop(rgba,width,height,224,cx,cy,size,angle,replicateBorder:true),token);
+            var predictions=hands(Crop(rgba,width,height,224,cx,cy,size,angle,replicateBorder:true),token);
             if(predictions[1][0]<minimumPresence)return null;
             var screen=new Vector3[21];var world=new Vector3[21];
             for(var i=0;i<21;i++)

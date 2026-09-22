@@ -29,9 +29,10 @@ public static class LandmarkCapture
         var times=metadata.CaptureTimes.Where(t=>t>=request.Start&&(!request.End.HasValue||t<request.End)).ToArray();
         if(times.Length is <1 or >1800)throw new ArgumentException("Choose between 1 and 1800 frames; the end time is exclusive.");
         var canonical=TargetRig.SboxDefault(File.ReadAllText(request.Template));
-        string Hash(string path){using var stream=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();}
-        token.ThrowIfCancellationRequested();var sourceHash=Hash(request.Video);var modelHash=Hash(request.Model);
-        var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(FormattableString.Invariant($"{WindowsVideoDecoder.ImplementationVersion}{(metadata.CaptureStride>1?"every"+metadata.CaptureStride:"")}|{ManagedHands.ImplementationVersion}|{sourceHash}|{modelHash}|{request.Start:R}|{request.End:R}")))).ToLowerInvariant();
+        static string Hash(string path){using var stream=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();}
+        static string ModelHash(string path)=>FileChecksum.Sha256(path).ToLowerInvariant();
+        token.ThrowIfCancellationRequested();var sourceHash=Hash(request.Video);var modelHash=ModelHash(request.Model);
+        var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(FormattableString.Invariant($"{WindowsVideoDecoder.ImplementationVersion}{(metadata.CaptureStride>1?"every"+metadata.CaptureStride:"")}|{ManagedHands.ImplementationVersion}; {LiteOnnx.KeySuffix}|{sourceHash}|{modelHash}|{request.Start:R}|{request.End:R}")))).ToLowerInvariant();
         var directory=Path.Combine(Path.GetFullPath(request.Output),key);Directory.CreateDirectory(directory);
         using var jobLock=new FileStream(Path.Combine(directory,"job.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         var rawPath=Path.Combine(directory,"observations.json");

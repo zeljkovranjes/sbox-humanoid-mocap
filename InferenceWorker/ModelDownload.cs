@@ -1,3 +1,4 @@
+using HumanoidMocap.Inference;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -53,10 +54,8 @@ public static class ModelDownload
             throw new InvalidDataException($"{name} did not match its pinned checksum and was discarded. Choose Retry to download it again.");
         }
         File.Move(partial,destination);
+        // The checksum just verified travels with the file, so later jobs need not hash it again.
+        if(File.Exists(partial+".sha256"))File.Move(partial+".sha256",destination+".sha256",true);
     }
-    public static async Task<bool> Matches(string path,string sha256,CancellationToken token)
-    {
-        await using var input=File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(input,token)).Equals(sha256,StringComparison.OrdinalIgnoreCase);
-    }
+    public static Task<bool> Matches(string path,string sha256,CancellationToken token)=>Task.Run(()=>FileChecksum.Matches(path,sha256),token);
 }

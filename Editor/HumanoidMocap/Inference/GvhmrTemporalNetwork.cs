@@ -29,8 +29,7 @@ public sealed class GvhmrTemporalNetwork
 
     public GvhmrTemporalNetwork(string checkpointPath,CancellationToken cancellation=default)
     {
-        using(var file=File.OpenRead(checkpointPath))
-            if(!string.Equals(Convert.ToHexString(SHA256.HashData(file)),CheckpointSha256,StringComparison.OrdinalIgnoreCase))
+        if(!FileChecksum.Matches(checkpointPath,CheckpointSha256))
                 throw new InvalidDataException("GVHMR checkpoint does not match the pinned SIGA24 release.");
         using var checkpoint=new TorchCheckpoint(checkpointPath);
         foreach(var pair in checkpoint.Tensors)

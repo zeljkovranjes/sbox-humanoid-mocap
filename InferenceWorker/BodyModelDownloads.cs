@@ -1,3 +1,4 @@
+using HumanoidMocap.Inference;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -38,8 +39,7 @@ public static class BodyModelDownloads
     static async Task Verify(string path,Asset asset,CancellationToken cancellation)
     {
         if(new FileInfo(path).Length!=asset.Bytes)throw new InvalidDataException("Unexpected model size: "+path);
-        await using var input=File.OpenRead(path);
-        var hash=Convert.ToHexString(await SHA256.HashDataAsync(input,cancellation));
+        var hash=await Task.Run(()=>FileChecksum.Sha256(path),cancellation);
         if(!hash.Equals(asset.Sha256,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Model checksum mismatch; original file preserved: "+path);
     }
 }

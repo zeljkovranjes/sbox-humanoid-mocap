@@ -23,7 +23,7 @@ public sealed class SmplxSkeleton
     public SmplxSkeleton(string path,CancellationToken cancellation=default)
     {
         cancellation.ThrowIfCancellationRequested();
-        using(var input=File.OpenRead(path))if(!string.Equals(Convert.ToHexString(SHA256.HashData(input)),NeutralSha256,StringComparison.OrdinalIgnoreCase))
+        if(!FileChecksum.Matches(path,NeutralSha256))
             throw new InvalidDataException("SMPL-X neutral model does not match the pinned version.");
         using var archive=ZipFile.OpenRead(path);
         var vertices=NumpyArray.Read(archive,"v_template.npy",cancellation);

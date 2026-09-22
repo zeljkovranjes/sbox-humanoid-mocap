@@ -27,7 +27,7 @@ public sealed class VisionModel : IDisposable
         if(Precision is not (WilorModel.Float32 or WilorModel.BFloat16))throw new ArgumentException("Unsupported vision precision.");
         static bool BlockMatrix(string name)=>name.StartsWith("backbone.blocks.")&&(name.Contains(".attn.qkv.")||name.Contains(".attn.proj.")||name.Contains(".mlp.fc1.")||name.Contains(".mlp.fc2."));
         var expected=kind==Kind.Hmr2Features?"2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e":"50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc";
-        using(var input=File.OpenRead(checkpointPath))if(!Convert.ToHexString(SHA256.HashData(input)).Equals(expected,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Vision checkpoint checksum mismatch.");
+        if(!FileChecksum.Matches(checkpointPath,expected))throw new InvalidDataException("Vision checkpoint checksum mismatch.");
         if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,expected,kind==Kind.VitPoseHeatmaps?GpuBackbone.Variant.Heatmaps:GpuBackbone.Variant.Hmr2Features,192,gpuCache,report,cancellation);
         using var checkpoint=new TorchCheckpoint(checkpointPath);
         // With a GPU the whole network, head included, lives there; nothing is loaded here.

@@ -11,9 +11,10 @@ public sealed class OnnxGraph
 {
     public const int Float=1,Int64=7,Float16=10;
     readonly MemoryStream nodes=new(),initializers=new(),inputs=new(),outputs=new();
-    readonly Stream data;readonly string dataName;int counter;
-    /// <param name="data">Receives the weights; <paramref name="dataName"/> is its file name next to the graph.</param>
-    public OnnxGraph(Stream data,string dataName){this.data=data;this.dataName=dataName;}
+    readonly Stream? data;readonly string dataName;int counter;
+    /// <param name="data">Receives the weights; <paramref name="dataName"/> is its file name next to the graph.
+    /// Null keeps the weights inside the graph, for models well under the 2 GB protobuf limit.</param>
+    public OnnxGraph(Stream? data,string dataName=""){this.data=data;this.dataName=dataName;}
 
     static void Varint(Stream s,ulong value){while(value>=0x80){s.WriteByte((byte)(value|0x80));value>>=7;}s.WriteByte((byte)value);}
     static void Tag(Stream s,int field,int wire)=>Varint(s,(ulong)(field<<3|wire));
@@ -32,6 +33,12 @@ public sealed class OnnxGraph
     /// <summary>A weight stored in the external data file.</summary>
     public string Weight(string name,int type,long[] shape,ReadOnlySpan<byte> bytes)
     {
+        if(data is null)
+        {
+            var raw=bytes.ToArray();
+            Message(initializers,5,t=>{foreach(var d in shape)Int(t,1,d);Int(t,2,type);Text(t,8,name);Bytes(t,9,raw);});
+            return name;
+        }
         var padding=(int)((4096-data.Position%4096)%4096);if(padding>0)data.Write(new byte[padding]);
         var offset=data.Position;var length=bytes.Length;data.Write(bytes);
         Message(initializers,5,t=>
@@ -74,6 +81,7 @@ public sealed class OnnxGraph
     {
         public Attributes Int(string name,long value){Message(node,5,a=>{Text(a,1,name);OnnxGraph.Int(a,3,value);OnnxGraph.Int(a,20,2);});return this;}
         public Attributes Float(string name,float value){Message(node,5,a=>{Text(a,1,name);Tag(a,2,5);a.Write(BitConverter.GetBytes(value));OnnxGraph.Int(a,20,1);});return this;}
+        public Attributes String(string name,string value){Message(node,5,a=>{OnnxGraph.Text(a,1,name);OnnxGraph.Text(a,4,value);OnnxGraph.Int(a,20,3);});return this;}
         public Attributes Ints(string name,params long[] values){Message(node,5,a=>{Text(a,1,name);foreach(var v in values)OnnxGraph.Int(a,8,v);OnnxGraph.Int(a,20,7);});return this;}
     }
     /// <summary>Rename a produced value to a graph output.</summary>

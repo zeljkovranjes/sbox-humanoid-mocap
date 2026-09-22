@@ -20,8 +20,7 @@ public sealed class MobileHandModel : IDisposable
 
     public static ManoDecoder ReadDecoder(string checkpoint,CancellationToken cancellation=default)
     {
-        using(var input=File.OpenRead(checkpoint))
-            if(!Convert.ToHexString(SHA256.HashData(input)).Equals(CheckpointSha256,StringComparison.OrdinalIgnoreCase))
+        if(!FileChecksum.Matches(checkpoint,CheckpointSha256))
                 throw new InvalidDataException("MobileHand checkpoint checksum mismatch.");
         var temporary=Path.Combine(Path.GetTempPath(),"hm-mobilehand-"+Guid.NewGuid().ToString("N")+".zip");
         try
@@ -34,8 +33,7 @@ public sealed class MobileHandModel : IDisposable
 
     public MobileHandModel(string checkpoint,CancellationToken cancellation=default)
     {
-        using(var input=File.OpenRead(checkpoint))
-            if(!Convert.ToHexString(SHA256.HashData(input)).Equals(CheckpointSha256,StringComparison.OrdinalIgnoreCase))
+        if(!FileChecksum.Matches(checkpoint,CheckpointSha256))
                 throw new InvalidDataException("MobileHand checkpoint checksum mismatch.");
         var temporary=Path.Combine(Path.GetTempPath(),"hm-mobilehand-"+Guid.NewGuid().ToString("N")+".zip");
         try
@@ -43,7 +41,7 @@ public sealed class MobileHandModel : IDisposable
             TorchCheckpoint.ConvertLegacy(checkpoint,temporary,cancellation);
             using var parsed=new TorchCheckpoint(temporary);angleBasis=parsed.ReadFloat("mano.Z_",cancellation);
             if(angleBasis.Length!=23*45||angleBasis.Any(v=>!float.IsFinite(v)))throw new InvalidDataException("Invalid MobileHand angle basis.");
-            using var bytes=File.OpenRead(temporary);var hash=Convert.ToHexString(SHA256.HashData(bytes));
+            var hash=FileChecksum.Sha256(temporary);
             weights=new(temporary,hash,name=>name.StartsWith("encoder.features.")||name.StartsWith("encoder.conv.")||name.StartsWith("regressor."),cancellation);
         }
         finally{if(File.Exists(temporary))File.Delete(temporary);}
