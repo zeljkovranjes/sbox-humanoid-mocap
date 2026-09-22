@@ -18,7 +18,7 @@ public sealed partial class RetargetWindow
     Widget _firstOptions, _thirdOptions, _videoHost, _targetHost;
     Layout _contactRows;
     Label _captureStatus, _clock;
-    LineEdit _sourcePath, _rangeStart, _rangeEnd, _fov, _rootSmooth, _armSmooth, _fingerSmooth;
+    LineEdit _sourcePath, _rangeStart, _rangeEnd, _fov, _rootSmooth, _armSmooth, _fingerSmooth, _smoothing;
     LineEdit _shoulderL, _shoulderR, _elbowL, _elbowR, _reach, _facing, _ground, _viewPitch;
     LineEdit _capturePosition, _captureYaw, _capturePitch, _viewNear, _recordingFov;
     bool _captureFacesSubject,_settingFacingControl;
@@ -194,6 +194,7 @@ public sealed partial class RetargetWindow
 
         var cleanup=_advancedPanel.Layout.AddRow();cleanup.Spacing=8;
         _rootSmooth=Field(cleanup,"Root cleanup","0.25");_armSmooth=Field(cleanup,"Arms","0.10");_fingerSmooth=Field(cleanup,"Fingers","0.025");
+        _smoothing=Field(cleanup,"Smoothing","7");_smoothing.ToolTip="Zero-phase smoothing strength, 0.5 to 10 (higher is smoother); 0 turns it off. 7 matches Rokoko's default.";
         cleanup.Add(new Button("Apply adjustments","check"){Clicked=()=>_=ProcessMotionAsync()});
         var contacts=_advancedPanel.Layout.Add(new Group(this){Title="Contact review",Icon="touch_app"});
         contacts.Layout=Layout.Column();contacts.Layout.Margin=new Sandbox.UI.Margin(8,38,8,8);_contactRows=contacts.Layout;
@@ -238,6 +239,12 @@ public sealed partial class RetargetWindow
         // Preserve the settings widgets when the user closes this separate window.
         _adjustments.Window.DeleteOnClose=false;
         _adjustments.Window.MinimumSize=new Vector2(760,460);_adjustments.Window.Size=new Vector2(800,580);_adjustments.Show();
+    }
+    /// <summary>The Smoothing field: 0 (off) or 0.5 to 10, clamped; blank or invalid keeps the default.</summary>
+    float SmoothingStrength()
+    {
+        var value=Number(_smoothing,7);if(!float.IsFinite(value))return 7;
+        return value<=0?0:Math.Clamp(value,.5f,10);
     }
     public void LoadVideo(string path)
     {
@@ -383,6 +390,7 @@ public sealed partial class RetargetWindow
         try
         {
             var settings=new CleanupSettings{Root=Number(_rootSmooth,.25f),Arms=Number(_armSmooth,.1f),Fingers=Number(_fingerSmooth,.025f)};
+            settings.Smoothing=settings.PositionSmoothing=SmoothingStrength();
             var raw=_rawMotion;var contacts=_editedMotion.Copy().Contacts;var session=_editSession;
             var doc=await Task.Run(()=>{token.ThrowIfCancellationRequested();var copy=raw.Copy();copy.Contacts=contacts;var edited=MotionCleanup.Apply(copy,settings);token.ThrowIfCancellationRequested();return edited;},token);
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid())return;token.ThrowIfCancellationRequested();

@@ -12,7 +12,7 @@ namespace HumanoidMocap.Worker;
 /// whose forearm was not confidently seen, are skipped and labelled unobserved rather than guessed.</summary>
 public static class BodyHandTracks
 {
-    public const string Version="body-wilor-fingers-v1";
+    public const string Version="body-wilor-fingers-v2-zero-phase";
     /// <summary>A forearm shorter than this many source pixels gives WiLoR too little hand to read.</summary>
     public const float MinimumForearmPixels=36;
     static readonly string[] Roles={"IndexProx","IndexMid","IndexDist","MiddleProx","MiddleMid","MiddleDist",
@@ -72,11 +72,20 @@ public static class BodyHandTracks
                 // Reconstructed is the enum's zero value, so unseen frames must be marked explicitly.
                 var track=new Quaternion[samples.Count];var evidence=Enumerable.Repeat(JointEvidence.Unobserved,samples.Count).ToArray();
                 foreach(var t in observed){track[t]=At(t);evidence[t]=JointEvidence.Reconstructed;}
-                // Small hands jitter from frame to frame; a three-tap blend over neighbouring observations only.
-                var smoothed=track.ToArray();
-                foreach(var t in observed)if(t>0&&t<samples.Count-1&&evidence[t-1]==JointEvidence.Reconstructed&&evidence[t+1]==JointEvidence.Reconstructed)
-                    smoothed[t]=Quaternion.Slerp(Quaternion.Slerp(track[t-1],track[t+1],.5f),track[t],.5f);
-                track=smoothed;
+                // Small hands jitter from frame to frame: zero-phase Butterworth at the First Person default
+                // (Rokoko strength 7, 3.5 Hz) over each run of consecutive observations.
+                var rate=1/Math.Max(1e-3,(document.Frames[^1].Time-document.Frames[0].Time)/Math.Max(1,samples.Count-1));
+                for(var start=0;start<samples.Count;)
+                {
+                    if(evidence[start]!=JointEvidence.Reconstructed){start++;continue;}
+                    var end=start;while(end<samples.Count&&evidence[end]==JointEvidence.Reconstructed)end++;
+                    if(end-start>=8&&rate>7.8)
+                    {
+                        var run=MocapSmooth.Quaternions(track[start..end],Math.Min(3.5,rate*.45),rate);
+                        Array.Copy(run,0,track,start,run.Length);
+                    }
+                    start=end;
+                }
                 for(var t=0;t<samples.Count;t++)
                 {
                     if(evidence[t]==JointEvidence.Reconstructed)continue;

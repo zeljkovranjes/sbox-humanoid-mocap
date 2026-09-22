@@ -126,6 +126,7 @@ public sealed partial class RetargetWindow
             Interlocked.Exchange(ref _workerMessage,null);
             _captureStatus.Text = "Cleaning motion…";
             var cleanup = new CleanupSettings { Root = Number(_rootSmooth, .25f), Arms = Number(_armSmooth, .1f), Fingers = Number(_fingerSmooth, .025f) };
+            cleanup.Smoothing = cleanup.PositionSmoothing = SmoothingStrength();
             var cleanedPath = await Task.Run(() =>
             {
                 var raw = MotionDocument.Parse(File.ReadAllBytes(motionPath));

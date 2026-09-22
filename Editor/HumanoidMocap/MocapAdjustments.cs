@@ -19,6 +19,7 @@ public sealed partial class RetargetWindow
         _rootSmooth.Text=cleanup.Root.ToString(CultureInfo.InvariantCulture);
         _armSmooth.Text=cleanup.Arms.ToString(CultureInfo.InvariantCulture);
         _fingerSmooth.Text=cleanup.Fingers.ToString(CultureInfo.InvariantCulture);
+        _smoothing.Text=cleanup.Smoothing.ToString(CultureInfo.InvariantCulture);
         FitMocapPlacementToTarget();
     }
 
