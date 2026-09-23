@@ -168,6 +168,35 @@ public sealed partial class RetargetWindow
         }
     }
 
+    async Task ReinstallWorkerAsync()
+    {
+        if(_processing is not null){_captureStatus.Text="Finish or cancel the active capture before reinstalling the worker.";return;}
+        _processing=new CancellationTokenSource();var token=_processing.Token;
+        SetCaptureBusy(true);_retryCaptureButton.Visible=false;_captureStatus.Text="Reinstalling the inference worker…";
+        try
+        {
+            await NativeCapture.ReinstallWorkerAsync(ReceiveWorkerProgress,token);
+            await EditorPipeline.SwitchToMainThread();
+            if(this.IsValid())_captureStatus.Text="Inference worker reinstalled.";
+        }
+        catch(OperationCanceledException)
+        {
+            await EditorPipeline.SwitchToMainThread();
+            if(this.IsValid())_captureStatus.Text="Reinstall cancelled. The worker installs again with the next capture.";
+        }
+        catch(Exception e)
+        {
+            await EditorPipeline.SwitchToMainThread();
+            if(this.IsValid())_captureStatus.Text=e.Message;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _workerMessage,null);
+            await EditorPipeline.SwitchToMainThread();_processing.Dispose();_processing=null;
+            if(this.IsValid())SetCaptureBusy(false);
+        }
+    }
+
     void SetCaptureBusy(bool busy)
     {
         _uploadVideoButton.Enabled = !busy; _workspacePicker.Enabled = !busy;

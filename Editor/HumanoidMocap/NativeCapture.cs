@@ -24,16 +24,30 @@ internal static class NativeCapture
     // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
     // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
     // zip under a new tag and update these values.
-    const string WorkerTag = "worker-1";
-    const string WorkerSha256 = "8d380a8ea078a2db0fc71ce3fe082785708203b989d3c693023e6988b34137a5";
-    const long WorkerBytes = 173869328;
+    const string WorkerTag = "worker-2";
+    const string WorkerSha256 = "95ec286ae4bc9145328ebfff85b6245359eee285a44014ad89543a383944d493";
+    const long WorkerBytes = 173869075;
     const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
+
+    /// <summary>Only one worker is kept: every other version, and anything a failed install left behind, is
+    /// deleted once the current one is in place. A copy still running elsewhere is left for the next time.</summary>
+    static void RemoveOtherWorkers(string folder,string keep)
+    {
+        if(!Directory.Exists(folder))return;
+        foreach(var entry in Directory.EnumerateFileSystemEntries(folder))
+        {
+            if(string.Equals(Path.GetFileName(entry),keep,StringComparison.OrdinalIgnoreCase))continue;
+            try{if(Directory.Exists(entry))Directory.Delete(entry,true);else File.Delete(entry);}
+            catch(IOException){}catch(UnauthorizedAccessException){}
+        }
+    }
 
     static async Task<string> DownloadWorker(string cache, Action<string> progress, CancellationToken token)
     {
         var folder = Path.Combine(cache, "worker"); var output = Path.Combine(folder, WorkerTag);
         var worker = Path.Combine(output, "HumanoidMocap.Worker.exe"); var ready = Path.Combine(output, "download-complete.txt");
-        if (File.Exists(worker) && File.Exists(ready) && File.ReadAllText(ready) == WorkerSha256) return worker;
+        if (File.Exists(worker) && File.Exists(ready) && File.ReadAllText(ready) == WorkerSha256)
+        { await Task.Run(() => RemoveOtherWorkers(folder, WorkerTag)); return worker; }
         Directory.CreateDirectory(folder);
         var id = Guid.NewGuid().ToString("N");
         var archive = Path.Combine(folder, WorkerTag + "." + id + ".partial"); var staging = Path.Combine(folder, WorkerTag + "." + id + ".extract");
@@ -63,6 +77,7 @@ internal static class NativeCapture
             if (Directory.Exists(output)) Directory.Delete(output, true);
             Directory.Move(staging, output);
             File.WriteAllText(ready, WorkerSha256);
+            await Task.Run(() => RemoveOtherWorkers(folder, WorkerTag));
             return worker;
         }
         catch (HttpRequestException error)
@@ -92,6 +107,23 @@ internal static class NativeCapture
                 .Append(Convert.ToHexString(hash.ComputeHash(stream))).Append('\n');
         }
         return Convert.ToHexString(hash.ComputeHash(Encoding.UTF8.GetBytes(manifest.ToString())));
+    }
+
+    /// <summary>Deletes every installed copy of the worker and installs it again: downloaded from the GitHub
+    /// release, or rebuilt where the library has the worker source.</summary>
+    public static async Task ReinstallWorkerAsync(Action<string> progress,CancellationToken token)
+    {
+        await WorkerBuild.WaitAsync(token);
+        try
+        {
+            var folder=Path.Combine(CacheRoot,"worker");
+            await Notify(progress,"Deleting the installed inference worker");
+            try{if(Directory.Exists(folder))await Task.Run(()=>Directory.Delete(folder,true),token);}
+            catch(Exception error) when(error is IOException or UnauthorizedAccessException)
+            {throw new IOException("The inference worker is still running. Wait for other captures to finish, then reinstall again.",error);}
+        }
+        finally{WorkerBuild.Release();}
+        await Prepare(progress,token);
     }
 
     static async Task<(string Worker,string Models)> Prepare(Action<string> progress,CancellationToken token)
@@ -125,6 +157,7 @@ internal static class NativeCapture
                     if(!File.Exists(worker))throw new FileNotFoundException("Worker setup finished without an executable.",worker);
                     File.WriteAllText(ready,fingerprint);
                 }
+                await Task.Run(()=>RemoveOtherWorkers(Path.Combine(cache,"worker"),fingerprint));
             }
             finally{WorkerBuild.Release();}
             }

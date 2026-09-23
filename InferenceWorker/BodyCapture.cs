@@ -354,7 +354,8 @@ public static class BodyCapture
                 motion.ModelVersion+="; "+BodyHandTracks.Version+" "+WilorModel.CheckpointSha256;
             }
             // Floor sits read as crouches by the network: mark them for the retargeter to seat the hips.
-            if(SeatedDetection.Detect(motion,state.Frames.Select(f=>f.Observations!).ToArray(),prediction.StaticConfidenceLogits,focalLength,metadata.Width*.5f,metadata.Height*.5f) is float[] seatedWeights
+            var cameraDown=Enumerable.Range(0,count).Select(t=>System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY,System.Numerics.Quaternion.Normalize(decoded.CameraOrientation[t]*System.Numerics.Quaternion.Conjugate(decoded.GravityOrientation[t])))).ToArray();
+            if(SeatedDetection.Detect(motion,state.Frames.Select(f=>f.Observations!).ToArray(),cameraDown,prediction.StaticConfidenceLogits,focalLength,metadata.Width*.5f,metadata.Height*.5f) is float[] seatedWeights
                 &&seatedWeights.Count(w=>w>=1) is var seatedFrames&&seatedFrames>0)
             {
                 motion.StationaryJoints.Add(new(){Bone=motion.Bones.First(b=>b.Role==BoneRole.Hips).Name,Source=SeatedDetection.Source,Probability=seatedWeights});

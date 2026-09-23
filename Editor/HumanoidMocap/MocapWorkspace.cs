@@ -124,6 +124,7 @@ public sealed partial class RetargetWindow
         var advancedTop=_advancedPanel.Layout.AddRow();advancedTop.Spacing=8;
         var models=advancedTop.Add(new Button("Hand models…","memory"));
         models.Clicked=()=>new HandBackendDialog(this,SelectHandModel,_handBackend).Show();
+        advancedTop.Add(new Button("Reinstall worker","download"){ToolTip="Delete the local inference worker and download it again from GitHub. Use this if captures stop starting or the worker seems damaged.",Clicked=()=>_=ReinstallWorkerAsync()});
         advancedTop.Add(new Label("Target:",this));
         var target=_advancedTargetPicker=advancedTop.Add(new ComboBox(this));
         target.AddItem("s&box Human","person",()=>SelectBuiltinPreviewTarget(false),selected:true);
