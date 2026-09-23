@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.IO.Compression;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -16,6 +18,61 @@ internal static class NativeCapture
 {
     static string CacheRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "sbox-humanoid-mocap");
     static readonly SemaphoreSlim WorkerBuild = new(1, 1);
+
+    // A library installed from s&box has no worker project: the publisher keeps only the Code and Editor
+    // projects it generates, and few users have the .NET 10 SDK anyway. Those installs download the worker
+    // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
+    // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
+    // zip under a new tag and update these values.
+    const string WorkerTag = "worker-1";
+    const string WorkerSha256 = "8d380a8ea078a2db0fc71ce3fe082785708203b989d3c693023e6988b34137a5";
+    const long WorkerBytes = 173869328;
+    const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
+
+    static async Task<string> DownloadWorker(string cache, Action<string> progress, CancellationToken token)
+    {
+        var folder = Path.Combine(cache, "worker"); var output = Path.Combine(folder, WorkerTag);
+        var worker = Path.Combine(output, "HumanoidMocap.Worker.exe"); var ready = Path.Combine(output, "download-complete.txt");
+        if (File.Exists(worker) && File.Exists(ready) && File.ReadAllText(ready) == WorkerSha256) return worker;
+        Directory.CreateDirectory(folder);
+        var id = Guid.NewGuid().ToString("N");
+        var archive = Path.Combine(folder, WorkerTag + "." + id + ".partial"); var staging = Path.Combine(folder, WorkerTag + "." + id + ".extract");
+        try
+        {
+            using (var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan })
+            using (var response = await http.GetAsync(WorkerUrl, HttpCompletionOption.ResponseHeadersRead, token))
+            {
+                response.EnsureSuccessStatusCode();
+                var total = response.Content.Headers.ContentLength ?? WorkerBytes;
+                await using var input = await response.Content.ReadAsStreamAsync(token);
+                await using var file = new FileStream(archive, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, true);
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                var buffer = new byte[1 << 20]; long read = 0; var step = -1; int count;
+                while ((count = await input.ReadAsync(buffer, token)) > 0)
+                {
+                    await file.WriteAsync(buffer.AsMemory(0, count), token); hash.AppendData(buffer, 0, count); read += count;
+                    var percent = (int)Math.Min(100, read * 100 / Math.Max(1, total));
+                    if (percent / 5 != step) { step = percent / 5; await Notify(progress, $"First-time setup: downloading the inference worker, {percent}% of {total / 1048576} MB"); }
+                }
+                if (!string.Equals(Convert.ToHexString(hash.GetHashAndReset()), WorkerSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("The downloaded inference worker is damaged. Try the capture again.");
+            }
+            await Notify(progress, "First-time setup: unpacking the inference worker");
+            await Task.Run(() => ZipFile.ExtractToDirectory(archive, staging), token);
+            if (!File.Exists(Path.Combine(staging, "HumanoidMocap.Worker.exe"))) throw new InvalidDataException("The downloaded inference worker has no executable.");
+            if (Directory.Exists(output)) Directory.Delete(output, true);
+            Directory.Move(staging, output);
+            File.WriteAllText(ready, WorkerSha256);
+            return worker;
+        }
+        catch (HttpRequestException error)
+        { throw new IOException("Could not download the inference worker from GitHub. Check the internet connection and try again.", error); }
+        finally
+        {
+            try { if (File.Exists(archive)) File.Delete(archive); } catch (IOException) { }
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch (IOException) { }
+        }
+    }
 
     // Include every source linked by the worker project, not only its entry point.
     // Paths relative to the library keep identical installations/cache copies equivalent.
@@ -46,7 +103,14 @@ internal static class NativeCapture
         if (string.IsNullOrWhiteSpace(worker))
         {
             var project = library is null ? "" : Path.Combine(library, "InferenceWorker", "HumanoidMocap.Worker.csproj");
-            if (!File.Exists(project)) throw new FileNotFoundException("The C# inference worker is missing from this library installation. Install the complete Humanoid Mocap package.");
+            if (!File.Exists(project))
+            {
+                await WorkerBuild.WaitAsync(token);
+                try { worker = await DownloadWorker(cache, progress, token); }
+                finally { WorkerBuild.Release(); }
+            }
+            else
+            {
             var fingerprint=await Task.Run(()=>WorkerFingerprint(library),token);
             var output=Path.Combine(cache,"worker",fingerprint);
             var ready=Path.Combine(output,"build-complete.txt");
@@ -63,6 +127,7 @@ internal static class NativeCapture
                 }
             }
             finally{WorkerBuild.Release();}
+            }
         }
         var models = Environment.GetEnvironmentVariable("HUMANOID_MOCAP_MODELS");
         if(!File.Exists(worker))throw new FileNotFoundException("The configured C# worker was not found. Rebuild it or update HUMANOID_MOCAP_WORKER.",worker);
