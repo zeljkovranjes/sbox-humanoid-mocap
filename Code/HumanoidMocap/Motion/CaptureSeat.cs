@@ -46,13 +46,48 @@ public static class CaptureSeat
         (int Left, int Right)? level = target.BoneForRole( BoneRole.UpperLegL ) is int legL && target.BoneForRole( BoneRole.UpperLegR ) is int legR ? (legL, legR) : null;
         var handParts = arms.ToDictionary( a => a.C, a => Enumerable.Range( 0, rig.Count ).Where( b => IsWithin( rig, b, a.C ) ).ToArray() );
         var world = new XForm[rig.Count]; var lowered = 0;
+        // Sitting on the floor the hips are a contact: they stay where the sit put them. A seated tumbler's hips
+        // otherwise slid 28 cm across the floor while he sat still. Each seated stretch holds the hips at its
+        // middle frame's place across the floor, blended in by the seated weight; feet and resting hands are
+        // held by the IK below, and the sit's travel is carried on after it.
+        var anchor = new Vector3?[frames.Count]; var feetAnchor = new Vector3[frames.Count][];
+        for ( var f = 0; f < frames.Count; )
+        {
+            if ( !(weights[f] >= 1) ) { f++; continue; }
+            var e = f; while ( e < frames.Count && weights[e] >= 1 ) e++;
+            FkUtil.ToWorld( frames[(f + e) / 2], rig, world ); var middle = world[hips].Pos;
+            // The feet stay put too (a seated tumbler's planted feet otherwise slid about 50 cm/s).
+            var feetMiddle = legs.Select( l => world[l.C].Pos ).ToArray();
+            var a = f; while ( a > 0 && weights[a - 1] > 0 ) a--;
+            var b = e; while ( b < frames.Count && weights[b] > 0 ) b++;
+            for ( var k = a; k < b; k++ ) { anchor[k] = middle; feetAnchor[k] = feetMiddle; }
+            f = e;
+        }
+        var carried = Vector3.Zero; var afterFull = false;
         for ( var f = 0; f < frames.Count; f++ )
         {
-            var w = Math.Clamp( weights[f], 0, 1 ); if ( w <= 0 ) continue;
-            var frame = frames[f]; FkUtil.ToWorld( frame, rig, world );
+            var w = Math.Clamp( weights[f], 0, 1 );
+            var frame = frames[f];
+            // Offset across the floor: the held spot while seated, the running offset otherwise (kept after a sit so
+            // the body does not slide back), blended while easing into a sit.
+            FkUtil.ToWorld( frame, rig, world );
+            var offset = carried;
+            if ( w <= 0 ) afterFull = false;
+            else if ( anchor[f] is { } held )
+            {
+                var hold = held - world[hips].Pos; hold -= up * Vector3.Dot( hold, up );
+                if ( w >= 1 ) { offset = hold; carried = hold; afterFull = true; }
+                else if ( !afterFull ) offset = Vector3.Lerp( carried, hold, w );
+            }
+            if ( offset != Vector3.Zero )
+            {
+                for ( var b = 0; b < rig.Count; b++ ) if ( rig[b].ParentIndex < 0 ) frame[b].Pos += offset;
+                FkUtil.ToWorld( frame, rig, world );
+            }
+            if ( w <= 0 ) continue;
             var drop = (Vector3.Dot( world[hips].Pos, up ) - seat) * w; if ( drop <= 0 ) continue;
             // Held goals: every foot, hands resting on or near the floor, and hands that would sink into it.
-            var goals = legs.Select( l => (Chain: l, Goal: world[l.C]) ).ToList();
+            var goals = legs.Select( ( l, i ) => (Chain: l, Goal: feetAnchor[f] is { } held ? new XForm( Vector3.Lerp( world[l.C].Pos, held[i], w ), world[l.C].Rot ) : world[l.C]) ).ToList();
             foreach ( var a in arms )
             {
                 // The fingers reach below the wrist; the lowest of them is the hand's height.
