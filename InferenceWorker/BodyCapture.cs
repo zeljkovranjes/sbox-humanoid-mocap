@@ -416,6 +416,15 @@ public static class BodyCapture
                 motion.Diagnostics.RemoveAll(d=>d.StartsWith("Camera-relative reconstruction with identity camera-angular-velocity",StringComparison.Ordinal));
                 motion.Diagnostics.Add("Camera-relative reconstruction conditioned on the followed camera rotation; camera translation has not been recovered.");
             }
+            // Each frame's 2D pose confidence (the mean joint score) on the root, for bridging frames the network read
+            // from a blurred or doubtful picture (see MotionCleanup.BridgeDoubtfulFrames).
+            var rootBone=motion.Bones.FindIndex(b=>b.Parent<0);
+            for(var f=0;f<motion.Frames.Count&&f<state.Frames.Count;f++)
+            {
+                var o=state.Frames[f].Observations;if(o is null||o.Length!=51)continue;
+                var confidence=new float?[motion.Bones.Count];float sum=0;for(var j=0;j<17;j++)sum+=o[j*3+2];
+                confidence[rootBone]=Math.Clamp(sum/17,0,1);motion.Frames[f].Confidence=confidence;
+            }
             var result=Path.Combine(folder,"raw-body.hmotion");File.WriteAllText(result+".partial",motion.ToJson());File.Move(result+".partial",result,true);
             state.Seconds["temporalAndDecodeThisRun"]=watch.Elapsed.TotalSeconds;Save("complete");return result;
         }

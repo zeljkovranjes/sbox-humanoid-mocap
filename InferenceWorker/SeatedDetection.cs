@@ -22,7 +22,7 @@ public static class SeatedDetection
     public const float MaximumPelvisHeight=.42f;
     /// <summary>Seated with the legs out straight, the hips sit about one leg length from the feet; a crouch misses by metres.</summary>
     public const float ReachFraction=1.25f;
-    public const double MinimumSeconds=.3,RampSeconds=.25;
+    public const double MinimumSeconds=.3,RampSeconds=.25,GapSeconds=.6;
 
     /// <param name="cameraRelative">The capture in document camera space (x right, y up, camera looking along -z).</param>
     /// <param name="observations">COCO-17 (x, y, score) per frame in source pixels.</param>
@@ -51,10 +51,14 @@ public static class SeatedDetection
         var heights=points.Select(Height).OrderBy(h=>h).ToArray();var floor=heights[heights.Length/10];
         var leg=Vector3.Distance(world[0][upperL],world[0][kneeL])+Vector3.Distance(world[0][kneeL],world[0][ankleL]);
         var seated=new bool[n];
+        // Frames that could still be seated: the hips unreadable (blurred) or low. A frame with the hips high cannot.
+        var possible=new bool[n];
         for(var f=0;f<n;f++)
         {
-            var o=observations[f];if(o.Length!=51||!(o[11*3+2]>=.5f)||!(o[12*3+2]>=.5f))continue;
-            var pelvis=world[f][hips];if(!(Height(pelvis)-floor<MaximumPelvisHeight))continue;
+            var o=observations[f];var pelvis=world[f][hips];
+            if(!(Height(pelvis)-floor<MaximumPelvisHeight))continue;
+            possible[f]=true;
+            if(o.Length!=51||!(o[11*3+2]>=.5f)||!(o[12*3+2]>=.5f))continue;
             var px=(o[11*3]+o[12*3])/2;var py=(o[11*3+1]+o[12*3+1])/2;
             var ray=Vector3.Normalize(new((px-centerX)/focal,(py-centerY)/focal,1));
             var along=Vector3.Dot(ray,normal);if(MathF.Abs(along)<1e-4f)continue;
@@ -64,8 +68,18 @@ public static class SeatedDetection
             var offset=seat-feet;offset-=Vector3.Dot(offset,normal)*normal;
             seated[f]=offset.Length()<=leg*ReachFraction&&seat.Z>=pelvis.Z-.05f;
         }
-        // Drop flickers shorter than MinimumSeconds, then ease in and out.
         var fps=(n-1)/Math.Max(1e-3,frames[^1].Time-frames[0].Time);var minimum=(int)Math.Ceiling(MinimumSeconds*fps);
+        // Bridge short stretches between seated frames where the test could not run: a performer swinging his
+        // arms while sitting blurred the hips for 0.4 s, and the hips then rose out of the sit and back.
+        var gap=(int)Math.Ceiling(GapSeconds*fps);
+        for(var f=0;f<n;)
+        {
+            if(seated[f]){f++;continue;}
+            var e=f;while(e<n&&!seated[e])e++;
+            if(f>0&&e<n&&e-f<=gap&&Enumerable.Range(f,e-f).All(k=>possible[k]))for(var k=f;k<e;k++)seated[k]=true;
+            f=e;
+        }
+        // Drop flickers shorter than MinimumSeconds, then ease in and out.
         for(var start=0;start<n;)
         {
             if(!seated[start]){start++;continue;}

@@ -24,9 +24,9 @@ internal static class NativeCapture
     // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
     // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
     // zip under a new tag and update these values.
-    const string WorkerTag = "worker-8";
-    const string WorkerSha256 = "0cfcd5553981c712dcdf19de07f9ed65738f92522b3d6a7328cb66afed6032fd";
-    const long WorkerBytes = 173884473;
+    const string WorkerTag = "worker-9";
+    const string WorkerSha256 = "409665222a512fc5c726e15141528d6a4ee81af3660de3c8dac0ec2fc8b604da";
+    const long WorkerBytes = 173887966;
     const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
 
     /// <summary>Only one worker is kept: every other version, and anything a failed install left behind, is

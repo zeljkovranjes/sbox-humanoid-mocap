@@ -12,23 +12,27 @@ namespace HumanoidMocap.Worker;
 /// scene scale are not, so this is not camera tracking or world reconstruction.</summary>
 public sealed class CameraRotationTrack : IDisposable
 {
-    public const string Version="background-rotation-v2";
+    public const string Version="background-rotation-v3";
     public const string FollowedPrefix="Moving recording camera followed:";
-    const int WorkingWidth=640,Step=6,MinimumInliers=40;
-    public sealed record Result(float[] AngularVelocity6d,int Pairs,int UsablePairs,float TotalDegrees,float LargestPairDegrees,float MeanInlierRatio=0)
+    const int WorkingWidth=640,Step=6,MinimumInliers=40,MaximumFilledRun=3;
+    public sealed record Result(float[] AngularVelocity6d,int Pairs,int UsablePairs,float TotalDegrees,float LargestPairDegrees,float MeanInlierRatio=0,int FilledPairs=0)
     {
         /// <summary>Background that fits one rotation homography this well shows little parallax, so the
         /// camera turned about a nearly fixed point, as a standing operator's does. A camera that also
         /// travels leaves parallax, and its position is then unknown.</summary>
         public bool RotationOnly=>Usable&&MeanInlierRatio>=.8f;
-        /// <summary>Usable only when nearly every sampled pair could be solved.</summary>
-        public bool Usable=>Pairs>0&&UsablePairs>=Pairs*.8f;
+        /// <summary>Usable when most sampled pairs were solved and nearly all are covered, short failed runs (a fast,
+        /// blurred pan) being filled at the speed of the solved pairs around them. A phone following a tumbler
+        /// solved 27 of 37 pairs; left unfollowed, each pan turned the direction he travelled.</summary>
+        public bool Usable=>Pairs>0&&UsablePairs>=Pairs*.6f&&UsablePairs+FilledPairs>=Pairs*.8f;
         public string Diagnostic=>Usable
-            ?FormattableString.Invariant($"{FollowedPrefix} camera rotation solved from background features for {UsablePairs}/{Pairs} sampled frame pairs, {TotalDegrees:F1} degrees in total and at most {LargestPairDegrees:F1} degrees per pair, and supplied to GVHMR in place of a still-camera assumption. {MeanInlierRatio*100:F0}% of background features fit a pure rotation, so the camera is treated as {(RotationOnly?"turning in place":"also travelling")}. Rotation only, from an assumed lens; camera translation and scale are not recovered.")
+            ?FormattableString.Invariant($"{FollowedPrefix} camera rotation solved from background features for {UsablePairs}/{Pairs} sampled frame pairs ({FilledPairs} more filled from their neighbours), {TotalDegrees:F1} degrees in total and at most {LargestPairDegrees:F1} degrees per pair, and supplied to GVHMR in place of a still-camera assumption. {MeanInlierRatio*100:F0}% of background features fit a pure rotation, so the camera is treated as {(RotationOnly?"turning in place":"also travelling")}. Rotation only, from an assumed lens; camera translation and scale are not recovered.")
             :FormattableString.Invariant($"Moving recording camera could not be followed: only {UsablePairs}/{Pairs} sampled frame pairs had enough background features. The capture stays camera-relative.");
     }
     readonly float focal;Mat? previous;Rect2f previousBody;int frames;
     readonly List<(int Frame,Quaternion WorldToCamera)> samples=new();int pairs,usable;float largest,inlierRatios;
+    /// <summary>Per sampled pair, its rotation (world to camera, later relative to earlier), or null when unsolved.</summary>
+    readonly List<Quaternion?> deltas=new();
     /// <param name="focalLength">The job's pinhole focal length in source pixels.</param>
     public CameraRotationTrack(float focalLength){if(!(focalLength>0))throw new ArgumentOutOfRangeException(nameof(focalLength));focal=focalLength;}
     public void Add(DecodedVideoFrame frame,GvhmrDecoder.Box person,bool last)
@@ -44,9 +48,9 @@ public sealed class CameraRotationTrack : IDisposable
         if(rotation is { } solved)
         {
             usable++;largest=Math.Max(largest,Degrees(solved));inlierRatios+=inlierRatio;
-            samples.Add((index,Quaternion.Normalize(solved*samples[^1].WorldToCamera)));
+            samples.Add((index,Quaternion.Normalize(solved*samples[^1].WorldToCamera)));deltas.Add(solved);
         }
-        else samples.Add((index,samples[^1].WorldToCamera)); // unsolved pair: no rotation claimed
+        else{samples.Add((index,samples[^1].WorldToCamera));deltas.Add(null);} // unsolved pair: filled in Finish if short
         previous.Dispose();previous=gray;previousBody=body;
     }
     static float Degrees(Quaternion q)=>2*MathF.Acos(Math.Clamp(MathF.Abs(q.W),0,1))*180/MathF.PI;
@@ -93,6 +97,30 @@ public sealed class CameraRotationTrack : IDisposable
     public Result Finish()
     {
         var count=frames;var result=new float[count*6];if(count==0)return new(result,0,0,0,0);
+        // Fill runs of up to MaximumFilledRun unsolved pairs with the average turn of the solved pairs either side.
+        var filled=0;
+        for(var i=0;i<deltas.Count;)
+        {
+            if(deltas[i] is not null){i++;continue;}
+            var e=i;while(e<deltas.Count&&deltas[e] is null)e++;
+            var before=i>0?deltas[i-1]:null;var after=e<deltas.Count?deltas[e]:null;
+            if(e-i<=MaximumFilledRun&&(before is not null||after is not null))
+            {
+                var fill=before is {} b&&after is {} a?Quaternion.Slerp(b,a,.5f):(before??after)!.Value;
+                for(var k=i;k<e;k++){deltas[k]=fill;filled++;}
+            }
+            i=e;
+        }
+        if(filled>0)
+        {
+            // Rebuild the sampled orientations from the pair rotations.
+            var orientationSoFar=Quaternion.Identity;
+            for(var k=0;k<deltas.Count&&k+1<samples.Count;k++)
+            {
+                if(deltas[k] is {} d)orientationSoFar=Quaternion.Normalize(d*orientationSoFar);
+                samples[k+1]=(samples[k+1].Frame,orientationSoFar);
+            }
+        }
         var orientation=new Quaternion[count];var next=0;
         for(var t=0;t<count;t++)
         {
@@ -108,7 +136,7 @@ public sealed class CameraRotationTrack : IDisposable
             // First two rows of the column-vector rotation matrix (PyTorch3D 6D layout).
             result[t*6]=m.M11;result[t*6+1]=m.M21;result[t*6+2]=m.M31;result[t*6+3]=m.M12;result[t*6+4]=m.M22;result[t*6+5]=m.M32;
         }
-        return new(result,pairs,usable,Degrees(orientation[^1]),largest,usable==0?0:inlierRatios/usable);
+        return new(result,pairs,usable,Degrees(orientation[^1]),largest,usable==0?0:inlierRatios/usable,filled);
     }
     public void Dispose(){previous?.Dispose();previous=null;}
 }

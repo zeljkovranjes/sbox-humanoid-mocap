@@ -15,7 +15,7 @@ public static class BodyMotionBuilder
     {
         if(root.Translation.Length!=pose.Frames||root.Orientation.Length!=pose.Frames||cameraSource.Frames.Count!=pose.Frames)
             throw new ArgumentException("World-motion tracks differ in length.");
-        var document=cameraSource.Copy();var rest=skeleton.RestPose(pose.Betas.AsSpan(0,10));
+        var document=cameraSource.Copy();var rest=SmplxSkeleton.Symmetric(skeleton.RestPose(pose.Betas.AsSpan(0,10)));
         // World yaw has an arbitrary origin. Match its initial horizontal heading to
         // the camera-relative preview without changing the gravity-aligned up axis.
         var worldForward=Vector3.Transform(Vector3.UnitZ,root.Orientation[0]);worldForward.Y=0;
@@ -55,7 +55,7 @@ public static class BodyMotionBuilder
         IReadOnlyList<double> timestamps,string name,string video,string sha256,double fps,GvhmrDecoder.Camera camera)
     {
         if(translations.Length!=pose.Frames||timestamps.Count!=pose.Frames)throw new ArgumentException("Motion track lengths differ.");
-        var rest=skeleton.RestPose(pose.Betas.AsSpan(0,10));var parents=SmplxSkeleton.Parents;
+        var rest=SmplxSkeleton.Symmetric(skeleton.RestPose(pose.Betas.AsSpan(0,10)));var parents=SmplxSkeleton.Parents;
         var document=new MotionDocument{Name=name,SourceVideo=video,SourceSha256=sha256,SourceFps=fps,
             Backend="GVHMR / C# native CPU",ModelVersion="ee960bb6 / "+GvhmrTemporalNetwork.CheckpointSha256,
             Space=MotionSpace.CameraRelative,MetricScaleCalibrated=false};

@@ -52,6 +52,41 @@ public static class MotionCleanup
     /// <paramref name="strength"/> and each frame keeps the smoothed value where the joint moves slowly and
     /// the original where it moves fast (<see cref="SlowDegrees"/> to <see cref="FastDegrees"/> degrees a
     /// second for rotations, <see cref="SlowMetres"/> to <see cref="FastMetres"/> m/s for the root).</summary>
+    /// <summary>Frames read from a blurred or doubtful picture (the root's recorded pose confidence below
+    /// <see cref="DoubtfulConfidence"/>), in stretches of at most <see cref="MaximumBridgeSeconds"/> between confident
+    /// frames, take every joint's rotation and the root's position from those two frames, blended across. In a
+    /// tumbling clip the network read one blurred frame of a backward roll as standing upright, which played as a
+    /// front flip; the shortest turn from lying back to the handstand after it is the backward roll itself.</summary>
+    public static (MotionDocument Motion,int Replaced) BridgeDoubtfulFrames(MotionDocument raw)
+    {
+        raw.Validate();var output=raw.Copy();var count=output.Frames.Count;var root=output.Bones.FindIndex(b=>b.Parent<0);
+        if(count<3||root<0)return (output,0);
+        float? Confidence(int f)=>output.Frames[f].Confidence is {} c&&c.Length>root?c[root]:null;
+        if(Enumerable.Range(0,count).All(f=>Confidence(f) is null))return (output,0);
+        var steps=output.Frames.Zip(output.Frames.Skip(1),(a,b)=>b.Time-a.Time).OrderBy(v=>v).ToArray();var dt=steps[steps.Length/2];
+        var longest=(int)Math.Floor(MaximumBridgeSeconds/dt);var replaced=0;
+        bool Doubtful(int f)=>Confidence(f) is float v&&v<DoubtfulConfidence;
+        for(var f=1;f<count-1;)
+        {
+            if(!Doubtful(f)){f++;continue;}
+            var e=f;while(e<count&&Doubtful(e))e++;
+            if(e<count&&e-f<=longest)
+            {
+                var a=output.Frames[f-1];var b=output.Frames[e];
+                for(var k=f;k<e;k++)
+                {
+                    var t=(float)((output.Frames[k].Time-a.Time)/(b.Time-a.Time));var frame=output.Frames[k];
+                    for(var j=0;j<output.Bones.Count;j++)
+                        frame.Rotations[j]=MotionDocument.A(Quaternion.Normalize(Quaternion.Slerp(MotionDocument.Q(a.Rotations[j]),MotionDocument.Q(b.Rotations[j]),t)));
+                    frame.Positions[root]=MotionDocument.A(Vector3.Lerp(MotionDocument.V(a.Positions[root]),MotionDocument.V(b.Positions[root]),t));
+                    replaced++;
+                }
+            }
+            f=e;
+        }
+        return (output,replaced);
+    }
+    public const float DoubtfulConfidence=.5f;public const double MaximumBridgeSeconds=.3;
     public static MotionDocument SmoothBody(MotionDocument raw,float strength=7)
     {
         raw.Validate();var output=raw.Copy();var count=output.Frames.Count;if(count<8||!(strength>0))return output;

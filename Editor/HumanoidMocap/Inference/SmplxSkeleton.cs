@@ -46,6 +46,23 @@ public sealed class SmplxSkeleton
             }
         }
     }
+    /// <summary>The rest joints made left-right symmetric about the pelvis: centre joints on its centre line,
+    /// left and right joints mirrored with their heights and depths averaged. The shaped joints carry small
+    /// asymmetries (a hip joint 1 cm higher than the other, the neck 1.6 cm to one side) that retargeting read
+    /// as a lean, tipping every capture's torso about 5 degrees to the same side. Pose rotations are unchanged.</summary>
+    public static Vector3[] Symmetric(Vector3[] rest)
+    {
+        if(rest.Length!=22)throw new ArgumentException("Expected 22 SMPL-X body joints.");
+        var result=(Vector3[])rest.Clone();var centre=rest[0].X;
+        foreach(var j in new[]{3,6,9,12,15})result[j]=rest[j] with{X=centre};
+        foreach(var (left,right) in new[]{(1,2),(4,5),(7,8),(10,11),(13,14),(16,17),(18,19),(20,21)})
+        {
+            var half=((rest[left].X-centre)-(rest[right].X-centre))*.5f;
+            var y=(rest[left].Y+rest[right].Y)*.5f;var z=(rest[left].Z+rest[right].Z)*.5f;
+            result[left]=new Vector3(centre+half,y,z);result[right]=new Vector3(centre-half,y,z);
+        }
+        return result;
+    }
     public Vector3[] RestPose(ReadOnlySpan<float> betas)
     {
         if(betas.Length!=10)throw new ArgumentException("SMPL-X skeleton requires ten shape coefficients.");

@@ -16,8 +16,8 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v8";
-    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v5";
+    public const string Version="gvhmr-stationary-contact-ccd-v10";
+    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v7";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
     public const string CameraRotationFile="camera-rotation.json";
@@ -141,6 +141,11 @@ public static class BodyRefinement
         if(moving)refined.Diagnostics.Add(anchored
             ?"World-relative root from GVHMR's gravity-view rollout with the camera rotation followed from the background. The background showed little parallax, so the camera is treated as turning in place and camera-space pelvis positions, turned back by that rotation, anchor the root as for a still camera. A camera that also travelled would make travel distance wrong."
             :"World-relative root from GVHMR's gravity-view rollout with the camera rotation followed from the background; static-joint root correction without a camera-space anchor, because background parallax shows the camera also travelled. Camera translation and scale are not recovered, so travel distance remains the model's estimate.");
+        // Carry the capture's per-frame pose confidence (on the root) over.
+        var sourceRoot=source.Bones.FindIndex(b=>b.Parent<0);var refinedRoot=refined.Bones.FindIndex(b=>b.Parent<0);
+        for(var f=0;f<refined.Frames.Count&&f<source.Frames.Count;f++)
+            if(source.Frames[f].Confidence is {} c&&sourceRoot>=0&&c.Length>sourceRoot&&c[sourceRoot] is float value)
+            {var carried=new float?[refined.Bones.Count];carried[refinedRoot]=value;refined.Frames[f].Confidence=carried;}
         cancellation.ThrowIfCancellationRequested();
         void Write(string path,string json){File.WriteAllText(path+".partial",json);File.Move(path+".partial",path,true);}
         var refinedJson=refined.ToJson();
