@@ -16,8 +16,8 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v10";
-    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v7";
+    public const string Version="gvhmr-stationary-contact-ccd-v11";
+    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v8";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
     public const string CameraRotationFile="camera-rotation.json";

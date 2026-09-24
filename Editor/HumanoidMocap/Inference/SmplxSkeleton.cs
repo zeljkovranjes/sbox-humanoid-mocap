@@ -46,7 +46,7 @@ public sealed class SmplxSkeleton
             }
         }
     }
-    /// <summary>The rest joints made left-right symmetric about the pelvis: centre joints on its centre line,
+    /// <summary>The rest joints made left-right symmetric about the pelvis, with a straight spine: centre joints on its centre line,
     /// left and right joints mirrored with their heights and depths averaged. The shaped joints carry small
     /// asymmetries (a hip joint 1 cm higher than the other, the neck 1.6 cm to one side) that retargeting read
     /// as a lean, tipping every capture's torso about 5 degrees to the same side. Pose rotations are unchanged.</summary>
@@ -55,6 +55,15 @@ public sealed class SmplxSkeleton
         if(rest.Length!=22)throw new ArgumentException("Expected 22 SMPL-X body joints.");
         var result=(Vector3[])rest.Clone();var centre=rest[0].X;
         foreach(var j in new[]{3,6,9,12,15})result[j]=rest[j] with{X=centre};
+        // The three spine joints on the straight line from the pelvis to the neck, at their own heights. The body
+        // model's rest spine is kinked (its middle segment tilts about 30 degrees forward), and retargeting copies
+        // bone directions, so every character stood with a hunch in the middle of its back.
+        var pelvis=result[0];var neck=result[12];
+        foreach(var j in new[]{3,6,9})
+        {
+            var t=(result[j].Y-pelvis.Y)/(neck.Y-pelvis.Y);
+            if(float.IsFinite(t))result[j]=Vector3.Lerp(pelvis,neck,Math.Clamp(t,0,1));
+        }
         foreach(var (left,right) in new[]{(1,2),(4,5),(7,8),(10,11),(13,14),(16,17),(18,19),(20,21)})
         {
             var half=((rest[left].X-centre)-(rest[right].X-centre))*.5f;
