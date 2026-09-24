@@ -280,7 +280,7 @@ public sealed partial class RetargetWindow
 
     void SetCaptureBusy(bool busy)
     {
-        _uploadVideoButton.Enabled = !busy; _workspacePicker.Enabled = !busy;
+        _uploadVideoButton.Enabled = !busy; _workspacePicker.Enabled = !busy; if(!busy)_workspacePicker.Visible = true;
         _cancelCaptureButton.Visible = busy; _advancedPanel.Enabled = !busy;
         _previewTargetPicker.Enabled=!busy;
         UpdateExportAvailability();

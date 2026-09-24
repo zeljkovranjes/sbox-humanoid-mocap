@@ -550,12 +550,19 @@ public sealed partial class RetargetWindow
             row.Add(new IconButton("edit",()=>OpenContactEditor(contact),this){FixedSize=24,IconSize=16,Enabled=reason is null,ToolTip="Edit interval and wrist anchor"});
         }
     }
+    static bool IsSetupMessage(string message)=>message.StartsWith("Downloading ",StringComparison.Ordinal)||message.StartsWith("Resuming ",StringComparison.Ordinal)||
+        message.StartsWith("Verified ",StringComparison.Ordinal)||message.StartsWith("First-time setup",StringComparison.Ordinal)||message.StartsWith("Preparing local capture",StringComparison.Ordinal);
     [EditorEvent.Frame]
     public void MocapTick()
     {
         if(!this.IsValid())return;
         _video?.Present();
-        if(Interlocked.Exchange(ref _workerMessage,null) is { } message)_captureStatus.Text=message;
+        if(Interlocked.Exchange(ref _workerMessage,null) is { } message)
+        {
+            _captureStatus.Text=message;
+            // While models and the worker download, the First/Third Person choice at the top is hidden; it returns with the capture itself.
+            _workspacePicker.Visible=!IsSetupMessage(message);
+        }
         TickPlayback();
     }
 }
