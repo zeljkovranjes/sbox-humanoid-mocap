@@ -19,6 +19,9 @@ using Vector3 = System.Numerics.Vector3;
 /// momentum; the correction carries on unchanged until the next contact. Height is left to the floor steps.</summary>
 public static class CaptureContactRoot
 {
+    public const float UprightFraction = .4f;
+    /// <summary>Centimetres per second above which a "planted" foot is taken as moving, not sliding.</summary>
+    public const float MaximumPlantedSpeedCm = 400;
     /// <summary>Per frame, whether the capture's contact tracks put some foot on the floor; null without tracks.</summary>
     public static bool[] ContactMask( int count, SourceScene source, MappingResult mapping )
     {
@@ -35,6 +38,7 @@ public static class CaptureContactRoot
         if ( frames.Count < 3 || source.CaptureStationaryJoints is not { Count: > 0 } tracks ) return 0;
         var rig = target.Skeleton; var up = axis == TargetUpAxis.YUpCm ? Vector3.UnitY : Vector3.UnitZ;
         var toCm = axis == TargetUpAxis.ZUpEngine ? 2.54f : 1f;
+        var fps = source.Clips.Count > 0 && source.Clips[0].Fps > 0 ? source.Clips[0].Fps : 30f;
         float[] Track( BoneRole role )
             => mapping.RoleToBone.TryGetValue( role, out var b ) && tracks.TryGetValue( source.Skeleton[b].Name, out var p ) && p.Length == frames.Count ? p : null;
         var feet = new List<(int Joint, float[] Heel, float[] Toe)>();
@@ -49,12 +53,21 @@ public static class CaptureContactRoot
         if ( feet.Count == 0 ) return 0;
         var world = new XForm[rig.Count]; var position = new Vector3[feet.Count][];
         for ( var i = 0; i < feet.Count; i++ ) position[i] = new Vector3[frames.Count];
+        // A planted foot carries the body only when the body stands over it. In rolls, handstands and handsprings
+        // the contact tracks still marked feet planted, and taking their slide out of the travel pushed a tumbler
+        // 30 cm sideways off his line: the hips must be at least UprightFraction of their standing height above it.
+        var hipsBone = target.BoneForRole( BoneRole.Hips ); var standing = hipsBone is int h0 ? Vector3.Dot( rig.RestWorld[h0].Pos, up ) : 0f;
+        var over = new bool[feet.Count][]; for ( var i = 0; i < feet.Count; i++ ) over[i] = new bool[frames.Count];
         for ( var f = 0; f < frames.Count; f++ )
         {
             FkUtil.ToWorld( frames[f], rig, world );
-            for ( var i = 0; i < feet.Count; i++ ) position[i][f] = world[feet[i].Joint].Pos;
+            for ( var i = 0; i < feet.Count; i++ )
+            {
+                position[i][f] = world[feet[i].Joint].Pos;
+                over[i][f] = hipsBone is not int h || Vector3.Dot( world[h].Pos - position[i][f], up ) >= UprightFraction * standing;
+            }
         }
-        bool Planted( int i, int f ) => Math.Max( feet[i].Heel[f], feet[i].Toe[f] ) >= .5f;
+        bool Planted( int i, int f ) => Math.Max( feet[i].Heel[f], feet[i].Toe[f] ) >= .5f && over[i][f];
         var correction = Vector3.Zero; var largest = 0f; var shifts = new Vector3[frames.Count];
         for ( var f = 1; f < frames.Count; f++ )
         {
@@ -63,6 +76,8 @@ public static class CaptureContactRoot
             {
                 if ( !Planted( i, f ) || !Planted( i, f - 1 ) ) continue;
                 var step = position[i][f] - position[i][f - 1]; step -= up * Vector3.Dot( step, up );
+                // A foot moving this fast is not bearing weight, whatever the contact track says.
+                if ( step.Length() * toCm > MaximumPlantedSpeedCm / fps ) continue;
                 slide += step; planted++;
             }
             if ( planted > 0 ) correction -= slide / planted;
