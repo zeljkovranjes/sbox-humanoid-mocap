@@ -28,7 +28,10 @@ public static class CaptureGround
     public const float MinimumCorrectionCm = 1;
 
     /// <returns>The largest correction applied, in centimetres.</returns>
-    public static float Apply( List<XForm[]> frames, TargetRig target, TargetUpAxis axis, float fps )
+    /// <param name="contact">Per frame, whether some foot is in contact with the floor, when known. The floor is then
+    /// followed only through contacts and bridged in a straight line between them, so a flight keeps its height
+    /// however long it lasts (a slowed ollie was airborne for 3.4 s of video and the window below flattened it).</param>
+    public static float Apply( List<XForm[]> frames, TargetRig target, TargetUpAxis axis, float fps, bool[] contact = null )
     {
         if ( frames.Count < 3 || !(fps > 0) ) return 0;
         var rig = target.Skeleton;
@@ -48,6 +51,21 @@ public static class CaptureGround
         }
         var radius = Math.Max( 1, (int)Math.Round( WindowSeconds * fps / 2 ) );
         var eroded = new float[frames.Count]; var floor = new double[frames.Count];
+        var contacts = contact is not null && contact.Length == frames.Count ? Enumerable.Range( 0, frames.Count ).Where( f => contact[f] ).ToArray() : Array.Empty<int>();
+        if ( contacts.Length >= Math.Max( 3, frames.Count / 20 ) )
+        {
+            for ( var f = 0; f < frames.Count; f++ )
+            {
+                var after = Array.BinarySearch( contacts, f ); if ( after >= 0 ) { floor[f] = lowest[f]; continue; }
+                after = ~after; var before = after - 1;
+                if ( before < 0 ) floor[f] = lowest[contacts[0]];
+                else if ( after >= contacts.Length ) floor[f] = lowest[contacts[^1]];
+                else { var a = contacts[before]; var b = contacts[after]; floor[f] = lowest[a] + (lowest[b] - lowest[a]) * (f - a) / (double)(b - a); }
+            }
+            // Contacts waver by a few centimetres; follow only the slow change.
+            if ( frames.Count >= 8 && fps > 2 ) { var (cb, ca) = MocapSmooth.ButterLowpass( 2, Math.Min( .5, fps * .2 ), fps ); floor = MocapSmooth.FiltFilt( cb, ca, floor ); }
+            return Shift( frames, rig, up, toCm, lowest, floor );
+        }
         for ( var f = 0; f < frames.Count; f++ )
         {
             var m = float.PositiveInfinity;
@@ -66,6 +84,10 @@ public static class CaptureGround
             var (b, a) = MocapSmooth.ButterLowpass( 2, Math.Min( .5, fps * .2 ), fps );
             floor = MocapSmooth.FiltFilt( b, a, floor );
         }
+        return Shift( frames, rig, up, toCm, lowest, floor );
+    }
+    static float Shift( List<XForm[]> frames, HumanoidMocap.Skeleton.Skeleton rig, Vector3 up, float toCm, float[] lowest, double[] floor )
+    {
         var reference = floor.Min();
         var largest = 0f;
         var shifts = new float[frames.Count];

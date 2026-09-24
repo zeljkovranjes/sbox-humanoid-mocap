@@ -30,11 +30,14 @@ using Vector3 = System.Numerics.Vector3;
 /// of the lowest joint in the target's rest pose, and only the root moves.</summary>
 public static class CaptureHover
 {
-    public const float ToleranceCm = 2, MaximumHoverCm = 40;
-    public const double MinimumHoverSeconds = .25, RampSeconds = .1;
+    public const float ToleranceCm = 2, MaximumHoverCm = 40, TouchCm = 20;
+    public const double MinimumHoverSeconds = .25, RampSeconds = .1, MaximumFlightSeconds = 1.2;
+    /// <summary>A takeoff or landing crosses TouchCm to MaximumHoverCm within this; longer is a hover.</summary>
+    public const double EdgeSeconds = .15;
 
     /// <returns>The number of frames moved.</returns>
-    public static int Apply( List<XForm[]> frames, TargetRig target, TargetUpAxis axis, float fps )
+    /// <param name="contact">Per frame, whether the capture's contact tracks put a foot on the floor, when known (unused).</param>
+    public static int Apply( List<XForm[]> frames, TargetRig target, TargetUpAxis axis, float fps, bool[] contact = null )
     {
         if ( frames.Count < 3 || !(fps > 0) ) return 0;
         var rig = target.Skeleton;
@@ -51,40 +54,43 @@ public static class CaptureHover
             lowest[f] = (body.Min( b => Vector3.Dot( world[b].Pos, up ) ) - floor) * toCm;
             if ( hips is int h ) hipsHeight[f] = Vector3.Dot( world[h].Pos, up ) * toCm;
         }
-        // Wanted change in centimetres per frame: down onto the floor through a hover, up out of the floor.
+        // Flights first: where every part of the body is above MaximumHoverCm, widened to where the lowest part
+        // comes down to TouchCm. Real takeoffs and landings cross that band in about a tenth of a second; a landing
+        // that then hovers 10 to 16 cm up (a backflip did, for up to a second) stays outside the flight.
+        var inFlight = new bool[frames.Count]; var lift = new float[frames.Count];
+        for ( var f = 0; f < frames.Count; )
+        {
+            if ( !(lowest[f] > MaximumHoverCm) ) { f++; continue; }
+            var core = f; while ( core < frames.Count && lowest[core] > MaximumHoverCm ) core++;
+            var reach = Math.Max( 1, (int)Math.Round( EdgeSeconds * fps ) );
+            var a = f; while ( a > 0 && f - a < reach && lowest[a - 1] > TouchCm ) a--;
+            var b = core; while ( b < frames.Count && b - core < reach && lowest[b] > TouchCm ) b++;
+            for ( var k = a; k < b; k++ ) inFlight[k] = true;
+            // Nobody stays in the air much over a second; anything longer (slowed footage, a mistake) is left as captured.
+            var takeoff = a - 1; var duration = (b - takeoff) / (double)fps;
+            if ( hips is not null && takeoff >= 0 && b < frames.Count && duration <= MaximumFlightSeconds )
+                for ( var k = a; k < b; k++ )
+                {
+                    var t = (k - takeoff) / (double)fps;
+                    var arc = hipsHeight[takeoff] + (hipsHeight[b] - hipsHeight[takeoff]) * t / duration + 981 / 2.0 * t * (duration - t);
+                    lift[k] = (float)arc - hipsHeight[k];
+                }
+            f = b;
+        }
+        // Hovers: outside flights, the lowest part staying ToleranceCm to MaximumHoverCm up for MinimumHoverSeconds.
         var wanted = new float[frames.Count]; var fixedFrame = new bool[frames.Count];
         var minimum = Math.Max( 2, (int)Math.Ceiling( MinimumHoverSeconds * fps ) );
         for ( var start = 0; start < frames.Count; )
         {
-            bool Low( int f ) => lowest[f] > ToleranceCm && lowest[f] <= MaximumHoverCm;
+            bool Low( int k ) => !inFlight[k] && lowest[k] > ToleranceCm && lowest[k] <= MaximumHoverCm;
             if ( !Low( start ) ) { start++; continue; }
             var end = start; while ( end < frames.Count && Low( end ) ) end++;
             if ( end - start >= minimum )
-                for ( var f = start; f < end; f++ ) { wanted[f] = -lowest[f]; fixedFrame[f] = true; }
+                for ( var k = start; k < end; k++ ) { wanted[k] = -lowest[k]; fixedFrame[k] = true; }
             start = end;
         }
         for ( var f = 0; f < frames.Count; f++ )
-            if ( lowest[f] < 0 ) { wanted[f] = -lowest[f]; fixedFrame[f] = true; }
-        // Flights: the hips follow the free-fall arc between takeoff and landing.
-        var lift = new float[frames.Count];
-        if ( hips is not null )
-            for ( var start = 1; start < frames.Count; )
-            {
-                if ( !(lowest[start] > ToleranceCm) || fixedFrame[start] ) { start++; continue; }
-                var end = start; while ( end < frames.Count && lowest[end] > ToleranceCm && !fixedFrame[end] ) end++;
-                var peak = 0f; for ( var f = start; f < end; f++ ) peak = Math.Max( peak, lowest[f] );
-                if ( end < frames.Count && peak > MaximumHoverCm )
-                {
-                    var takeoff = start - 1; var duration = (end - takeoff) / (double)fps;
-                    for ( var f = start; f < end; f++ )
-                    {
-                        var t = (f - takeoff) / (double)fps;
-                        var arc = hipsHeight[takeoff] + (hipsHeight[end] - hipsHeight[takeoff]) * t / duration + 981 / 2.0 * t * (duration - t);
-                        lift[f] = (float)arc - hipsHeight[f];
-                    }
-                }
-                start = end;
-            }
+            if ( lowest[f] < 0 && !inFlight[f] ) { wanted[f] = -lowest[f]; fixedFrame[f] = true; }
         if ( !fixedFrame.Any( x => x ) && !lift.Any( x => x != 0 ) ) return 0;
         // Ease each correction in and out over neighbouring uncorrected frames.
         var ramp = Math.Max( 1, (int)Math.Round( RampSeconds * fps ) );

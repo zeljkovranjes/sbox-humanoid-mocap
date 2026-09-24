@@ -19,6 +19,16 @@ using Vector3 = System.Numerics.Vector3;
 /// momentum; the correction carries on unchanged until the next contact. Height is left to the floor steps.</summary>
 public static class CaptureContactRoot
 {
+    /// <summary>Per frame, whether the capture's contact tracks put some foot on the floor; null without tracks.</summary>
+    public static bool[] ContactMask( int count, SourceScene source, MappingResult mapping )
+    {
+        if ( source.CaptureStationaryJoints is not { Count: > 0 } tracks ) return null;
+        var feet = new[] { BoneRole.FootL, BoneRole.ToeL, BoneRole.FootR, BoneRole.ToeR }
+            .Select( r => mapping.RoleToBone.TryGetValue( r, out var b ) && tracks.TryGetValue( source.Skeleton[b].Name, out var p ) && p.Length == count ? p : null )
+            .Where( p => p is not null ).ToArray();
+        if ( feet.Length == 0 ) return null;
+        return Enumerable.Range( 0, count ).Select( f => feet.Any( p => p[f] >= .5f ) ).ToArray();
+    }
     /// <returns>The largest horizontal correction, in centimetres.</returns>
     public static float Apply( List<XForm[]> frames, SourceScene source, MappingResult mapping, TargetRig target, TargetUpAxis axis )
     {

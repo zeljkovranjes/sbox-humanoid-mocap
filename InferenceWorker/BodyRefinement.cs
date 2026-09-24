@@ -16,11 +16,39 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v7";
-    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v4";
+    public const string Version="gvhmr-stationary-contact-ccd-v8";
+    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v5";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
     public const string CameraRotationFile="camera-rotation.json";
+    /// <summary>A foot well above the floor bears no weight, whatever the network says. In slowed footage a foot
+    /// in the air moves so little that it read as stationary, and pinning it erased a skateboarder's ollie.
+    /// Using the gravity recorded with the capture, foot predictions where the ankle is more than 25 cm or the
+    /// toe more than 15 cm above where the feet are lowest are switched off. Channels: left ankle, left foot,
+    /// right ankle, right foot, left wrist, right wrist.</summary>
+    static float[] GroundedStaticLogits(MotionDocument source,float[] logits)
+    {
+        var result=logits.ToArray();
+        if(source.Cameras.FirstOrDefault(c=>c.Id=="video")?.Up is not {Length:3} upValues)return result;
+        var up=Vector3.Normalize(MotionDocument.V(upValues));
+        int Role(HumanoidMocap.Mapping.BoneRole role)=>source.Bones.FindIndex(b=>b.Role==role);
+        var joints=new[]{Role(HumanoidMocap.Mapping.BoneRole.FootL),Role(HumanoidMocap.Mapping.BoneRole.ToeL),Role(HumanoidMocap.Mapping.BoneRole.FootR),Role(HumanoidMocap.Mapping.BoneRole.ToeR)};
+        if(joints.Any(j=>j<0)||result.Length!=source.Frames.Count*6)return result;
+        var heights=source.Frames.Select(f=>
+        {
+            var count=source.Bones.Count;var p=new Vector3[count];var q=new Quaternion[count];
+            for(var i=0;i<count;i++)
+            {
+                var local=MotionDocument.V(f.Positions[i]);var rotation=MotionDocument.Q(f.Rotations[i]);var parent=source.Bones[i].Parent;
+                if(parent<0){p[i]=local;q[i]=rotation;}else{p[i]=p[parent]+Vector3.Transform(local,q[parent]);q[i]=Quaternion.Normalize(q[parent]*rotation);}
+            }
+            return joints.Select(j=>Vector3.Dot(p[j],up)).ToArray();
+        }).ToArray();
+        var lows=heights.Select(h=>h.Min()).OrderBy(v=>v).ToArray();var floor=lows[lows.Length/20];
+        var limits=new[]{.25f,.15f,.25f,.15f};
+        for(var f=0;f<heights.Length;f++)for(var c=0;c<4;c++)if(heights[f][c]-floor>limits[c])result[f*6+c]=Math.Min(result[f*6+c],-10);
+        return result;
+    }
     public static string Run(BodyRefinementRequest request,CancellationToken cancellation,Action<string>? progress=null)
     {
         if(request.AssumeStationaryCamera==request.UseCameraRotation)throw new ArgumentException("Choose either an explicitly stationary camera or the camera rotation followed during capture.");
@@ -82,7 +110,8 @@ public static class BodyRefinement
         progress?.Invoke("Correcting stationary-camera root and contact targets");
         // Camera-space pelvis positions only anchor the root when the camera itself stood still.
         var anchored=!moving||followed is {RotationOnly:true};
-        var correction=GvhmrContactProcessing.CorrectRoot(skeleton,pose,root,prediction.StaticConfidenceLogits,anchored?cameraTranslation:null,cancellation);
+        var staticLogits=GroundedStaticLogits(source,prediction.StaticConfidenceLogits);
+        var correction=GvhmrContactProcessing.CorrectRoot(skeleton,pose,root,staticLogits,anchored?cameraTranslation:null,cancellation);
         progress?.Invoke("Refining source limb contacts");
         var refinedPose=pose with {BodyRotations=GvhmrLimbIk.Solve(skeleton,pose,correction.Root,correction.ContactTargets,cancellation)};
         var refined=BodyMotionBuilder.WorldRelative(skeleton,refinedPose,correction.Root,source,true);
@@ -91,7 +120,7 @@ public static class BodyRefinement
             int c=channel;
             refined.StationaryJoints.Add(new(){Bone=refined.Bones[GvhmrContactProcessing.ContactJoints[c]].Name,
                 Source="GVHMR static-joint head; uncalibrated contact probability, not visibility or 3D confidence",
-                Probability=Enumerable.Range(0,pose.Frames).Select(f=>1/(1+MathF.Exp(-prediction.StaticConfidenceLogits[f*6+c]))).ToArray()});
+                Probability=Enumerable.Range(0,pose.Frames).Select(f=>1/(1+MathF.Exp(-staticLogits[f*6+c]))).ToArray()});
         }
         // Finger tracks hang beneath the wrists, unaffected by root or limb refinement, and arrive with the copied source.
         BodyHandTracks.CarryFingerNotes(source,raw);BodyHandTracks.CarryFingerNotes(source,refined);

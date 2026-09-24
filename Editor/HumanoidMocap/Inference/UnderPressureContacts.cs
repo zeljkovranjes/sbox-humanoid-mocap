@@ -28,6 +28,8 @@ public sealed class UnderPressureContacts
     public const long CheckpointBytes=4025022;
     public const string CheckpointUrl="https://raw.githubusercontent.com/InterDigitalInc/UnderPressure/e7ab73e7466444f262ec1c55f2f26afe51168796/pretrained.tar";
     const int Joints=23,Kernel=7,Cells=16;const double Rate=100;
+    /// <summary>Highest a toe or ankle joint can be, in metres, and still bear weight.</summary>
+    const float ToeLimit=.13f,AnkleLimit=.2f;const double FloorWindowSeconds=1.5;
     static readonly int[] Channels={3*Joints,128,128,256,256};
     static readonly int[] FrontCells={8,9,10,11,12,13,14,15},BackCells={0,1,2,3};
     readonly float[][] convWeight=new float[4][],convBias=new float[4][];
@@ -92,9 +94,25 @@ public sealed class UnderPressureContacts
             [bones[Role(BoneRole.ToeL)].Name]=new float[count],[bones[Role(BoneRole.FootL)].Name]=new float[count],
             [bones[Role(BoneRole.ToeR)].Name]=new float[count],[bones[Role(BoneRole.FootR)].Name]=new float[count],
         };
+        // A foot well above the floor bears no weight, whatever the forces say: in slowed footage a foot in the
+        // air moves so little that it read as planted 80 cm up. A world-relative capture was refined against the
+        // floor and keeps one floor height; a camera-relative one can drift (a step-dance rose 48 cm), so its floor
+        // is where the feet are lowest within FloorWindowSeconds (a rolling minimum, then maximum).
+        var lowestFoot=joints.Select(p=>Math.Min(Math.Min(p[17].Z,p[18].Z),Math.Min(p[21].Z,p[22].Z))).ToArray();
+        var localFloor=new float[count];
+        if(document.Space==MotionSpace.WorldRelative){var sorted=lowestFoot.OrderBy(v=>v).ToArray();Array.Fill(localFloor,sorted[sorted.Length/20]);}
+        else
+        {
+            var radius=Math.Max(1,(int)Math.Round(FloorWindowSeconds*count/Math.Max(1e-3,duration)/2));var eroded=new float[count];
+            for(var f=0;f<count;f++){var m=float.PositiveInfinity;for(var k=Math.Max(0,f-radius);k<=Math.Min(count-1,f+radius);k++)m=Math.Min(m,lowestFoot[k]);eroded[f]=m;}
+            for(var f=0;f<count;f++){var m=float.NegativeInfinity;for(var k=Math.Max(0,f-radius);k<=Math.Min(count-1,f+radius);k++)m=Math.Max(m,eroded[k]);localFloor[f]=m;}
+        }
+        bool Grounded(int f,int joint,float limit)=>joints[f][joint].Z-localFloor[f]<=limit;
         for(var f=0;f<count;f++)
         {
             var s=Math.Clamp((int)Math.Round((frames[f].Time-start)*Rate),0,samples-1);
+            if(!Grounded(f,22,ToeLimit))contacts[s,0,0]=false;if(!Grounded(f,21,AnkleLimit))contacts[s,1,0]=false;
+            if(!Grounded(f,18,ToeLimit))contacts[s,0,1]=false;if(!Grounded(f,17,AnkleLimit))contacts[s,1,1]=false;
             result[bones[Role(BoneRole.ToeL)].Name][f]=contacts[s,0,0]?1:0;result[bones[Role(BoneRole.FootL)].Name][f]=contacts[s,1,0]?1:0;
             result[bones[Role(BoneRole.ToeR)].Name][f]=contacts[s,0,1]?1:0;result[bones[Role(BoneRole.FootR)].Name][f]=contacts[s,1,1]?1:0;
         }
