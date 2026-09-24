@@ -354,6 +354,17 @@ public sealed partial class RetargetWindow
         {
             if(_fbxPreviewTask is not null)await _fbxPreviewTask;
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_previewRevision)return;
+            // Viewmodel arms have no hips or legs, so a full-body capture cannot drive them. Show it on the
+            // matching whole character instead of failing, whichever workspace the arms were picked in.
+            if(IsFirstPersonArms(_target.PreviewModelPath)&&_editedMotion.Bones.Any(b=>b.Role==HumanoidMocap.Mapping.BoneRole.UpperLegL)
+                &&_editedMotion.Bones.Any(b=>b.Role==HumanoidMocap.Mapping.BoneRole.UpperLegR))
+            {
+                var citizen=_target.PreviewModelPath==TargetPickers.CitizenArmsPath;
+                _targetRequests++;if(citizen)TrySelectSboxCitizenTarget();else TrySelectSboxTarget();
+                RefreshTargetPickers();
+                if(_target is null||IsFirstPersonArms(_target.PreviewModelPath))throw new InvalidOperationException("Viewmodel arms take First Person hand captures. Pick a full character for this body capture.");
+                _captureStatus.Text=$"Viewmodel arms take First Person hand captures, so this body capture is shown on the s&box {(citizen?"Citizen":"Human")}.";
+            }
             var target=_target;var spec=target.Spec;var motion=_editedMotion;
             var bytes=Encoding.UTF8.GetBytes(motion.ToJson());var corrections=CaptureTargetCorrections();var rootMotion=_rootMotion;
             var session=_editSession;var cleanup=_appliedCleanup;var targetKey=MocapAdjustmentStore.TargetKey(spec,_firstPerson);
@@ -362,7 +373,7 @@ public sealed partial class RetargetWindow
             var result=await Task.Run(()=>Retargeter.Convert(new RetargetRequest{SourceData=bytes,SourceFileName="capture.hmotion",FootPlantCleanup=!corrections.FirstPerson,ArmEffectorIk=false,MocapCorrections=corrections,RootMotion=rootMotion},spec));
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_previewRevision)return;
             var clip=result.Clips.FirstOrDefault(c=>c.Success);
-            if(clip is null)throw new InvalidOperationException("No convertible motion. Check the bone mapping.");
+            if(clip is null)throw new InvalidOperationException("No convertible motion: "+(result.Clips.Select(c=>c.Error).FirstOrDefault(e=>!string.IsNullOrWhiteSpace(e))??string.Join(" ",result.Errors)));
             _targetHost.Layout.Clear(true);
             _mocapPreview=_targetHost.Layout.Add(new PreviewWidget(_targetHost,spec.Rig,target.PreviewModelPath,target.PreviewPositionScale,spec.UpAxis),1);
             _mocapPreview.Playing=false;_mocapPreview.FirstPerson=_previewFirstPerson;_mocapPreview.ViewmodelFov=edit.Fov;_mocapPreview.ViewmodelPitch=edit.ViewPitch;
