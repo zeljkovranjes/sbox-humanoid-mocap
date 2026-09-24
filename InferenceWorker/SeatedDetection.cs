@@ -21,7 +21,7 @@ public static class SeatedDetection
     /// <summary>A pelvis this high above the floor is standing or crouching, whatever the geometry allows.</summary>
     public const float MaximumPelvisHeight=.42f;
     /// <summary>Seated with the legs out straight, the hips sit about one leg length from the feet; a crouch misses by metres.</summary>
-    public const float ReachFraction=1.1f;
+    public const float ReachFraction=1.25f;
     public const double MinimumSeconds=.3,RampSeconds=.25;
 
     /// <param name="cameraRelative">The capture in document camera space (x right, y up, camera looking along -z).</param>
