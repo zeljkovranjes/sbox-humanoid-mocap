@@ -194,7 +194,7 @@ public sealed partial class RetargetWindow
             {
                 var raw = MotionDocument.Parse(File.ReadAllBytes(motionPath));
                 // GVHMR already has a temporal model; do not stack generic cleanup on it.
-                var cleaned = firstPerson ? MotionCleanup.Apply(raw, cleanup) : MotionCleanup.RemoveSpikes(raw).Motion;
+                var cleaned = firstPerson ? MotionCleanup.Apply(raw, cleanup) : MotionCleanup.SmoothBody(MotionCleanup.RemoveSpikes(raw).Motion, cleanup.Smoothing);
                 if(lengthNote is not null)cleaned.Diagnostics.Add(lengthNote);
                 if(contactNote is not null)cleaned.Diagnostics.Add(contactNote);
                 if(contactModel is not null&&new HumanoidMocap.Inference.UnderPressureContacts(contactModel).Estimate(cleaned,token) is { } contacts)

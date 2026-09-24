@@ -10,8 +10,9 @@ using Quaternion = System.Numerics.Quaternion;
 
 /// <summary>Joins captures of consecutive shots of one video into a single motion. Each shot has its own
 /// camera, so its placement means nothing next to the last shot's: every later shot is moved and turned on
-/// the ground so the performer carries on from where and facing the way the previous shot left them. Height
-/// is each shot's own, since every shot is grounded separately. Frame times stay the video's, so the joined
+/// the ground so the performer carries on from where and facing the way the previous shot left them, and raised
+/// or lowered so its floor (where its feet are lowest) is the previous shot's floor. A camera-relative shot is
+/// not grounded on its own: a 0.6 s last shot of a tumbling clip joined 40 to 60 cm up and passed for a flight. Frame times stay the video's, so the joined
 /// motion still lines up with the video; planted-joint tracks, contacts and camera frames are joined too.
 /// Shots captured in a different space from the first (world-relative against camera-relative) cannot be
 /// placed next to it and are left out, with a note.</summary>
@@ -62,6 +63,7 @@ public static class MotionJoin
             turn = Quaternion.CreateFromAxisAngle( Vector3.UnitY, angle );
         }
         var roots = Enumerable.Range( 0, next.Bones.Count ).Where( i => next.Bones[i].Parent < 0 ).ToArray();
+        var lift = Floor( into ) - Floor( next );
         foreach ( var source in next.Frames )
         {
             var frame = new MotionFrame
@@ -76,7 +78,7 @@ public static class MotionJoin
             {
                 var p = MotionDocument.V( frame.Positions[r] );
                 var moved = Vector3.Transform( p - startPosition, turn );
-                frame.Positions[r] = MotionDocument.A( new Vector3( moved.X + endPosition.X, p.Y, moved.Z + endPosition.Z ) );
+                frame.Positions[r] = MotionDocument.A( new Vector3( moved.X + endPosition.X, p.Y + lift, moved.Z + endPosition.Z ) );
                 frame.Rotations[r] = MotionDocument.A( Quaternion.Normalize( turn * MotionDocument.Q( frame.Rotations[r] ) ) );
             }
             into.Frames.Add( frame );
@@ -97,6 +99,25 @@ public static class MotionJoin
         into.Diagnostics.AddRange( next.Diagnostics.Select( d => FormattableString.Invariant( $"Shot from {next.Frames[0].Time:F2} s: {d}" ) ) );
     }
 
+    /// <summary>Height of the floor under a shot: the 5th percentile of its lowest foot joint.</summary>
+    static float Floor( MotionDocument doc )
+    {
+        var feet = new[] { BoneRole.FootL, BoneRole.FootR, BoneRole.ToeL, BoneRole.ToeR }.Select( r => doc.Bones.FindIndex( b => b.Role == r ) ).Where( i => i >= 0 ).ToArray();
+        if ( feet.Length == 0 || doc.Frames.Count == 0 ) return 0;
+        var lows = doc.Frames.Select( f => { var p = Positions( doc, f ); return feet.Min( i => p[i].Y ); } ).OrderBy( v => v ).ToArray();
+        return lows[lows.Length / 20];
+    }
+    static Vector3[] Positions( MotionDocument doc, MotionFrame frame )
+    {
+        var count = doc.Bones.Count; var p = new Vector3[count]; var q = new Quaternion[count];
+        for ( var i = 0; i < count; i++ )
+        {
+            var local = MotionDocument.V( frame.Positions[i] ); var rotation = MotionDocument.Q( frame.Rotations[i] ); var parent = doc.Bones[i].Parent;
+            if ( parent < 0 ) { p[i] = local; q[i] = rotation; }
+            else { p[i] = p[parent] + Vector3.Transform( local, q[parent] ); q[i] = Quaternion.Normalize( q[parent] * rotation ); }
+        }
+        return p;
+    }
     /// <summary>The root's position and the hips' left-to-right direction, flattened onto the ground.</summary>
     static (Vector3 Position, Vector3 Lateral) Placement( MotionDocument doc, MotionFrame frame )
     {

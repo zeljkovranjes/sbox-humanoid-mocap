@@ -47,6 +47,42 @@ public static class MotionCleanup
         return (output,replaced);
     }
 
+    /// <summary>Speed-adaptive smoothing for body captures. Jitter shows where a joint is nearly still, and
+    /// smoothing a whole clip also softens flips and kicks; so every track is smoothed zero-phase at
+    /// <paramref name="strength"/> and each frame keeps the smoothed value where the joint moves slowly and
+    /// the original where it moves fast (<see cref="SlowDegrees"/> to <see cref="FastDegrees"/> degrees a
+    /// second for rotations, <see cref="SlowMetres"/> to <see cref="FastMetres"/> m/s for the root).</summary>
+    public static MotionDocument SmoothBody(MotionDocument raw,float strength=7)
+    {
+        raw.Validate();var output=raw.Copy();var count=output.Frames.Count;if(count<8||!(strength>0))return output;
+        var steps=output.Frames.Zip(output.Frames.Skip(1),(a,b)=>b.Time-a.Time).OrderBy(v=>v).ToArray();var rate=1/steps[steps.Length/2];
+        if(!(rate>1))return output;
+        var cutoff=Math.Min(MocapSmooth.CutoffFromStrength(strength),rate*.45);
+        static float Blend(float speed,float slow,float fast){var x=Math.Clamp((speed-slow)/(fast-slow),0,1);return x*x*(3-2*x);}
+        for(var j=0;j<output.Bones.Count;j++)
+        {
+            var track=output.Frames.Select(f=>MotionDocument.Q(f.Rotations[j])).ToArray();
+            var smooth=MocapSmooth.Quaternions(track,cutoff,rate);
+            for(var f=0;f<count;f++)
+            {
+                var a=smooth[Math.Max(0,f-1)];var b=smooth[Math.Min(count-1,f+1)];var dt=output.Frames[Math.Min(count-1,f+1)].Time-output.Frames[Math.Max(0,f-1)].Time;
+                var speed=dt>0?(float)(2*MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(a,b)),0,1))*180/MathF.PI/dt):0;
+                var q=track[f];if(Quaternion.Dot(q,smooth[f])<0)q=-q;
+                output.Frames[f].Rotations[j]=MotionDocument.A(Quaternion.Normalize(Quaternion.Slerp(smooth[f],q,Blend(speed,SlowDegrees,FastDegrees))));
+            }
+            if(output.Bones[j].Parent>=0)continue;
+            var positions=output.Frames.Select(f=>MotionDocument.V(f.Positions[j])).ToArray();
+            var smoothed=MocapSmooth.Positions(positions,cutoff,rate);
+            for(var f=0;f<count;f++)
+            {
+                var a=smoothed[Math.Max(0,f-1)];var b=smoothed[Math.Min(count-1,f+1)];var dt=output.Frames[Math.Min(count-1,f+1)].Time-output.Frames[Math.Max(0,f-1)].Time;
+                var speed=dt>0?(float)(Vector3.Distance(a,b)/dt):0;
+                output.Frames[f].Positions[j]=MotionDocument.A(Vector3.Lerp(smoothed[f],positions[f],Blend(speed,SlowMetres,FastMetres)));
+            }
+        }
+        return output;
+    }
+    public const float SlowDegrees=120,FastDegrees=480,SlowMetres=1,FastMetres=4;
     const float SnapDegrees=45;const int SnapSpreadFrames=3;
     static int SpreadSnaps(System.Numerics.Quaternion[] q,float degrees,int half)
     {
