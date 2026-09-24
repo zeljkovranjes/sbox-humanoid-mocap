@@ -27,6 +27,23 @@ public sealed class CleanupSettings
 
 public static class MotionCleanup
 {
+    /// <summary>Only the single-frame spike removal of <see cref="Apply"/>, for body captures, which get no
+    /// other cleanup because their network already smooths over time. In tumbling it still lost track of
+    /// which way the performer faced for single frames, turning the hips up to 163 degrees and straight back.
+    /// Returns a copy and how many joint samples were replaced.</summary>
+    public static (MotionDocument Motion,int Replaced) RemoveSpikes(MotionDocument raw)
+    {
+        raw.Validate();var output=raw.Copy();var replaced=0;
+        if(output.Frames.Count<3)return (output,0);
+        for(var j=0;j<output.Bones.Count;j++)
+        {
+            var rotations=output.Frames.Select(f=>MotionDocument.Q(f.Rotations[j])).ToArray();
+            var changed=MocapSmooth.RemoveSpikes(rotations);
+            if(changed>0){replaced+=changed;for(var i=0;i<rotations.Length;i++)output.Frames[i].Rotations[j]=MotionDocument.A(rotations[i]);}
+        }
+        return (output,replaced);
+    }
+
     public static MotionDocument Apply(MotionDocument raw, CleanupSettings settings)
     {
         raw.Validate();var output=raw.Copy();

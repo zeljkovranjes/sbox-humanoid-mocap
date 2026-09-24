@@ -35,20 +35,42 @@ public static class ShotCutDetector
     /// still do not match the picture from before it.</summary>
     public static int? FirstCut(IEnumerable<float[]> thumbnails)
     {
-        float[]? before=null;var candidate=-1;var index=0;
-        foreach(var current in thumbnails)
+        var frames=thumbnails.ToList();
+        for(var i=1;i<frames.Count;i++)
         {
-            if(before is null){before=current;}
-            else if(candidate<0)
-            {
-                if(IsCut(before,current))candidate=index;else before=current;
-            }
-            else if(!IsCut(before,current)){candidate=-1;before=current;} // the scene came back: a glitch
-            else if(index-candidate>=MaximumGlitchFrames)return candidate;
-            index++;
+            var hard=IsCut(frames[i-1],frames[i]);var jump=!hard&&IsJumpCut(frames,i);
+            if(!hard&&!jump)continue;
+            // Too few frames remain to tell a cut from a glitch; the half-second minimum shot length makes either harmless.
+            if(frames.Count-i<2)return null;
+            var before=frames[i-1];var returned=-1;
+            for(var k=i+1;k<Math.Min(frames.Count,i+MaximumGlitchFrames);k++)
+                if(hard?!IsCut(before,frames[k]):Difference(before,frames[k])<.5f*Difference(before,frames[i])){returned=k;break;}
+            if(returned<0)return i;
+            // A damaged picture: carry on from the frame where the scene came back.
+            i=returned;
         }
-        // Too few frames remain to tell a cut from a glitch; the half-second minimum shot length makes either harmless.
-        return candidate>=0&&index-candidate>=2?candidate:null;
+        return null;
+    }
+    /// <summary>A jump cut joins two takes of the same place from almost the same spot: the picture keeps its
+    /// structure, so <see cref="IsCut"/> passes it, but the performer and the framing jump at once. On a
+    /// backflip clip such cuts changed the picture 14 times more than an ordinary frame. A frame changing at
+    /// least <see cref="JumpRatio"/> times the median change of the frames around it is a jump cut; a fast
+    /// pan changes every frame about as much, so its neighbours rise with it.</summary>
+    public const float JumpMinimumDifference=.06f,JumpRatio=5;
+    public static bool IsJumpCut(IReadOnlyList<float[]> frames,int index)
+    {
+        var change=Difference(frames[index-1],frames[index]);
+        if(change<JumpMinimumDifference)return false;
+        var around=new List<float>();
+        for(var k=Math.Max(1,index-5);k<=Math.Min(frames.Count-1,index+5);k++)if(k!=index)around.Add(Difference(frames[k-1],frames[k]));
+        if(around.Count==0)return true;
+        around.Sort();
+        return change>=JumpRatio*around[around.Count/2];
+    }
+    static float Difference(float[] a,float[] b)
+    {
+        if(a.Length!=b.Length||a.Length==0)throw new ArgumentException("Thumbnails differ in size.");
+        double sum=0;for(var i=0;i<a.Length;i++)sum+=Math.Abs(a[i]-b[i]);return (float)(sum/a.Length);
     }
     public static bool IsCut(float[] a,float[] b)
     {

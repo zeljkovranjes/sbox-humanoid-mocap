@@ -20,6 +20,12 @@ using Vector3 = System.Numerics.Vector3;
 /// point stays between <see cref="ToleranceCm"/> and <see cref="MaximumHoverCm"/> is a hover (a real hop that
 /// high passes through that band in a tenth of a second on each side), and the body is
 /// lowered onto the floor there. Any frame in which part of the body is below the floor is raised to it.
+///
+/// A stretch in which every part of the body rises above <see cref="MaximumHoverCm"/> is a flight: standing,
+/// crouching or a handstand always leaves something lower. A flight is given the height gravity requires. The network underestimates how far the
+/// hips travel up: a backflip airborne for 0.55 s rose 14 to 20 cm, where free fall for that long rises 35 to
+/// 40 cm, and the flip turned almost in place. Between the last frame on the floor and the first one back, the
+/// hips follow the free-fall arc through those two frames instead.
 /// Corrections ease in and out over <see cref="RampSeconds"/>. Heights are of joints, the floor is the height
 /// of the lowest joint in the target's rest pose, and only the root moves.</summary>
 public static class CaptureHover
@@ -37,11 +43,13 @@ public static class CaptureHover
         var body = Enum.GetValues<BoneRole>().Select( target.BoneForRole ).Where( b => b is not null ).Select( b => b.Value ).Distinct().ToArray();
         if ( body.Length < 8 ) return 0;
         var floor = body.Min( b => Vector3.Dot( rig.RestWorld[b].Pos, up ) );
-        var lowest = new float[frames.Count]; var world = new XForm[rig.Count];
+        var lowest = new float[frames.Count]; var hipsHeight = new float[frames.Count]; var world = new XForm[rig.Count];
+        var hips = target.BoneForRole( BoneRole.Hips );
         for ( var f = 0; f < frames.Count; f++ )
         {
             FkUtil.ToWorld( frames[f], rig, world );
             lowest[f] = (body.Min( b => Vector3.Dot( world[b].Pos, up ) ) - floor) * toCm;
+            if ( hips is int h ) hipsHeight[f] = Vector3.Dot( world[h].Pos, up ) * toCm;
         }
         // Wanted change in centimetres per frame: down onto the floor through a hover, up out of the floor.
         var wanted = new float[frames.Count]; var fixedFrame = new bool[frames.Count];
@@ -57,7 +65,27 @@ public static class CaptureHover
         }
         for ( var f = 0; f < frames.Count; f++ )
             if ( lowest[f] < 0 ) { wanted[f] = -lowest[f]; fixedFrame[f] = true; }
-        if ( !fixedFrame.Any( x => x ) ) return 0;
+        // Flights: the hips follow the free-fall arc between takeoff and landing.
+        var lift = new float[frames.Count];
+        if ( hips is not null )
+            for ( var start = 1; start < frames.Count; )
+            {
+                if ( !(lowest[start] > ToleranceCm) || fixedFrame[start] ) { start++; continue; }
+                var end = start; while ( end < frames.Count && lowest[end] > ToleranceCm && !fixedFrame[end] ) end++;
+                var peak = 0f; for ( var f = start; f < end; f++ ) peak = Math.Max( peak, lowest[f] );
+                if ( end < frames.Count && peak > MaximumHoverCm )
+                {
+                    var takeoff = start - 1; var duration = (end - takeoff) / (double)fps;
+                    for ( var f = start; f < end; f++ )
+                    {
+                        var t = (f - takeoff) / (double)fps;
+                        var arc = hipsHeight[takeoff] + (hipsHeight[end] - hipsHeight[takeoff]) * t / duration + 981 / 2.0 * t * (duration - t);
+                        lift[f] = (float)arc - hipsHeight[f];
+                    }
+                }
+                start = end;
+            }
+        if ( !fixedFrame.Any( x => x ) && !lift.Any( x => x != 0 ) ) return 0;
         // Ease each correction in and out over neighbouring uncorrected frames.
         var ramp = Math.Max( 1, (int)Math.Round( RampSeconds * fps ) );
         var shift = wanted.ToArray();
@@ -74,6 +102,7 @@ public static class CaptureHover
             // Never ease anything below the floor or lift a hover further.
             shift[f] = best < 0 ? Math.Max( best, -Math.Max( 0, lowest[f] ) ) : best;
         }
+        for ( var f = 0; f < frames.Count; f++ ) shift[f] += lift[f];
         var moved = 0;
         for ( var f = 0; f < frames.Count; f++ )
         {

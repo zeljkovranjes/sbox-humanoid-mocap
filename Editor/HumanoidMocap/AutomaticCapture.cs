@@ -14,6 +14,30 @@ public sealed partial class RetargetWindow
     readonly Queue<(string Path, bool FirstPerson, double Start, double? End)> _queuedVideos = new();
     string _workerMessage;
     void ReceiveWorkerProgress(string message)=>Interlocked.Exchange(ref _workerMessage,message);
+    const int MaximumShots=16;const double MinimumShotSeconds=.5;
+    /// <summary>The worker's note when a capture stopped at a cut; see the worker's ShotCutDetector.</summary>
+    const string ShotCutPrefix="Footage cuts to another shot at ";
+    static double? NextShotStart(IEnumerable<string> diagnostics)
+    {
+        var note=diagnostics.FirstOrDefault(d=>d.StartsWith(ShotCutPrefix,StringComparison.Ordinal));
+        if(note is null)return null;
+        var text=note.Substring(ShotCutPrefix.Length);var end=text.IndexOf(" s",StringComparison.Ordinal);
+        return end>0&&double.TryParse(text[..end],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var seconds)?seconds:null;
+    }
+    /// <summary>One shot: the capture, then world-relative refinement when its camera allows. A camera the
+    /// worker measured as still gets world-relative root and foot-contact refinement; one whose rotation it
+    /// followed gets the same from GVHMR's world rollout; one that could not be followed stays camera-relative.
+    /// The untouched capture stays beside it and Advanced → Restore original capture reopens it.</summary>
+    async Task<string> CaptureBodyShotAsync(string video,double start,double end,Mp4Metadata metadata,float? recordedFov,CancellationToken token)
+    {
+        var bodyPath=await NativeCapture.BodyAsync(video,start,end,metadata.Width,metadata.Height,recordedFov,ReceiveWorkerProgress,token);
+        var diagnostics=await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(bodyPath)).Diagnostics,token);
+        if(diagnostics.Any(d=>d.StartsWith(StationaryCameraPrefix,StringComparison.Ordinal)))
+            return await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token);
+        if(diagnostics.Any(d=>d.StartsWith(FollowedCameraPrefix,StringComparison.Ordinal)))
+            return await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token,followedCameraRotation:true);
+        return bodyPath;
+    }
     internal bool CaptureIsRunning => _processing is not null;
     internal string CaptureMotionPath => _motionPath;
     internal string CaptureMessage => _captureStatus.Text;
@@ -113,19 +137,36 @@ public sealed partial class RetargetWindow
             }
             else
             {
-                motionPath = await NativeCapture.BodyAsync(video, start, end ?? metadata.Duration, metadata.Width, metadata.Height, recordedFov,
-                    ReceiveWorkerProgress, token);
-                // A camera the worker measured as still gets world-relative root and foot-contact
-                // refinement straight away. The untouched capture stays beside it and
-                // Advanced → Restore original capture reopens it.
-                var bodyPath=motionPath;
-                // A moving camera whose rotation the worker followed gets the same refinement from
-                // GVHMR's world rollout; one that could not be followed stays camera-relative.
-                var diagnostics=await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(bodyPath)).Diagnostics,token);
-                if(diagnostics.Any(d=>d.StartsWith(StationaryCameraPrefix,StringComparison.Ordinal)))
-                    motionPath=await NativeCapture.RefineBodyAsync(motionPath,ReceiveWorkerProgress,token);
-                else if(diagnostics.Any(d=>d.StartsWith(FollowedCameraPrefix,StringComparison.Ordinal)))
-                    motionPath=await NativeCapture.RefineBodyAsync(motionPath,ReceiveWorkerProgress,token,followedCameraRotation:true);
+                // Edited footage: the worker captures up to the first cut. Every following shot is captured
+                // the same way, each with its own camera, and the shots are joined into one motion.
+                var shotPaths=new List<string>();double shotStart=start;double shotEnd=end??metadata.Duration;string shotFailure=null;
+                for(var shot=0;shot<MaximumShots;shot++)
+                {
+                    if(shot>0)ReceiveWorkerProgress(FormattableString.Invariant($"Capturing shot {shot+1} from {shotStart:0.00} s"));
+                    string shotPath;
+                    try{shotPath=await CaptureBodyShotAsync(video,shotStart,shotEnd,metadata,recordedFov,token);}
+                    catch(OperationCanceledException){throw;}
+                    catch(Exception e) when(shot>0){shotFailure=FormattableString.Invariant($"The shot from {shotStart:0.00} s could not be captured ({e.Message}); the shots before it are kept.");break;}
+                    shotPaths.Add(shotPath);
+                    var cut=await Task.Run(()=>NextShotStart(MotionDocument.Parse(File.ReadAllBytes(shotPath)).Diagnostics),token);
+                    if(cut is not double next||next<=shotStart||shotEnd-next<MinimumShotSeconds)break;
+                    shotStart=next;
+                }
+                motionPath=shotPaths[0];
+                if(shotPaths.Count>1||shotFailure is not null)
+                {
+                    var paths=shotPaths.ToArray();var failure=shotFailure;
+                    motionPath=await Task.Run(()=>
+                    {
+                        var documents=paths.Select(p=>MotionDocument.Parse(File.ReadAllBytes(p))).ToList();
+                        // Only the last shot still ends at a cut that was not followed.
+                        for(var i=0;i<documents.Count-1;i++)documents[i].Diagnostics.RemoveAll(d=>d.StartsWith(ShotCutPrefix,StringComparison.Ordinal));
+                        var joined=MotionJoin.Join(documents);joined.OriginalReconstruction=null;
+                        if(failure is not null)joined.Diagnostics.Add(failure);
+                        var destination=Path.Combine(Path.GetDirectoryName(paths[0]),"joined-shots.hmotion");
+                        File.WriteAllText(destination,joined.ToJson());return destination;
+                    },token);
+                }
             }
             token.ThrowIfCancellationRequested();
             await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
@@ -137,7 +178,7 @@ public sealed partial class RetargetWindow
             {
                 var raw = MotionDocument.Parse(File.ReadAllBytes(motionPath));
                 // GVHMR already has a temporal model; do not stack generic cleanup on it.
-                var cleaned = firstPerson ? MotionCleanup.Apply(raw, cleanup) : raw.Copy();
+                var cleaned = firstPerson ? MotionCleanup.Apply(raw, cleanup) : MotionCleanup.RemoveSpikes(raw).Motion;
                 if(lengthNote is not null)cleaned.Diagnostics.Add(lengthNote);
                 token.ThrowIfCancellationRequested();
                 var destination = Path.Combine(Path.GetDirectoryName(motionPath), "automatic.edited.hmotion");

@@ -47,15 +47,23 @@ public static class BodyCapture
     /// where they are in view and says so, rather than refusing the whole video.</summary>
     public static string Run(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress=null)
     {
-        string? note=null;List<FrameState>? seed=null;
+        string? note=null;List<FrameState>? seed=null;string? nextShot=null;
         for(var attempt=0;;attempt++)
         {
-            try{return RunRange(request,cancellation,progress,seed,note);}
+            try{return RunRange(request,cancellation,progress,seed,note,nextShot);}
             catch(SubjectLost lost) when(request.PersonCrop is null&&attempt<3)
             {
                 if(lost.LastSeen is double seen)
                 {
                     if(seen-lost.RangeStart<MinimumVisibleSeconds)throw;
+                    // Losing the performer shortens the range to before a later cut; still report that cut, so the
+                    // shot after it can be captured too.
+                    if(request.PersonCrop is null&&nextShot is null)
+                    {
+                        var times=Mp4Metadata.Read(request.Video).CaptureTimes.Where(t=>t>=lost.RangeStart&&t<request.End).ToArray();
+                        if(times.Length>2&&ShotCutDetector.FirstCut(request.Video,times,cancellation) is int cut&&times[cut]>seen)
+                            nextShot=FormattableString.Invariant($"{ShotCutDetector.Prefix} at {times[cut]:F2} s. The performer was lost before it, at {lost.Time:F2} s; the shot after the cut is captured on its own.");
+                    }
                     note=FormattableString.Invariant($"{PartlyVisiblePrefix}: they could not be followed from {lost.Time:F2} s, so the capture ends at {seen:F2} s. {note}").TrimEnd();
                     progress?.Invoke(FormattableString.Invariant($"Performer left the picture at {lost.Time:F1} s; capturing up to there"));
                     // Keep the 2D poses already found; the shorter range is a job of its own.
@@ -89,7 +97,7 @@ public static class BodyCapture
         }
         return null;
     }
-    static string RunRange(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress,List<FrameState>? seed,string? visibilityNote)
+    static string RunRange(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress,List<FrameState>? seed,string? visibilityNote,string? nextShotNote=null)
     {
         if(!double.IsFinite(request.Start+request.End)||request.Start<0||request.End<=request.Start)throw new ArgumentException("Select a finite non-empty video range.");
         var metadata=Mp4Metadata.Read(request.Video);var captureTimes=metadata.CaptureTimes;
@@ -368,6 +376,7 @@ public static class BodyCapture
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             if(shotNote is not null)motion.Diagnostics.Add(shotNote);
             if(visibilityNote is not null)motion.Diagnostics.Add(visibilityNote);
+            if(nextShotNote is not null&&shotNote is null)motion.Diagnostics.Add(nextShotNote);
             motion.Diagnostics.Add(lensNote??(request.HorizontalFov is float lens?FormattableString.Invariant($"Lens: the camera recorded a {lens:F0} degree horizontal field of view, used for depth and travel."):
                 "Lens: not recorded by the camera; assumed from the picture size (about 53 degrees across the diagonal). Distances toward and away from the camera scale with this assumption."));
             motion.Diagnostics.Add(GpuBackbone.DeviceNote);
