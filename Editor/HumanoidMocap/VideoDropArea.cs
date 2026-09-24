@@ -5,36 +5,43 @@ using Sandbox;
 
 namespace HumanoidMocap.Editor;
 
-// Same centered import surface and native theme as Humanoid Rigger's ModelDropArea.
+// First-load surface, styled after Humanoid Rigger's ModelDropArea: a dark-gray
+// rounded box on the gray window, centered prompt and a green choose button.
 sealed class VideoDropArea : Widget
 {
     readonly Action<string> import;
-    bool hovering;
-    public VideoDropArea(Widget parent, Action<string> import) : base(parent)
+    int hover;
+    public VideoDropArea(Widget parent, Action<string> import, Action chooseVideo, Action phoneUpload) : base(parent)
     {
-        this.import=import;AcceptDrops=true;Layout=Layout.Column();Layout.Margin=20;Layout.Spacing=10;
+        this.import=import;AcceptDrops=true;Layout=Layout.Column();Layout.Margin=12;Layout.Spacing=8;
         Layout.AddStretchCell();
-        Layout.Add(new VideoIcon(this));
-        Layout.Add(new Label.Subtitle("Video to motion"){Alignment=TextFlag.Center});
-        var help=Layout.Add(new Label("Drop a video here, or upload from your computer or phone.",this){Alignment=TextFlag.Center,WordWrap=true});
+        var row=Layout.AddRow();row.AddStretchCell();var center=row.AddColumn();center.Spacing=12;
+        center.Add(new VideoIcon(this));
+        center.Add(new Label.Subtitle("Video to motion"){Alignment=TextFlag.Center});
+        var help=center.Add(new Label("Please drag and drop a video here (.mp4, .mov)",this){Alignment=TextFlag.Center});
         help.SetStyles($"color: {Theme.TextLight.Hex};");
-        Layout.AddStretchCell();
+        center.Add(new Label("or",this){Alignment=TextFlag.Center});
+        var choice=center.AddRow();choice.Spacing=8;choice.AddStretchCell();
+        choice.Add(new Button.Primary("Choose Video"){Icon="video_file",Tint=Theme.Green,MinimumWidth=140,FixedHeight=32,Clicked=chooseVideo});
+        choice.Add(new Button("From phone","qr_code_2"){FixedHeight=32,Clicked=phoneUpload});
+        choice.AddStretchCell();
+        row.AddStretchCell();Layout.AddStretchCell();
     }
     static bool Supported(string path)=>Path.GetExtension(path).ToLowerInvariant() is ".mp4" or ".mov" or ".m4v";
     public override void OnDragHover(DragEvent e)
-    {hovering=e.Data.HasFileOrFolder&&Supported(e.Data.FileOrFolder);if(hovering)e.Action=DropAction.Link;Update();}
+    {bool valid=e.Data.HasFileOrFolder&&Supported(e.Data.FileOrFolder);hover=valid?1:-1;if(valid)e.Action=DropAction.Link;Update();}
     public override void OnDragDrop(DragEvent e)
-    {hovering=false;if(e.Data.HasFileOrFolder&&Supported(e.Data.FileOrFolder)){e.Action=DropAction.Link;import(e.Data.FileOrFolder);}Update();}
-    public override void OnDragLeave(){hovering=false;Update();}
+    {hover=0;if(e.Data.HasFileOrFolder&&Supported(e.Data.FileOrFolder)){e.Action=DropAction.Link;import(e.Data.FileOrFolder);}Update();}
+    public override void OnDragLeave(){hover=0;Update();}
     protected override void OnPaint()
     {
-        Paint.SetPen(hovering?Theme.Blue:Theme.Border,1);
-        Paint.SetBrush(hovering?Theme.WindowBackground.LerpTo(Theme.Blue,.12f):Theme.WindowBackground);
-        Paint.DrawRect(LocalRect.Shrink(1),6);
+        Paint.SetPen(hover==1?Theme.Green:hover<0?Theme.Red:Theme.ControlBackground.Lighten(.2f),1);
+        Paint.SetBrush(hover==1?Theme.Green.WithAlpha(.06f):Paint.HasMouseOver?Theme.ControlBackground.Lighten(.3f):Theme.ControlBackground);
+        Paint.DrawRect(LocalRect.Shrink(1),4);
     }
     sealed class VideoIcon : Widget
     {
-        public VideoIcon(Widget parent):base(parent){FixedHeight=44;}
-        protected override void OnPaint(){Paint.SetPen(Theme.TextLight);Paint.DrawIcon(new Rect((Width-36)*.5f,4,36,36),"video_file",36);}
+        public VideoIcon(Widget parent):base(parent){FixedHeight=48;}
+        protected override void OnPaint(){Paint.SetPen(Theme.TextLight);Paint.DrawIcon(new Rect((Width-40)*.5f,4,40,40),"video_file",40);}
     }
 }

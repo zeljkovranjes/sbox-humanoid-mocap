@@ -43,7 +43,7 @@ public sealed partial class RetargetWindow
     bool _exportCaptured;
     bool _previewFirstPerson = true;
     SegmentedControl _viewPicker;
-    Widget _welcome, _previewArea, _transportBar;
+    Widget _welcome, _uploadBar, _previewArea, _transportBar;
     Label _videoName;
     Dialog _adjustments;
 
@@ -62,19 +62,18 @@ public sealed partial class RetargetWindow
         _exportMotionButton.Clicked=()=>PickMotionExport(!_exportCaptured);
         _exportMotionButton.ToolTip="Export the armature and animated bones as FBX.";
 
-        var upload=Layout.AddRow();upload.Spacing=8;
+        // Hidden on first load: the drop area below carries the same two actions.
+        _uploadBar=Layout.Add(new Widget(this){Visible=false});_uploadBar.Layout=Layout.Row();
+        var upload=_uploadBar.Layout;upload.Spacing=8;
         _uploadVideoButton=upload.Add(new Button.Primary("Upload video…"){Icon="video_file"});
-        _uploadVideoButton.Clicked=()=>{
-            var path=EditorUtility.OpenFileDialog("Upload video","Video (*.mp4 *.mov)",null);
-            if(!string.IsNullOrEmpty(path))ImportVideoAndProcess(path);
-        };
+        _uploadVideoButton.Clicked=ChooseVideo;
         _phoneVideoButton=upload.Add(new Button("Upload from phone","qr_code_2"));
-        _phoneVideoButton.Clicked=()=>new PhoneUploadDialog(this,ImportVideoAndProcess).Show();
+        _phoneVideoButton.Clicked=UploadFromPhone;
         _sourcePath=new LineEdit(this){Visible=false,ReadOnly=true};
         _videoName=upload.Add(new Label("",this),1);
         _videoName.SetStyles($"color: {Theme.TextLight.Hex};");
 
-        _welcome=Layout.Add(new VideoDropArea(this,ImportVideoAndProcess),1);
+        _welcome=Layout.Add(new VideoDropArea(this,ImportVideoAndProcess,ChooseVideo,UploadFromPhone),1);
         _previewArea=Layout.Add(new Widget(this){Visible=false},1);
         _previewArea.Layout=Layout.Row();_previewArea.Layout.Spacing=10;
         var sourcePanel=_previewArea.Layout.Add(new Widget(this),1);sourcePanel.Layout=Layout.Column();sourcePanel.Layout.Spacing=6;
@@ -261,12 +260,18 @@ public sealed partial class RetargetWindow
         var value=Number(_smoothing,7);if(!float.IsFinite(value))return 7;
         return value<=0?0:Math.Clamp(value,.5f,10);
     }
+    void ChooseVideo()
+    {
+        var path=EditorUtility.OpenFileDialog("Upload video","Video (*.mp4 *.mov)",null);
+        if(!string.IsNullOrEmpty(path))ImportVideoAndProcess(path);
+    }
+    void UploadFromPhone()=>new PhoneUploadDialog(this,ImportVideoAndProcess).Show();
     public void LoadVideo(string path)
     {
         // A lens override belongs to this recording. Never carry it into a new
         // upload, including queued phone videos from another camera.
         if(!string.Equals(_sourcePath.Text,path,StringComparison.OrdinalIgnoreCase))_recordingFov.Text="";
-        _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
+        _welcome.Visible=false;_uploadBar.Visible=true;_previewArea.Visible=true;_transportBar.Visible=true;
         Update();
         _videoName.Text=Path.GetFileName(path);_videoName.ToolTip=path;
         _sourcePath.Text=path;_videoHost.Layout.Clear(true);
@@ -392,7 +397,7 @@ public sealed partial class RetargetWindow
             var supportsProps=HandCaptureRetargeter.Supports(motion)&&corrections.FirstPerson&&rootMotion==HumanoidMocap.Cleanup.RootMotionMode.Off
                 &&motion.Objects.All(p=>p.Space==motion.Space);
             if(supportsProps){_mocapPreview.CaptureProps=props;_mocapPreview.PropPlacement=propPlacement;_mocapPreview.ContactTargetKey=corrections.ContactTargetKey;}
-            _welcome.Visible=false;_previewArea.Visible=true;_transportBar.Visible=true;
+            _welcome.Visible=false;_uploadBar.Visible=true;_previewArea.Visible=true;_transportBar.Visible=true;
             Update();
             _previewFps=clip.Fps;_mocapPreview.SetClip(clip);_mocapPreview.ResetView();
             _mocapPreview.Show();_targetHost.Update();
