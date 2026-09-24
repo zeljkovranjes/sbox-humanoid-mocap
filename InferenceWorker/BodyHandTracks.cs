@@ -12,7 +12,7 @@ namespace HumanoidMocap.Worker;
 /// whose forearm was not confidently seen, are skipped and labelled unobserved rather than guessed.</summary>
 public static class BodyHandTracks
 {
-    public const string Version="body-wilor-fingers-v6-smooth-edges";
+    public const string Version="body-wilor-fingers-v7-orientation";
     /// <summary>A forearm shorter than this many source pixels gives WiLoR too little hand to read.</summary>
     public const float MinimumForearmPixels=36;
     static readonly string[] Roles={"IndexProx","IndexMid","IndexDist","MiddleProx","MiddleMid","MiddleDist",
@@ -20,7 +20,9 @@ public static class BodyHandTracks
     static readonly int[] Parents={-1,0,1,2,0,4,5,0,7,8,0,10,11,0,13,14};
     /// <param name="LocalRotations">Fifteen finger joints, xyzw, already reflected for a left hand.</param>
     /// <param name="RestOffsets">Fifteen parent-relative rest offsets in metres, already reflected for a left hand.</param>
-    public sealed record Sample(float[] LocalRotations,float[] RestOffsets);
+    /// <param name="Orientation">The whole hand's orientation seen by WiLoR, xyzw, MANO hand axes to camera axes
+    /// (x right, y down, z forward), already reflected for a left hand. Null in older captures.</param>
+    public sealed record Sample(float[] LocalRotations,float[] RestOffsets,float[]? Orientation=null);
 
     /// <summary>Image box around a hand from COCO-17 body joints (x, y, score), or null when the forearm
     /// was not confidently seen, is too short, or the hand would lie mostly outside the picture.</summary>
@@ -47,7 +49,8 @@ public static class BodyHandTracks
             var offset=hand.RestJoints[j]-hand.RestJoints[Parents[j]];
             offsets[(j-1)*3]=sign*offset.X;offsets[(j-1)*3+1]=offset.Y;offsets[(j-1)*3+2]=offset.Z;
         }
-        return new(rotations,offsets);
+        var o=hand.LocalRotations[0];if(left)o=new(o.X,-o.Y,-o.Z,o.W);
+        return new(rotations,offsets,new[]{o.X,o.Y,o.Z,o.W});
     }
     /// <summary>Adds finger bones beneath HandL/HandR for each side seen in at least a tenth of the frames.
     /// Short losses glide into the reacquired pose and are labelled inferred; the rest stay unobserved.</summary>
@@ -58,6 +61,45 @@ public static class BodyHandTracks
     {
         int start=t,end=t;while(start>0&&samples[start-1][side] is not null)start--;while(end+1<samples.Count&&samples[end+1][side] is not null)end++;
         return end-start+1;
+    }
+    /// <summary>Degrees within which WiLoR's hand orientation is taken over, and beyond which it is ignored.</summary>
+    public const float AgreeDegrees=30,DisagreeDegrees=60;
+    /// <summary>Turns each wrist toward the orientation WiLoR saw, where the two roughly agree. The body model
+    /// judges the hand from the whole arm and misses its roll (a palm turned sideways came out facing forward);
+    /// WiLoR sees the hand itself but loses it against dark gloves (it pointed a raised hand downward). Within
+    /// AgreeDegrees WiLoR's orientation is used, beyond DisagreeDegrees the body model's, blended between and
+    /// smoothed over five frames. MANO and the body model share hand axes. Call on the camera-relative document.</summary>
+    /// <returns>Frames turned, left then right.</returns>
+    public static int[] FuseWristOrientation(MotionDocument document,IReadOnlyList<Sample?[]> samples)
+    {
+        if(samples.Count!=document.Frames.Count)throw new ArgumentException("Hand samples do not match the motion sample count.");
+        var counts=new int[2];var bones=document.Bones;var cameraToDocument=Quaternion.CreateFromAxisAngle(Vector3.UnitX,MathF.PI);
+        for(var side=0;side<2;side++)
+        {
+            var wrist=bones.FindIndex(b=>b.Role==(side==0?BoneRole.HandL:BoneRole.HandR));if(wrist<0)continue;
+            var parentWorld=new Quaternion[samples.Count];var target=new Quaternion?[samples.Count];var weight=new float[samples.Count];
+            for(var t=0;t<samples.Count;t++)
+            {
+                var chain=new List<int>();for(var b=bones[wrist].Parent;b>=0;b=bones[b].Parent)chain.Add(b);
+                var world=Quaternion.Identity;for(var i=chain.Count-1;i>=0;i--)world=Quaternion.Normalize(world*MotionDocument.Q(document.Frames[t].Rotations[chain[i]]));
+                parentWorld[t]=world;
+                if(samples[t][side]?.Orientation is not {Length:4} o)continue;
+                var seen=Quaternion.Normalize(cameraToDocument*new Quaternion(o[0],o[1],o[2],o[3]));
+                var current=Quaternion.Normalize(world*MotionDocument.Q(document.Frames[t].Rotations[wrist]));
+                var degrees=2*MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(seen,current)),0,1))*180/MathF.PI;
+                target[t]=seen;weight[t]=Math.Clamp((DisagreeDegrees-degrees)/(DisagreeDegrees-AgreeDegrees),0,1);
+            }
+            for(var t=0;t<samples.Count;t++)
+            {
+                float sum=0;var n=0;for(var k=Math.Max(0,t-2);k<=Math.Min(samples.Count-1,t+2);k++){sum+=weight[k];n++;}
+                var w=target[t] is null?0:sum/n;if(!(w>0))continue;
+                var frame=document.Frames[t];var current=Quaternion.Normalize(parentWorld[t]*MotionDocument.Q(frame.Rotations[wrist]));
+                var seen=target[t]!.Value;if(Quaternion.Dot(seen,current)<0)seen=-seen;
+                var blended=Quaternion.Normalize(Quaternion.Slerp(current,seen,w));
+                frame.Rotations[wrist]=MotionDocument.A(Quaternion.Normalize(Quaternion.Inverse(parentWorld[t])*blended));counts[side]++;
+            }
+        }
+        return counts;
     }
     public static int[] Append(MotionDocument document,IReadOnlyList<Sample?[]> samples)
     {

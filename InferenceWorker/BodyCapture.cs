@@ -380,6 +380,8 @@ public static class BodyCapture
             var motion=BodyMotionBuilder.CameraRelative(skeleton,decoded,translation,state.Frames.Select(f=>f.Time).ToArray(),Path.GetFileNameWithoutExtension(request.Video),request.Video,sourceSha,metadata.CaptureFrameRate,camera);
             if(state.Frames.All(f=>f.Hands is not null))
             {
+                var turned=BodyHandTracks.FuseWristOrientation(motion,state.Frames.Select(f=>f.Hands!).ToArray());
+                if(turned.Sum()>0)motion.Diagnostics.Add(FormattableString.Invariant($"Wrists: turned toward the hand orientation WiLoR saw in {turned[0]} left and {turned[1]} right frames where it agreed with the body model within {BodyHandTracks.DisagreeDegrees:F0} degrees."));
                 BodyHandTracks.Append(motion,state.Frames.Select(f=>f.Hands!).ToArray());
                 motion.ModelVersion+="; "+BodyHandTracks.Version+" "+WilorModel.CheckpointSha256;
             }

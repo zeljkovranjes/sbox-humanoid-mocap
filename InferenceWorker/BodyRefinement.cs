@@ -16,8 +16,8 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v11";
-    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v8";
+    public const string Version="gvhmr-stationary-contact-ccd-v12";
+    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v9";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
     public const string CameraRotationFile="camera-rotation.json";
@@ -141,6 +141,14 @@ public static class BodyRefinement
         if(moving)refined.Diagnostics.Add(anchored
             ?"World-relative root from GVHMR's gravity-view rollout with the camera rotation followed from the background. The background showed little parallax, so the camera is treated as turning in place and camera-space pelvis positions, turned back by that rotation, anchor the root as for a still camera. A camera that also travelled would make travel distance wrong."
             :"World-relative root from GVHMR's gravity-view rollout with the camera rotation followed from the background; static-joint root correction without a camera-space anchor, because background parallax shows the camera also travelled. Camera translation and scale are not recovered, so travel distance remains the model's estimate.");
+        // The capture's wrists were turned toward WiLoR's view (BodyHandTracks.FuseWristOrientation); the refined arms
+        // come from the body model again, so carry the wrists' rotation relative to the forearm across.
+        foreach(var role in new[]{HumanoidMocap.Mapping.BoneRole.HandL,HumanoidMocap.Mapping.BoneRole.HandR})
+        {
+            var from=source.Bones.FindIndex(b=>b.Role==role);var to=refined.Bones.FindIndex(b=>b.Role==role);
+            if(from<0||to<0)continue;
+            for(var f=0;f<refined.Frames.Count&&f<source.Frames.Count;f++)refined.Frames[f].Rotations[to]=(float[])source.Frames[f].Rotations[from].Clone();
+        }
         // Carry the capture's per-frame pose confidence (on the root) over.
         var sourceRoot=source.Bones.FindIndex(b=>b.Parent<0);var refinedRoot=refined.Bones.FindIndex(b=>b.Parent<0);
         for(var f=0;f<refined.Frames.Count&&f<source.Frames.Count;f++)
