@@ -181,12 +181,28 @@ public sealed partial class RetargetWindow
             _captureStatus.Text = "Cleaning motion…";
             var cleanup = new CleanupSettings { Root = Number(_rootSmooth, .25f), Arms = Number(_armSmooth, .1f), Fingers = Number(_fingerSmooth, .025f) };
             cleanup.Smoothing = cleanup.PositionSmoothing = SmoothingStrength();
+            // Body captures: foot contacts from UnderPressure replace the body network's stationary-foot guesses,
+            // which miss exactly the planted feet that slide. Without the model the capture keeps those guesses.
+            string contactModel=null;string contactNote=null;
+            if(!firstPerson)
+            {
+                try{contactModel=await ContactModelStore.EnsureAsync(token);}
+                catch(OperationCanceledException){throw;}
+                catch(Exception e){contactNote="Foot contacts: the UnderPressure model could not be downloaded ("+e.Message+"); the body network's stationary-foot predictions are used instead.";}
+            }
             var cleanedPath = await Task.Run(() =>
             {
                 var raw = MotionDocument.Parse(File.ReadAllBytes(motionPath));
                 // GVHMR already has a temporal model; do not stack generic cleanup on it.
                 var cleaned = firstPerson ? MotionCleanup.Apply(raw, cleanup) : MotionCleanup.RemoveSpikes(raw).Motion;
                 if(lengthNote is not null)cleaned.Diagnostics.Add(lengthNote);
+                if(contactNote is not null)cleaned.Diagnostics.Add(contactNote);
+                if(contactModel is not null&&new HumanoidMocap.Inference.UnderPressureContacts(contactModel).Estimate(cleaned,token) is { } contacts)
+                {
+                    cleaned.StationaryJoints.RemoveAll(t=>contacts.ContainsKey(t.Bone));
+                    foreach(var (bone,values) in contacts)cleaned.StationaryJoints.Add(new StationaryJointTrack{Bone=bone,Source=HumanoidMocap.Inference.UnderPressureContacts.Source,Probability=values});
+                    cleaned.Diagnostics.Add("Foot contacts: "+HumanoidMocap.Inference.UnderPressureContacts.Source+". Planted heels and toes are pinned to the floor while in contact.");
+                }
                 token.ThrowIfCancellationRequested();
                 var destination = Path.Combine(Path.GetDirectoryName(motionPath), "automatic.edited.hmotion");
                 File.WriteAllText(destination, cleaned.ToJson()); return destination;

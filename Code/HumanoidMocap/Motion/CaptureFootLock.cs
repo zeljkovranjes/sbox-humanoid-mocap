@@ -24,7 +24,8 @@ public static class CaptureFootLock
 
     public static Result Apply(List<XForm[]> frames,SourceScene source,MappingResult mapping,TargetRig target,TargetUpAxis axis)
     {
-        if(source.CaptureSpace!=MotionSpace.WorldRelative||source.CaptureStationaryJoints is not {Count:>0} probabilities||frames.Count==0)
+        // Camera-relative captures are levelled with gravity (CaptureLevel), so their floor is level too.
+        if(source.CaptureSpace is null||source.CaptureStationaryJoints is not {Count:>0} probabilities||frames.Count==0)
             return new(0,0,0);
         var scale=axis==TargetUpAxis.ZUpEngine?39.3700787f:100f;var rig=target.Skeleton;var fps=source.Clips[0].Fps;
         var up=axis==TargetUpAxis.YUpCm?Vector3.UnitY:Vector3.UnitZ;

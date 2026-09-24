@@ -881,6 +881,8 @@ public static class Retargeter
         // ---- root motion (see class remarks for the Extract ↔ ExtractMotion mapping) ----
         if(request.FootPlantCleanup&&!handCapture&&(request.MocapCorrections?.StabilizeFeet??true))
         {
+            var anchored=Motion.CaptureContactRoot.Apply(frames,scene,map,target.Rig,target.UpAxis);
+            if(anchored>0)AddNote(report,FormattableString.Invariant($"Travel from contacts: planted feet no longer slide; the body's travel was corrected by up to {anchored:F0} cm to match them."));
             var locking=Motion.CaptureFootLock.Apply(frames,scene,map,target.Rig,target.UpAxis);
             if(locking.ConstrainedSamples>0)AddNote(report,$"Final target foot anchors: {locking.ConstrainedSamples} leg samples; maximum reach residual {locking.MaximumReachResidual:F4} target units; level-floor height drift of up to {locking.MaximumFloorDrift:F2} target units removed from the root. Backend static probabilities are contact suggestions, not measured ground truth.");
             // Keep the whole clip on the floor, including camera-relative captures and dance with few plants.
