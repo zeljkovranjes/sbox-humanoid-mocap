@@ -34,6 +34,9 @@ public static class BodyCapture
         public string? CameraMotionVersion { get; set; }
         public CameraRotationTrack.Result? CameraRotation { get; set; }
         public string? CameraRotationVersion { get; set; }
+        /// <summary>What PVA-Net read from the video for <see cref="HtdRefine"/>; null until read, or when it cannot run here.</summary>
+        public PvaNet.Targets? MotionTargets { get; set; }
+        public string? MotionTargetsVersion { get; set; }
     }
     /// <summary>The automatic track has no subject at <see cref="Time"/>. <see cref="LastSeen"/> is null when none was found yet.</summary>
     sealed class SubjectLost(string message,double rangeStart,double time,double? lastSeen,List<FrameState> frames):IOException(message)
@@ -363,7 +366,36 @@ public static class BodyCapture
                 });
             }
             state.Seconds["imageFeaturesThisRun"]=watch.Elapsed.TotalSeconds;Save("image-features-ready");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
-            Save("temporal-inference");var camera=new GvhmrDecoder.Camera(focalLength,metadata.Width*.5f,metadata.Height*.5f);
+            var camera=new GvhmrDecoder.Camera(focalLength,metadata.Width*.5f,metadata.Height*.5f);
+            // HTD-Refine: PVA-Net reads each joint's motion from the video, then the body is fitted to it. Graphics card only,
+            // only at the frame rate the network was trained on, and only with a still camera: the reference fits a moving
+            // camera's footage only along a recovered camera path, and without one a moving-camera fight clip gained 30 cm
+            // of planted-foot slide and sank 16 cm deeper.
+            var refinerPath=Path.Combine(request.Models,PvaNet.ModelFile);var targetsVersion=PvaNet.BuilderVersion+PvaNet.CheckpointSha256;string? refineNote=null;
+            var refinable=File.Exists(refinerPath)&&GpuBackbone.Device is not null&&count>=4&&Math.Abs(metadata.CaptureFrameRate-30)<=3&&state.CameraMotion!.Stationary;
+            if(refinable&&(state.MotionTargets is null||state.MotionTargetsVersion!=targetsVersion))
+            {
+                progress?.Invoke("Reading the motion from the video for refinement");
+                try
+                {
+                    using var motionNetwork=PvaNet.TryCreate(refinerPath,Path.Combine(request.Models,"gpu"),progress,cancellation);
+                    if(motionNetwork is not null)
+                    {
+                        using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
+                        var collector=new PvaNet.Collector(motionNetwork,count,camera);
+                        Visit((frame,index)=>
+                        {
+                            var box=state.Frames[index].Person!.Crop;
+                            collector.Add(index,pose.Tokens(VideoCrop.Prepare(frame,box))??throw new InvalidOperationException("The graphics card stopped being used."),box);
+                            Progress($"Read motion {index+1}/{count}");
+                        });
+                        state.MotionTargets=collector.Finish();state.MotionTargetsVersion=targetsVersion;
+                    }
+                }
+                catch(Exception error) when(error is not OperationCanceledException){refineNote="Motion refinement skipped: "+error.Message.Split('\n')[0];}
+                state.Seconds["motionReadThisRun"]=watch.Elapsed.TotalSeconds;Save("motion-read");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
+            }
+            Save("temporal-inference");
             var boxes=state.Frames.Select(f=>f.Person!.Crop).ToArray();var cameras=Enumerable.Repeat(camera,count).ToArray();
             var identityCondition=Enumerable.Range(0,count).SelectMany(_=>new[]{1f,0,0,0,1,0}).ToArray();
             // A still camera, or one whose rotation could not be followed, is conditioned as not rotating.
@@ -376,6 +408,19 @@ public static class BodyCapture
             if(followedRotation is null)File.Delete(rotationPath);
             else File.WriteAllText(rotationPath,JsonSerializer.Serialize(new BodyRefinement.CameraRotation(followedRotation,state.CameraRotation!.RotationOnly)));
             var decoded=GvhmrDecoder.Decode(prediction.PredX,count);var translation=GvhmrDecoder.CameraTranslation(prediction.PredCam,boxes,cameras);
+            var refinedPath=Path.Combine(folder,HtdRefine.RefinedFile);File.Delete(refinedPath);
+            if(refinable&&state.MotionTargets is { } targets&&state.MotionTargetsVersion==targetsVersion)
+            {
+                try
+                {
+                    var refined=HtdRefine.Refine(Path.Combine(request.Models,"smplx/SMPLX_NEUTRAL.npz"),decoded,translation,targets,camera,metadata.CaptureFrameRate,cancellation,progress);
+                    decoded=HtdRefine.Apply(decoded,refined);translation=refined.Translation;
+                    File.WriteAllText(refinedPath,JsonSerializer.Serialize(HtdRefine.Save(decoded,translation)));
+                    refineNote=HtdRefine.Note(refined);
+                }
+                catch(Exception error) when(error is not OperationCanceledException){refineNote="Motion refinement skipped: "+error.Message.Split('\n')[0];}
+                state.Seconds["motionRefineThisRun"]=watch.Elapsed.TotalSeconds;watch.Restart();
+            }
             var skeleton=new SmplxSkeleton(Path.Combine(request.Models,"smplx/SMPLX_NEUTRAL.npz"),cancellation);
             var motion=BodyMotionBuilder.CameraRelative(skeleton,decoded,translation,state.Frames.Select(f=>f.Time).ToArray(),Path.GetFileNameWithoutExtension(request.Video),request.Video,sourceSha,metadata.CaptureFrameRate,camera);
             if(state.Frames.All(f=>f.Hands is not null))
@@ -409,6 +454,7 @@ public static class BodyCapture
             motion.Diagnostics.Add(lensNote??(request.HorizontalFov is float lens?FormattableString.Invariant($"Lens: the camera recorded a {lens:F0} degree horizontal field of view, used for depth and travel."):
                 "Lens: not recorded by the camera; assumed from the picture size (about 53 degrees across the diagonal). Distances toward and away from the camera scale with this assumption."));
             motion.Diagnostics.Add(GpuBackbone.DeviceNote);
+            if(refineNote is not null)motion.Diagnostics.Add(refineNote);
             if(metadata.SamplingNote is { } sampling)motion.Diagnostics.Add(sampling);
             motion.Diagnostics.Add(state.CameraMotion.Diagnostic);
             if(!state.CameraMotion.Stationary&&state.CameraRotation is not null)motion.Diagnostics.Add(state.CameraRotation.Diagnostic);

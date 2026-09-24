@@ -26,8 +26,10 @@ public sealed class OnnxGraph
     static void ValueInfo(Stream s,string name,int type,long[] shape)
     {
         Text(s,1,name);
-        Message(s,2,t=>Message(t,1,tensor=>{Int(tensor,1,type);Message(tensor,2,dims=>{foreach(var d in shape)Message(dims,1,dim=>Int(dim,1,d));});}));
+        Message(s,2,t=>Message(t,1,tensor=>{Int(tensor,1,type);Message(tensor,2,dims=>{foreach(var d in shape)Message(dims,1,dim=>{if(d<0)Text(dim,2,Symbol);else Int(dim,1,d);});});}));
     }
+    /// <summary>A negative dimension in <see cref="Input"/> or <see cref="Output"/> is this named, runtime-chosen length.</summary>
+    public const string Symbol="length";
     public void Input(string name,int type,params long[] shape)=>Message(inputs,11,s=>ValueInfo(s,name,type,shape));
     public void Output(string name,int type,params long[] shape)=>Message(outputs,12,s=>ValueInfo(s,name,type,shape));
     /// <summary>A weight stored in the external data file.</summary>

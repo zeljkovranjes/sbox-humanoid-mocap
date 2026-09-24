@@ -24,9 +24,9 @@ internal static class NativeCapture
     // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
     // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
     // zip under a new tag and update these values.
-    const string WorkerTag = "worker-12";
-    const string WorkerSha256 = "31c7db9ac046b5870d2bca42c011a6adfd9c58f2144dba16c3e76891796c4f8a";
-    const long WorkerBytes = 173890970;
+    const string WorkerTag = "worker-13";
+    const string WorkerSha256 = "448b6a9a8668f2dae2fb387de8fa9d5983498ee4abb3f5eb4cc104e80aa8b3a3";
+    const long WorkerBytes = 173915203;
     const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
 
     /// <summary>Only one worker is kept: every other version, and anything a failed install left behind, is
@@ -215,6 +215,11 @@ internal static class NativeCapture
         try{await RunProcess(worker,new[]{"download-hand-models",models,"wilor"},progress,token);}
         catch(OperationCanceledException){throw;}
         catch(Exception){progress?.Invoke("Finger model unavailable; capturing the body without finger motion");}
+        // HTD-Refine's motion network, for PCs with a graphics card. Optional in the same way: without it the body
+        // is captured unrefined.
+        try{await RunProcess(worker,new[]{"download-motion-refiner",models},progress,token);}
+        catch(OperationCanceledException){throw;}
+        catch(Exception){progress?.Invoke("Motion refinement model unavailable; capturing the body without it");}
         // Omitting PersonCrop enables the worker's automatic image-space subject track.
         // This does not recover camera motion or calibrate world scale.
         return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end, HorizontalFov = horizontalFov },progress,token);

@@ -142,5 +142,13 @@ public sealed class VisionModel : IDisposable
         }
         return F.conv2d(x,Weight("keypoint_head.final_layer.weight"),Weight("keypoint_head.final_layer.bias"));
     }
+    /// <summary>ViTPose's 192 normalized image tokens [192,1280] for a prepared crop, from the graphics card; null on the processor.</summary>
+    public float[]? Tokens(float[] image)
+    {
+        ObjectDisposedException.ThrowIf(disposed,this);
+        if(kind!=Kind.VitPoseHeatmaps||gpu is null)return null;
+        if(image.Length!=3*256*192)throw new ArgumentException("Vision input must be RGB CHW 256x192.");
+        return gpu.RunTokens(image);
+    }
     public void Dispose(){if(disposed)return;disposed=true;gpu?.Dispose();foreach(var weight in weights.Values)weight.Dispose();weights.Clear();}
 }
