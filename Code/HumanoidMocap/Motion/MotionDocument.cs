@@ -241,6 +241,9 @@ public sealed class CameraObservation
     public int? ImageHeight { get; set; }
     public float[]? Intrinsics { get; set; }
     public float[]? Distortion { get; set; }
+    /// <summary>Estimated direction of "up" (against gravity) in this document's space, as seen from this
+    /// camera; null when unknown. See <see cref="CaptureLevel"/>.</summary>
+    public float[]? Up { get; set; }
     public List<MotionFrame> Frames { get; set; } = new();
 }
 public sealed class PropTrack

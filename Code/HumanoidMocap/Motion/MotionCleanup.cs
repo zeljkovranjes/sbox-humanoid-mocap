@@ -39,11 +39,28 @@ public static class MotionCleanup
         {
             var rotations=output.Frames.Select(f=>MotionDocument.Q(f.Rotations[j])).ToArray();
             var changed=MocapSmooth.RemoveSpikes(rotations);
+            // The whole body flipping in one frame and staying flipped is not a spike, but no body turns that
+            // fast either (a handspring turns about 25 degrees a frame at 30 fps): spread such a turn out.
+            if(output.Bones[j].Parent<0)changed+=SpreadSnaps(rotations,SnapDegrees,SnapSpreadFrames);
             if(changed>0){replaced+=changed;for(var i=0;i<rotations.Length;i++)output.Frames[i].Rotations[j]=MotionDocument.A(rotations[i]);}
         }
         return (output,replaced);
     }
 
+    const float SnapDegrees=45;const int SnapSpreadFrames=3;
+    static int SpreadSnaps(System.Numerics.Quaternion[] q,float degrees,int half)
+    {
+        static float Angle(System.Numerics.Quaternion a,System.Numerics.Quaternion b)=>2*MathF.Acos(Math.Clamp(MathF.Abs(System.Numerics.Quaternion.Dot(a,b)),0,1))*180/MathF.PI;
+        var replaced=0;
+        for(var i=1;i<q.Length;i++)
+        {
+            if(!(Angle(q[i-1],q[i])>degrees))continue;
+            var a=Math.Max(0,i-1-half);var b=Math.Min(q.Length-1,i+half);
+            for(var k=a+1;k<b;k++){q[k]=System.Numerics.Quaternion.Slerp(q[a],q[b],(k-a)/(float)(b-a));replaced++;}
+            i=b;
+        }
+        return replaced;
+    }
     public static MotionDocument Apply(MotionDocument raw, CleanupSettings settings)
     {
         raw.Validate();var output=raw.Copy();

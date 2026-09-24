@@ -36,7 +36,14 @@ public sealed partial class RetargetWindow
             return await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token);
         if(diagnostics.Any(d=>d.StartsWith(FollowedCameraPrefix,StringComparison.Ordinal)))
             return await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token,followedCameraRotation:true);
-        return bodyPath;
+        // Left relative to its camera: turn it upright with the network's gravity (see CaptureLevel).
+        return await Task.Run(()=>
+        {
+            var document=MotionDocument.Parse(File.ReadAllBytes(bodyPath));
+            if(CaptureLevel.Apply(document)<=0)return bodyPath;
+            var levelled=Path.Combine(Path.GetDirectoryName(bodyPath),"levelled-body.hmotion");
+            File.WriteAllText(levelled,document.ToJson());return levelled;
+        },token);
     }
     internal bool CaptureIsRunning => _processing is not null;
     internal string CaptureMotionPath => _motionPath;

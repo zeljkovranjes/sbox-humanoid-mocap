@@ -363,6 +363,10 @@ public static class BodyCapture
             }
             // Floor sits read as crouches by the network: mark them for the retargeter to seat the hips.
             var cameraDown=Enumerable.Range(0,count).Select(t=>System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY,System.Numerics.Quaternion.Normalize(decoded.CameraOrientation[t]*System.Numerics.Quaternion.Conjugate(decoded.GravityOrientation[t])))).ToArray();
+            // Record which way is up in the picture, for levelling a capture that stays camera-relative.
+            var summedDown=cameraDown.Aggregate(System.Numerics.Vector3.Zero,(a,b)=>a+b);
+            if(summedDown.Length()>=.97f*count&&motion.Cameras.FirstOrDefault(c=>c.Id=="video") is { } videoCamera)
+            {var down=System.Numerics.Vector3.Normalize(summedDown);videoCamera.Up=new[]{-down.X,down.Y,down.Z};}
             if(SeatedDetection.Detect(motion,state.Frames.Select(f=>f.Observations!).ToArray(),cameraDown,prediction.StaticConfidenceLogits,focalLength,metadata.Width*.5f,metadata.Height*.5f) is float[] seatedWeights
                 &&seatedWeights.Count(w=>w>=1) is var seatedFrames&&seatedFrames>0)
             {
