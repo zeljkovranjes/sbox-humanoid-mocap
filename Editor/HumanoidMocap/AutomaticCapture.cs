@@ -102,7 +102,7 @@ public sealed partial class RetargetWindow
         _editSession=null;_appliedCleanup=null;
         ++_motionLoadRevision;InvalidateMocapPreview();
         _targetHost.Layout.Clear(true);_mocapPreview=null;
-        _targetHost.Layout.Add(new global::Editor.Label("Preparing animation…",_targetHost){Alignment=TextFlag.Center},1);
+        _loader=_targetHost.Layout.Add(new ProcessingIndicator(_targetHost),1);_loader.SetMessage("Preparing video…");_loaderStatus=null;
         ResetPlayback();RefreshContacts();_motionDetails.Text="";
         try
         {

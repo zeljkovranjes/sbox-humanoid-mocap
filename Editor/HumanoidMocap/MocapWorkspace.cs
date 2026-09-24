@@ -39,12 +39,13 @@ public sealed partial class RetargetWindow
     SegmentedControl _workspacePicker;
     Widget _advancedPanel;
     Label _motionDetails;
-    Button _exportMotionButton, _uploadVideoButton, _phoneVideoButton, _cancelCaptureButton, _retryCaptureButton;
+    Button _exportMotionButton, _cancelCaptureButton, _retryCaptureButton;
+    IconButton _uploadVideoButton, _phoneVideoButton;
     bool _exportCaptured;
     bool _previewFirstPerson = true;
     SegmentedControl _viewPicker;
     Widget _welcome, _uploadBar, _previewArea, _transportBar;
-    ProcessingIndicator _loader;string _loaderStatus;
+    ProcessingIndicator _loader;string _loaderStatus;StatusDot _statusDot;
     Label _videoName;
     Dialog _adjustments;
 
@@ -52,58 +53,63 @@ public sealed partial class RetargetWindow
     void BuildMocapUi()
     {
         Layout.Margin=12;Layout.Spacing=10;
+        // Header: what kind of capture on the left, settings and export on the right.
         var header=Layout.AddRow();header.Spacing=8;
-        _workspacePicker=header.Add(new SegmentedControl(this){FixedWidth=280});
+        _workspacePicker=header.Add(new SegmentedControl(this){FixedWidth=300,FixedHeight=30});
         _workspacePicker.AddOption("First Person","pan_tool");_workspacePicker.AddOption("Third Person","directions_walk");
         _workspacePicker.OnSelectedChanged=_=>SetWorkspace(_workspacePicker.SelectedIndex==0);
+        _workspacePicker.ToolTip="First Person captures hands for viewmodel arms; Third Person captures the whole body.";
         header.AddStretchCell();
-        var advanced=header.Add(new Button("Advanced","tune"));
+        var advanced=header.Add(new Button("Advanced","tune"){FixedHeight=30});
         advanced.Clicked=ShowAdjustments;
-        _exportMotionButton=header.Add(new Button.Primary("Export…"){Icon="file_download",Enabled=false});
+        _exportMotionButton=header.Add(new Button.Primary("Export"){Icon="file_download",Tint=Theme.Green,Enabled=false,FixedHeight=30,MinimumWidth=110});
         _exportMotionButton.Clicked=()=>PickMotionExport(!_exportCaptured);
         _exportMotionButton.ToolTip="Export the armature and animated bones as FBX.";
 
-        // Hidden on first load: the drop area below carries the same two actions.
-        _uploadBar=Layout.Add(new Widget(this){Visible=false});_uploadBar.Layout=Layout.Row();
-        var upload=_uploadBar.Layout;upload.Spacing=8;
-        _uploadVideoButton=upload.Add(new Button.Primary("Upload video…"){Icon="video_file"});
-        _uploadVideoButton.Clicked=ChooseVideo;
-        _phoneVideoButton=upload.Add(new Button("Upload from phone","qr_code_2"));
-        _phoneVideoButton.Clicked=UploadFromPhone;
         _sourcePath=new LineEdit(this){Visible=false,ReadOnly=true};
-        _videoName=upload.Add(new Label("",this),1);
-        _videoName.SetStyles($"color: {Theme.TextLight.Hex};");
-
         _welcome=Layout.Add(new VideoDropArea(this,ImportVideoAndProcess,ChooseVideo,UploadFromPhone),1);
         _previewArea=Layout.Add(new Widget(this){Visible=false},1);
         _previewArea.Layout=Layout.Row();_previewArea.Layout.Spacing=10;
-        var sourcePanel=_previewArea.Layout.Add(new Widget(this),1);sourcePanel.Layout=Layout.Column();sourcePanel.Layout.Spacing=6;
-        sourcePanel.Layout.Add(new Label("Source video",sourcePanel){FixedHeight=28});
+        // Source card: the video, with its file name and the ways to replace it in the header.
+        var sourcePanel=_previewArea.Layout.Add(new MocapCard(this),1);
+        var sourceHeader=sourcePanel.Header("movie","Source");
+        _uploadBar=sourceHeader.Add(new Widget(sourcePanel),1);_uploadBar.Layout=Layout.Row();
+        var upload=_uploadBar.Layout;upload.Spacing=4;
+        _videoName=upload.Add(new Label("",sourcePanel){MinimumWidth=20},1);
+        _videoName.SetStyles($"color: {Theme.TextLight.Hex};");
+        // IconButton centers its glyph; an empty-label Button still reserves room for text.
+        _uploadVideoButton=upload.Add(new IconButton("video_file",ChooseVideo,sourcePanel){FixedSize=26,IconSize=16,ToolTip="Replace the video: choose another file"});
+        _phoneVideoButton=upload.Add(new IconButton("qr_code_2",UploadFromPhone,sourcePanel){FixedSize=26,IconSize=16,ToolTip="Replace the video: upload one from your phone"});
         _videoHost=sourcePanel.Layout.Add(new Widget(sourcePanel),1);_videoHost.Layout=Layout.Column();
-        var animationPanel=_previewArea.Layout.Add(new Widget(this),1);animationPanel.Layout=Layout.Column();animationPanel.Layout.Spacing=6;
-        var viewBar=animationPanel.Layout.AddRow();viewBar.Spacing=4;
-        _viewPicker=viewBar.Add(new SegmentedControl(animationPanel),1);
-        _viewPicker.AddOption("First person","videocam");_viewPicker.AddOption("Third person","3d_rotation");
-        _viewPicker.ToolTip="Preview camera only. Switching views does not change the capture or animation.";
-        _viewPicker.OnSelectedChanged=_=>SetPreviewView(_viewPicker.SelectedIndex==0);
-        // Native IconButton centers its glyph. Button reserves a trailing text gap
-        // even with an empty label, shifting this icon two pixels to the left.
-        viewBar.Add(new IconButton("center_focus_strong",()=>_mocapPreview?.ResetView(),animationPanel)
-            {FixedSize=28,IconSize=16,ToolTip="Reset preview camera"});
-        _previewTargetPicker=viewBar.Add(new ComboBox(animationPanel){FixedWidth=104,ToolTip="Preview and export character. Citizen is Terry (citizen.vmdl). Changing character reuses the captured motion."});
+        // Animation card: the character playing the capture, with its character and camera choices in the header.
+        var animationPanel=_previewArea.Layout.Add(new MocapCard(this),1);
+        var viewBar=animationPanel.Header("accessibility_new","Animation");
+        viewBar.AddStretchCell();
+        _previewTargetPicker=Framed(viewBar.Add(new ComboBox(animationPanel){FixedWidth=112,FixedHeight=26,ToolTip="Preview and export character. Citizen is Terry (citizen.vmdl). Changing character reuses the captured motion."}));
         _previewTargetPicker.AddItem("Human",onSelected:()=>SelectBuiltinPreviewTarget(false),selected:true);
         _previewTargetPicker.AddItem("Citizen",onSelected:()=>SelectBuiltinPreviewTarget(true),description:"Terry · models/citizen/citizen.vmdl");
         _previewTargetPicker.AddItem("Human arms",onSelected:()=>SelectFirstPersonArms(false),description:"First-person viewmodel · "+TargetPickers.HumanArmsPackage);
         _previewTargetPicker.AddItem("Citizen arms",onSelected:()=>SelectFirstPersonArms(true),description:"First-person viewmodel, 4 fingers · "+TargetPickers.CitizenArmsPackage);
         _previewTargetPicker.AddItem("Custom",enabled:false);
+        // The preview camera, not the kind of capture: named apart from the header's First/Third Person.
+        _viewPicker=viewBar.Add(new SegmentedControl(animationPanel){FixedWidth=170,FixedHeight=26});
+        _viewPicker.AddOption("Head cam","videocam");_viewPicker.AddOption("Orbit","3d_rotation");
+        _viewPicker.ToolTip="Preview camera only: through the character's eyes, or orbiting around it. Does not change the capture or animation.";
+        _viewPicker.OnSelectedChanged=_=>SetPreviewView(_viewPicker.SelectedIndex==0);
+        // Native IconButton centers its glyph. Button reserves a trailing text gap
+        // even with an empty label, shifting this icon two pixels to the left.
+        viewBar.Add(new IconButton("center_focus_strong",()=>_mocapPreview?.ResetView(),animationPanel)
+            {FixedSize=26,IconSize=16,ToolTip="Reset preview camera"});
         _targetHost=animationPanel.Layout.Add(new Widget(animationPanel),1);_targetHost.Layout=Layout.Column();
-        _targetHost.Layout.Add(new Label("Preparing animation…",_targetHost){Alignment=TextFlag.Center},1);
+        _loader=_targetHost.Layout.Add(new ProcessingIndicator(_targetHost),1);_loader.SetMessage("Preparing…");
 
         _trackingStatus=Layout.Add(new Label("",this){Visible=false,FixedHeight=18});
-        _transportBar=Layout.Add(new Widget(this){Visible=false});_transportBar.Layout=Layout.Row();
-        var transport=_transportBar.Layout;transport.Spacing=8;
+        // Playback card: play, the timeline with its contact lanes, time and the bone overlay.
+        var transportCard=new MocapCard(this,true){Visible=false};_transportBar=Layout.Add(transportCard);
+        transportCard.Layout.Margin=new Sandbox.UI.Margin(8,6,10,6);
+        var transport=transportCard.Layout;transport.Spacing=10;
         // IconButton centers the play/pause glyph; a Button keeps a text gap even with no label.
-        _playButton=transport.Add(new IconButton("play_arrow",TogglePlayback,this){FixedSize=28,IconSize=16,ToolTip="Play / pause"});
+        _playButton=transport.Add(new IconButton("play_arrow",TogglePlayback,this){FixedSize=30,IconSize=18,ToolTip="Play / pause"});
         var tracks=transport.Add(new Widget(this),1);tracks.Layout=Layout.Column();tracks.Layout.Spacing=2;
         _timeline=tracks.Layout.Add(new FloatSlider(tracks));_timeline.Minimum=0;_timeline.Maximum=1;
         _timeline.OnValueEdited=()=>SeekPlaybackFraction(_timeline.Value);
@@ -111,22 +117,28 @@ public sealed partial class RetargetWindow
             EditWrist=(expected,edit)=>{var index=_wristOffsets.IndexOf(edit);if(expected==_editedMotion&&index>=0)OpenWristOffsetEditor(index);},
             Edit=(expected,index)=>{if(expected==_editedMotion&&_processing is null)OpenContactEditor(expected.Contacts[index]);},
             Review=(expected,index,review)=>{if(expected==_editedMotion&&_processing is null)_=ReviewContactAsync(expected.Contacts[index],review);}});
-        _clock=transport.Add(new Label("0.00 s",this){MinimumWidth=80});
+        _clock=transport.Add(new Label("0.00 s",this){MinimumWidth=70});
+        _clock.SetStyles($"color: {Theme.TextLight.Hex};");
         var bones=transport.Add(new Checkbox("Bones"){Value=true});
         bones.Clicked=()=>{_showTargetBones=bones.Value;if(_mocapPreview.IsValid())_mocapPreview.ShowTargetBones=bones.Value;};
 
+        // Status line: a light (working, ready) and what is happening, with Cancel and Retry beside it.
         var status=Layout.AddRow();status.Spacing=8;
+        _statusDot=status.Add(new StatusDot(this));
         _captureStatus=status.Add(new Label("Choose a workspace, then upload a video.",this){WordWrap=true,MinimumHeight=24},1);
         _cancelCaptureButton=status.Add(new Button("Cancel","cancel"){Visible=false,Clicked=CancelCapture});
         _retryCaptureButton=status.Add(new Button("Retry","refresh"){Visible=false,Clicked=()=>_=ProcessImportedVideoAsync()});
 
         _advancedPanel=new Widget(this){Visible=false};_advancedPanel.Layout=Layout.Column();_advancedPanel.Layout.Spacing=10;
-        var advancedTop=_advancedPanel.Layout.AddRow();advancedTop.Spacing=8;
+        // Capture card: models, target, the video range and reprocessing.
+        var captureCard=_advancedPanel.Layout.Add(new MocapCard(this));captureCard.Layout.Margin=10;
+        captureCard.Header("movie_filter","Capture");
+        var advancedTop=captureCard.Layout.AddRow();advancedTop.Spacing=8;
         var models=advancedTop.Add(new Button("Hand models…","memory"));
         models.Clicked=()=>new HandBackendDialog(this,SelectHandModel,_handBackend).Show();
         advancedTop.Add(new Button("Reinstall worker","download"){ToolTip="Delete the local inference worker and download it again from GitHub. Use this if captures stop starting or the worker seems damaged.",Clicked=()=>_=ReinstallWorkerAsync()});
         advancedTop.Add(new Label("Target:",this));
-        var target=_advancedTargetPicker=advancedTop.Add(new ComboBox(this));
+        var target=_advancedTargetPicker=Framed(advancedTop.Add(new ComboBox(this)));
         target.AddItem("s&box Human","person",()=>SelectBuiltinPreviewTarget(false),selected:true);
         target.AddItem("s&box Citizen","person",()=>SelectBuiltinPreviewTarget(true));
         target.AddItem("s&box Human arms","pan_tool",()=>SelectFirstPersonArms(false));
@@ -141,14 +153,14 @@ public sealed partial class RetargetWindow
             var file=EditorUtility.OpenFileDialog("Open motion or HOT3D clip","Humanoid Motion or HOT3D (*.hmotion *.tar)",null);
             if(!string.IsNullOrEmpty(file))_=OpenCaptureFileAsync(file);
         }});
-        var range=_advancedPanel.Layout.AddRow();range.Spacing=8;
+        var range=captureCard.Layout.AddRow();range.Spacing=8;
         _rangeStart=Field(range,"Start (s)","0");_rangeEnd=Field(range,"End (s)","");
         _swapHandsControl=range.Add(new Checkbox("Swap hands (MediaPipe)"){Enabled=_handBackend=="mediapipe"});
         _swapHandsControl.ToolTip="Correct MediaPipe handedness for mirrored footage. Native MANO models currently use their detected side.";
         _swapHandsControl.Clicked=()=>_swapHands=_swapHandsControl.Value;
         range.Add(new Button("Process again","refresh"){Clicked=()=>_=ProcessImportedVideoAsync()});
-        _firstOptions=_advancedPanel.Layout.Add(new Group(this){Title="First Person · estimated arm rig",Icon="pan_tool"});
-        _firstOptions.Layout=Layout.Column();_firstOptions.Layout.Margin=new Sandbox.UI.Margin(12,30,12,12);_firstOptions.Layout.Spacing=12;
+        var firstCard=_advancedPanel.Layout.Add(new MocapCard(this));firstCard.Layout.Margin=10;firstCard.Layout.Spacing=12;
+        firstCard.Header("pan_tool","First Person · estimated arm rig");_firstOptions=firstCard;
         var arms=_firstOptions.Layout.AddRow();arms.Spacing=16;
         var left=arms.AddColumn();left.Spacing=6;
         _shoulderL=Field(left,"Left shoulder (m)","0.18,1.45,0");_elbowL=Field(left,"Left elbow target","0.45,1.1,0.15");
@@ -177,8 +189,8 @@ public sealed partial class RetargetWindow
         _firstOptions.ToolTip="Shoulders and hidden elbows are estimated. These controls apply to target arm correction when hand tracks are present.";
         _wristOffsetRows=_firstOptions.Layout.AddColumn();_wristOffsetRows.Spacing=6;
 
-        _thirdOptions=_advancedPanel.Layout.Add(new Group(this){Title="Third Person · ground and facing",Icon="directions_walk"});
-        _thirdOptions.Layout=Layout.Column();_thirdOptions.Layout.Margin=new Sandbox.UI.Margin(14,30,14,12);_thirdOptions.Layout.Spacing=10;
+        var thirdCard=_advancedPanel.Layout.Add(new MocapCard(this));thirdCard.Layout.Margin=10;thirdCard.Layout.Spacing=10;
+        thirdCard.Header("directions_walk","Third Person · ground and facing");_thirdOptions=thirdCard;
         var groundOptions=_thirdOptions.Layout.AddRow();groundOptions.Spacing=24;
         _ground=Field(groundOptions,"Ground offset (m)","0");_facing=Field(groundOptions,"Facing (degrees)","0");
         var inPlace=_inPlaceControl=groundOptions.Add(new Checkbox("In place"));
@@ -197,20 +209,32 @@ public sealed partial class RetargetWindow
         _thirdOptions.Visible=false;
 
 
-        var cleanup=_advancedPanel.Layout.AddRow();cleanup.Spacing=8;
+        var cleanupCard=_advancedPanel.Layout.Add(new MocapCard(this));cleanupCard.Layout.Margin=10;
+        cleanupCard.Header("auto_fix_high","Cleanup");
+        var cleanup=cleanupCard.Layout.AddRow();cleanup.Spacing=8;
         _rootSmooth=Field(cleanup,"Root cleanup","0.25");_armSmooth=Field(cleanup,"Arms","0.10");_fingerSmooth=Field(cleanup,"Fingers","0.025");
         _smoothing=Field(cleanup,"Smoothing","7");_smoothing.ToolTip="Zero-phase smoothing strength, 0.5 to 10 (higher is smoother); 0 turns it off. 7 matches Rokoko's default.";
         cleanup.Add(new Button("Apply adjustments","check"){Clicked=()=>_=ProcessMotionAsync()});
-        var contacts=_advancedPanel.Layout.Add(new Group(this){Title="Contact review",Icon="touch_app"});
-        contacts.Layout=Layout.Column();contacts.Layout.Margin=new Sandbox.UI.Margin(8,38,8,8);_contactRows=contacts.Layout;
-        _motionDetails=_advancedPanel.Layout.Add(new Label(this){WordWrap=true});
+        var contacts=_advancedPanel.Layout.Add(new MocapCard(this));contacts.Layout.Margin=10;
+        contacts.Header("touch_app","Contact review");_contactRows=contacts.Layout.AddColumn();_contactRows.Spacing=6;
+        // What the capture did and assumed, for reference: kept out of the way in small, muted text.
+        var detailsCard=_advancedPanel.Layout.Add(new MocapCard(this));detailsCard.Layout.Margin=10;
+        detailsCard.Header("info","Capture details");
+        _motionDetails=detailsCard.Layout.Add(new Label(this){WordWrap=true});
+        _motionDetails.SetStyles($"color: {Theme.TextLight.Hex}; font-size: 11px;");
         RefreshContacts();
     }
 
+    /// <summary>Inputs sit on the cards' dark gray; a lighter fill and a thin edge keep them visible as inputs.</summary>
+    static T Framed<T>(T input) where T:Widget
+    {
+        input.SetStyles($"background-color: {Theme.WindowBackground.Hex}; border: 1px solid {Theme.ControlBackground.Lighten(.6f).Hex}; border-radius: 3px; padding-left: 4px;");
+        return input;
+    }
     LineEdit Field(Layout layout,string title,string value)
     {
         var row=layout.AddRow();row.Spacing=6;row.Add(new Label(title,this));
-        return row.Add(new LineEdit(this){Text=value,MinimumWidth=65},1);
+        return Framed(row.Add(new LineEdit(this){Text=value,MinimumWidth=65,FixedHeight=24},1));
     }
     internal void SelectHandModel(HandModelChoice choice)
     {
@@ -224,6 +248,8 @@ public sealed partial class RetargetWindow
     {
         var changed=_firstPerson!=firstPerson;
         _firstPerson=firstPerson;_firstOptions.Visible=firstPerson;_thirdOptions.Visible=!firstPerson;
+        // Looking through a whole-body capture's eyes shows nothing useful; the camera choice belongs to First Person.
+        _viewPicker.Visible=firstPerson;
         _swapHandsControl.Enabled=firstPerson&&_handBackend=="mediapipe";
         if(_workspacePicker.SelectedIndex!=(firstPerson?0:1))_workspacePicker.SelectedIndex=firstPerson?0:1;
         if(changed)
@@ -359,6 +385,7 @@ public sealed partial class RetargetWindow
     {
         if(_editedMotion is null || _target is null)return;
         _previewPending=true;_bakedPreview=null;UpdateTrackingStatus();UpdateExportAvailability();
+        if(_loader.IsValid()){_loader.Busy=true;_loader.SetMessage("Building the preview…");}
         try
         {
             if(_fbxPreviewTask is not null)await _fbxPreviewTask;
@@ -554,6 +581,8 @@ public sealed partial class RetargetWindow
             row.Add(new IconButton("edit",()=>OpenContactEditor(contact),this){FixedSize=24,IconSize=16,Enabled=reason is null,ToolTip="Edit interval and wrist anchor"});
         }
     }
+    /// <summary>The worker's saved-state names ("temporal-inference", "complete"): bookkeeping, not something to show.</summary>
+    static bool IsStepToken(string message)=>message.Length>0&&message.All(c=>c is >='a' and <='z' or '-');
     static bool IsSetupMessage(string message)=>message.StartsWith("Downloading ",StringComparison.Ordinal)||message.StartsWith("Resuming ",StringComparison.Ordinal)||
         message.StartsWith("Verified ",StringComparison.Ordinal)||message.StartsWith("First-time setup",StringComparison.Ordinal)||message.StartsWith("Preparing local capture",StringComparison.Ordinal);
     [EditorEvent.Frame]
@@ -561,13 +590,14 @@ public sealed partial class RetargetWindow
     {
         if(!this.IsValid())return;
         _video?.Present();
-        if(Interlocked.Exchange(ref _workerMessage,null) is { } message)
+        if(Interlocked.Exchange(ref _workerMessage,null) is { } message&&!IsStepToken(message))
         {
             _captureStatus.Text=message;
             if(_loader.IsValid()&&_loader.Busy)_loader.SetMessage(message);
             // While models and the worker download, the First/Third Person choice at the top is hidden; it returns with the capture itself.
             _workspacePicker.Visible=!IsSetupMessage(message);
         }
+        if(_statusDot.IsValid())_statusDot.Color=_processing is not null?Theme.Yellow:_captureStatus.Text.StartsWith("Ready",StringComparison.Ordinal)?Theme.Green:Theme.TextLight;
         if(_loader.IsValid())
         {
             // Once a capture stops without a preview, the loader shows how it ended instead of spinning.
