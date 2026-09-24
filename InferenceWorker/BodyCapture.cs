@@ -41,6 +41,11 @@ public static class BodyCapture
         public double RangeStart=>rangeStart;public double Time=>time;public double? LastSeen=>lastSeen;public List<FrameState> Frames=>frames;
     }
     public const string ShotsPrefix="Shots start at ";
+    /// <summary>The file ran out of decodable frames at <see cref="LastTime"/>, before its sample table said.</summary>
+    sealed class VideoEndsEarly(double rangeStart,double lastTime,int decoded,int expected,List<FrameState> frames):IOException($"Only {decoded} of {expected} frames could be decoded.")
+    {
+        public double RangeStart=>rangeStart;public double LastTime=>lastTime;public int Decoded=>decoded;public int Expected=>expected;public List<FrameState> Frames=>frames;
+    }
     public const string PartlyVisiblePrefix="Performer not in view for the whole video";
     /// <summary>The shortest stretch with the performer in view that is still worth capturing.</summary>
     public const double MinimumVisibleSeconds=1;
@@ -52,6 +57,13 @@ public static class BodyCapture
         for(var attempt=0;;attempt++)
         {
             try{return RunRange(request,cancellation,progress,seed,note,nextShot);}
+            catch(VideoEndsEarly early) when(attempt<3&&early.LastTime-early.RangeStart>=MinimumVisibleSeconds)
+            {
+                note=FormattableString.Invariant($"The video ends early: its frame table lists {early.Expected} frames here but only {early.Decoded} could be decoded (a damaged or cut-short file), so the capture ends at {early.LastTime:F2} s. {note}").TrimEnd();
+                progress?.Invoke(FormattableString.Invariant($"Video ends early at {early.LastTime:F1} s; capturing up to there"));
+                seed=early.Frames.Where(f=>f.Observations is not null&&f.Person is not null).ToList();
+                request=request with{End=early.LastTime+.0001};
+            }
             catch(SubjectLost lost) when(request.PersonCrop is null&&attempt<3)
             {
                 if(lost.LastSeen is double seen)
@@ -187,6 +199,9 @@ public static class BodyCapture
         void Visit(Action<DecodedVideoFrame,int> process)
         {
             var index=0;var wanted=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
+            // Decoding after a seek can time a frame slightly differently from decoding from the start (a 24.85 fps
+            // file did); only a quarter of a frame or more means a different frame.
+            var tolerance=Math.Max(.0005,wanted.Length>1?.25*(wanted[^1]-wanted[0])/(wanted.Length-1):.0005);
             // Decoding runs a few frames ahead on its own thread, overlapping the inference below.
             foreach(var frame in PrefetchedFrames.Read(request.Video,cancellation,wanted.Length>0?wanted[0]:0))
             {
@@ -197,9 +212,11 @@ public static class BodyCapture
                 if(frame.Time<wanted[index]-.00001)continue;
                 if(index>=1800)throw new InvalidDataException("Decoded range exceeds frame limit.");
                 if(index>=state.Frames.Count)state.Frames.Add(new(){Time=frame.Time});
-                if(Math.Abs(state.Frames[index].Time-frame.Time)>.0005)throw new InvalidDataException("Decoded timestamps differ from reconstruction checkpoint.");
+                if(Math.Abs(state.Frames[index].Time-frame.Time)>tolerance)throw new InvalidDataException("Decoded timestamps differ from reconstruction checkpoint.");
                 process(frame,index++);
             }
+            // A damaged or cut-short file lists more frames than it holds; capture what it holds (see Run).
+            if(index<count&&index>0)throw new VideoEndsEarly(request.Start,state.Frames[index-1].Time,index,count,state.Frames.Take(index).ToList());
             if(index!=count)throw new InvalidDataException($"Expected {count} selected frames but decoded {index}.");
         }
         try

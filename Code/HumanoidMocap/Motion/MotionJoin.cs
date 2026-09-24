@@ -29,6 +29,11 @@ public static class MotionJoin
         foreach ( var next in shots.Skip( 1 ) )
         {
             if ( next.Frames.Count == 0 ) continue;
+            if ( !(next.Frames[0].Time > result.Frames[^1].Time) )
+            {
+                result.Diagnostics.Add( FormattableString.Invariant( $"{NotePrefix}: the shot from {next.Frames[0].Time:F2} s overlaps the one before it and was left out." ) );
+                continue;
+            }
             if ( next.Space != result.Space )
             {
                 result.Diagnostics.Add( FormattableString.Invariant( $"{NotePrefix}: the shot from {next.Frames[0].Time:F2} s was captured {Describe( next.Space )} and the first {Describe( result.Space )}, so it was left out; capture it on its own under Advanced." ) );

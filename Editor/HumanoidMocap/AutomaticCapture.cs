@@ -161,7 +161,10 @@ public sealed partial class RetargetWindow
                 var queue=new List<(double Start,double End)>();
                 if(starts.Count>1)for(var i=1;i<starts.Count;i++)queue.Add((starts[i],i+1<starts.Count?starts[i+1]:shotEnd));
                 else if(NextShotStart(firstNotes) is double next&&next>start)queue.Add((next,shotEnd));
-                queue.RemoveAll(q=>q.End-q.Start<MinimumShotSeconds);
+                // The first capture skips a sliver of a shot at its start (a one-frame flicker read as a cut) and so
+                // may already cover the next listed shot.
+                var firstEnd=await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(firstShot)).Frames[^1].Time,token);
+                queue.RemoveAll(q=>q.End-q.Start<MinimumShotSeconds||q.Start<firstEnd);
                 for(var i=0;i<queue.Count&&i<MaximumShots-1;i++)
                 {
                     var (shotStart,shotStop)=queue[i];
