@@ -24,9 +24,9 @@ internal static class NativeCapture
     // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
     // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
     // zip under a new tag and update these values.
-    const string WorkerTag = "worker-13";
-    const string WorkerSha256 = "448b6a9a8668f2dae2fb387de8fa9d5983498ee4abb3f5eb4cc104e80aa8b3a3";
-    const long WorkerBytes = 173915203;
+    const string WorkerTag = "worker-14";
+    const string WorkerSha256 = "395dcd73f48014f84e7240ea13cee16c13400d936c15dd464404792ba7b4e61d";
+    const long WorkerBytes = 173915887;
     const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
 
     /// <summary>Only one worker is kept: every other version, and anything a failed install left behind, is
@@ -66,7 +66,7 @@ internal static class NativeCapture
                 {
                     await file.WriteAsync(buffer.AsMemory(0, count), token); hash.AppendData(buffer, 0, count); read += count;
                     var percent = (int)Math.Min(100, read * 100 / Math.Max(1, total));
-                    if (percent / 5 != step) { step = percent / 5; await Notify(progress, $"First-time setup: downloading the inference worker, {percent}% of {total / 1048576} MB"); }
+                    if (percent != step) { step = percent; var left = Math.Max(0, total - read); await Notify(progress, $"Downloading inference worker · {percent}% · {(left >= 1_000_000_000 ? $"{left / 1e9:0.0} GB" : $"{Math.Max(1, left / 1_000_000)} MB")} left"); }
                 }
                 if (!string.Equals(Convert.ToHexString(hash.GetHashAndReset()), WorkerSha256, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("The downloaded inference worker is damaged. Try the capture again.");

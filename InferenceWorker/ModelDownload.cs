@@ -11,7 +11,10 @@ namespace HumanoidMocap.Worker;
 /// checksum is discarded; the destination only ever receives a verified file.</summary>
 public static class ModelDownload
 {
-    public static async Task Fetch(HttpClient http,string url,string destination,long bytes,string sha256,Action<string> report,CancellationToken token)
+    /// <summary>Megabytes or gigabytes, for "how much is left" in progress lines.</summary>
+    public static string Size(long bytes)=>bytes>=1_000_000_000?$"{bytes/1e9:0.0} GB":$"{Math.Max(1,bytes/1_000_000)} MB";
+    /// <param name="laterBytes">What still has to download after this file, so progress can say how much is left in all.</param>
+    public static async Task Fetch(HttpClient http,string url,string destination,long bytes,string sha256,Action<string> report,CancellationToken token,long laterBytes=0)
     {
         var name=Path.GetFileName(destination);var partial=destination+".partial";
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destination))!);
@@ -31,7 +34,9 @@ public static class ModelDownload
                 if(existing>0&&response.StatusCode!=HttpStatusCode.PartialContent){existing=0;}
                 response.EnsureSuccessStatusCode();
                 if(response.Content.Headers.ContentLength is long length&&length!=bytes-existing)throw new InvalidDataException("Unexpected model download size for "+name+".");
-                report(existing>0?$"Resuming {name} at {existing*100/bytes}% of {bytes/1e6:0.#} MB":$"Downloading {name} · {bytes/1e6:0.#} MB");
+                // One format the editor reads for its progress bar: name, percent, and what is left in all.
+                string Line(long received)=>$"Downloading {name} · {received*100/bytes}% · {Size(bytes-received+laterBytes)} left";
+                report(Line(existing));
                 await using var source=await response.Content.ReadAsStreamAsync(token);
                 await using var output=new FileStream(partial,existing>0?FileMode.Append:FileMode.Create,FileAccess.Write,FileShare.None);
                 var buffer=new byte[1024*1024];var received=existing;var lastPercent=(int)(received*100/bytes);int count;
@@ -39,7 +44,7 @@ public static class ModelDownload
                 {
                     received+=count;if(received>bytes)throw new InvalidDataException("Model response exceeds its pinned size: "+name);
                     await output.WriteAsync(buffer.AsMemory(0,count),token);
-                    var percent=(int)(received*100/bytes);if(percent>=lastPercent+5){report($"Downloading {name} · {percent}%");lastPercent=percent;}
+                    var percent=(int)(received*100/bytes);if(percent>lastPercent){report(Line(received));lastPercent=percent;}
                 }
             }
             catch(Exception error) when(error is HttpRequestException or IOException&&error is not FileNotFoundException||error is TaskCanceledException&&!token.IsCancellationRequested)

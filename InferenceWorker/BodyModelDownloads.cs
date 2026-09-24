@@ -22,12 +22,13 @@ public static class BodyModelDownloads
         using var client=new HttpClient{Timeout=TimeSpan.FromHours(1)};
         try
         {
-            foreach(var pinned in Assets)
+            var local=Assets.Select(pinned=>pinned with{Path=System.IO.Path.Combine(modelFolder,pinned.Path.Substring(7))}).ToArray();
+            var later=local.Where(a=>!File.Exists(a.Path)).Sum(a=>a.Bytes);
+            foreach(var asset in local)
             {
-                var asset=pinned with{Path=System.IO.Path.Combine(modelFolder,pinned.Path.Substring(7))};
                 cancellation.Token.ThrowIfCancellationRequested();Directory.CreateDirectory(System.IO.Path.GetDirectoryName(asset.Path)!);
                 if(File.Exists(asset.Path))await Verify(asset.Path,asset,cancellation.Token);
-                else await ModelDownload.Fetch(client,asset.Url,asset.Path,asset.Bytes,asset.Sha256,Console.WriteLine,cancellation.Token);
+                else{later-=asset.Bytes;await ModelDownload.Fetch(client,asset.Url,asset.Path,asset.Bytes,asset.Sha256,Console.WriteLine,cancellation.Token,later);}
                 Console.WriteLine("Verified "+System.IO.Path.GetFileName(asset.Path));
             }
             Directory.CreateDirectory(modelFolder);

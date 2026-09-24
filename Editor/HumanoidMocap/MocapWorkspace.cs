@@ -44,6 +44,7 @@ public sealed partial class RetargetWindow
     bool _previewFirstPerson = true;
     SegmentedControl _viewPicker;
     Widget _welcome, _uploadBar, _previewArea, _transportBar;
+    ProcessingIndicator _loader;string _loaderStatus;
     Label _videoName;
     Dialog _adjustments;
 
@@ -275,6 +276,9 @@ public sealed partial class RetargetWindow
         Update();
         _videoName.Text=Path.GetFileName(path);_videoName.ToolTip=path;
         _sourcePath.Text=path;_videoHost.Layout.Clear(true);
+        // The animation side waits at the preview's size while the video is processed.
+        _targetHost.Layout.Clear(true);_mocapPreview=null;
+        _loader=_targetHost.Layout.Add(new ProcessingIndicator(_targetHost),1);_loader.SetMessage("Preparing…");
         _video=_videoHost.Layout.Add(new MocapVideoWidget(_videoHost,path),1);
         _video.TogglePlayback=TogglePlayback;
         _video.Show();
@@ -560,8 +564,15 @@ public sealed partial class RetargetWindow
         if(Interlocked.Exchange(ref _workerMessage,null) is { } message)
         {
             _captureStatus.Text=message;
+            if(_loader.IsValid()&&_loader.Busy)_loader.SetMessage(message);
             // While models and the worker download, the First/Third Person choice at the top is hidden; it returns with the capture itself.
             _workspacePicker.Visible=!IsSetupMessage(message);
+        }
+        if(_loader.IsValid())
+        {
+            // Once a capture stops without a preview, the loader shows how it ended instead of spinning.
+            if(!_loader.Busy&&_loaderStatus!=_captureStatus.Text){_loaderStatus=_captureStatus.Text;_loader.SetMessage(_loaderStatus);}
+            _loader.Tick();
         }
         TickPlayback();
     }

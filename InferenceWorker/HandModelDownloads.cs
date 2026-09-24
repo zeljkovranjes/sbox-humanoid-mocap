@@ -25,10 +25,11 @@ public static class HandModelDownloads
     {
         var assets=backend switch{"mediapipe"=>new[]{Detector},"mobilehand"=>new[]{Detector,MobileHand},"wildhands"=>new[]{Detector,WildHands},"wilor"=>new[]{Detector,Wilor},_=>throw new NotSupportedException("Select MediaPipe, MobileHand, WildHands or WiLoR. ACE is not downloaded or loaded by this worker.")};
         using var http=new HttpClient{Timeout=TimeSpan.FromHours(1)};
+        var later=assets.Where(a=>!File.Exists(Path.Combine(folder,a.Path))).Sum(a=>a.Bytes);
         foreach(var asset in assets)
         {
             var path=Path.Combine(folder,asset.Path);Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            if(!File.Exists(path))await ModelDownload.Fetch(http,asset.Url,path,asset.Bytes,asset.Sha256,Console.WriteLine,token);
+            if(!File.Exists(path)){later-=asset.Bytes;await ModelDownload.Fetch(http,asset.Url,path,asset.Bytes,asset.Sha256,Console.WriteLine,token,later);}
             else await Verify(path,asset,token);
             Console.WriteLine("Verified "+Path.GetFileName(path));
         }
