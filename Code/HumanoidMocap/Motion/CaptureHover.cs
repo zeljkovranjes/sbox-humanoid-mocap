@@ -77,6 +77,10 @@ public static class CaptureHover
                 standing[f] = level && Straight( legs[0] ) && Straight( legs[1] );
             }
         }
+        // Standing marks the floor only where the clip shows where the floor is: a performer on a stage or a
+        // placed world capture that never comes down keeps its height.
+        var minimumOnFloor = Math.Max( 2, (int)Math.Ceiling( MinimumHoverSeconds * fps ) );
+        if ( lowest.Count( v => v <= ToleranceCm ) < minimumOnFloor ) Array.Clear( standing );
         // Flights first: where every part of the body is above MaximumHoverCm, widened to where the lowest part
         // comes down to TouchCm. Real takeoffs and landings cross that band in about a tenth of a second; a landing
         // that then hovers 10 to 16 cm up (a backflip did, for up to a second) stays outside the flight.
