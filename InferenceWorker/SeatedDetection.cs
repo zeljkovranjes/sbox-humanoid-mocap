@@ -20,9 +20,12 @@ public static class SeatedDetection
     public const float SeatHeight=.11f;
     /// <summary>A pelvis this high above the floor is standing or crouching, whatever the geometry allows.</summary>
     public const float MaximumPelvisHeight=.42f;
+    /// <summary>Hips this far above the lowest foot joint, in the pose itself, are not sitting on the floor. Sits the
+    /// network read as crouches measured 10 to 32 cm; a landing crouch 68 to 82.</summary>
+    public const float MaximumHipsAboveFeet=.5f;
     /// <summary>Seated with the legs out straight, the hips sit about one leg length from the feet; a crouch misses by metres.</summary>
-    public const float ReachFraction=1.25f;
-    public const double MinimumSeconds=.3,RampSeconds=.25,GapSeconds=.6;
+    public const float ReachFraction=1.3f;
+    public const double MinimumSeconds=.1,RampSeconds=.25,GapSeconds=.6;
 
     /// <param name="cameraRelative">The capture in document camera space (x right, y up, camera looking along -z).</param>
     /// <param name="observations">COCO-17 (x, y, score) per frame in source pixels.</param>
@@ -57,6 +60,10 @@ public static class SeatedDetection
         {
             var o=observations[f];var pelvis=world[f][hips];
             if(!(Height(pelvis)-floor<MaximumPelvisHeight))continue;
+            // The pose itself, whatever the capture's height: sitting on the floor puts the hips near the feet. A
+            // landing crouch whose capture had drifted low was otherwise taken for a sit (hips 70 cm or more above).
+            var feetLow=new[]{world[f][ankleL],world[f][ankleR],world[f][toeL],world[f][toeR]}.Min(Height);
+            if(!(Height(pelvis)-feetLow<MaximumHipsAboveFeet))continue;
             possible[f]=true;
             if(o.Length!=51||!(o[11*3+2]>=.5f)||!(o[12*3+2]>=.5f))continue;
             var px=(o[11*3]+o[12*3])/2;var py=(o[11*3+1]+o[12*3+1])/2;
@@ -68,7 +75,7 @@ public static class SeatedDetection
             var offset=seat-feet;offset-=Vector3.Dot(offset,normal)*normal;
             seated[f]=offset.Length()<=leg*ReachFraction&&seat.Z>=pelvis.Z-.05f;
         }
-        var fps=(n-1)/Math.Max(1e-3,frames[^1].Time-frames[0].Time);var minimum=(int)Math.Ceiling(MinimumSeconds*fps);
+        var fps=(n-1)/Math.Max(1e-3,frames[^1].Time-frames[0].Time);var minimum=Math.Max(1,(int)Math.Round(MinimumSeconds*fps));
         // Bridge short stretches between seated frames where the test could not run: a performer swinging his
         // arms while sitting blurred the hips for 0.4 s, and the hips then rose out of the sit and back.
         var gap=(int)Math.Ceiling(GapSeconds*fps);

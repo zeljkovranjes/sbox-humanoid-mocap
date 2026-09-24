@@ -12,7 +12,7 @@ namespace HumanoidMocap.Worker;
 /// scene scale are not, so this is not camera tracking or world reconstruction.</summary>
 public sealed class CameraRotationTrack : IDisposable
 {
-    public const string Version="background-rotation-v3";
+    public const string Version="background-rotation-v5";
     public const string FollowedPrefix="Moving recording camera followed:";
     const int WorkingWidth=640,Step=6,MinimumInliers=40,MaximumFilledRun=3;
     public sealed record Result(float[] AngularVelocity6d,int Pairs,int UsablePairs,float TotalDegrees,float LargestPairDegrees,float MeanInlierRatio=0,int FilledPairs=0)

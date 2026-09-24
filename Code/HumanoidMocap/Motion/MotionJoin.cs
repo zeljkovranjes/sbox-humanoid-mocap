@@ -34,7 +34,9 @@ public static class MotionJoin
                 result.Diagnostics.Add( FormattableString.Invariant( $"{NotePrefix}: the shot from {next.Frames[0].Time:F2} s overlaps the one before it and was left out." ) );
                 continue;
             }
-            if ( next.Space != result.Space )
+            // A camera-relative shot levelled with gravity (CaptureLevel) stands upright like a world-relative one,
+            // and joining moves, turns and grounds it anyway; only an unlevelled one cannot be placed.
+            if ( next.Space != result.Space && !(next.Space == MotionSpace.CameraRelative && Levelled( next )) )
             {
                 result.Diagnostics.Add( FormattableString.Invariant( $"{NotePrefix}: the shot from {next.Frames[0].Time:F2} s was captured {Describe( next.Space )} and the first {Describe( result.Space )}, so it was left out; capture it on its own under Advanced." ) );
                 continue;
@@ -49,6 +51,7 @@ public static class MotionJoin
         return result;
     }
 
+    static bool Levelled( MotionDocument doc ) => doc.Cameras.FirstOrDefault( c => c.Id == "video" )?.Up is { Length: 3 } u && u[1] > .999f;
     static string Describe( MotionSpace space ) => space == MotionSpace.WorldRelative ? "relative to the world" : "relative to its camera";
 
     static void Append( MotionDocument into, MotionDocument next )
