@@ -340,6 +340,51 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 		CurrentFrame = 0;
 		_ghostAlignedClip = null; // ghost anchor depends on this clip's frame 0 - recompute
 		_handViewDirection = null;
+		_framingPath = null;
+	}
+
+	/// <summary>Where the orbit camera looks, per clip frame. Framing the posed character every frame made
+	/// the camera shake with it: in a backflip the body's bounds leap up and swing round with the limbs.
+	/// The camera instead follows the hips across the ground, smoothed over about a second, and holds its
+	/// height at the clip's typical hip height, so jumps and flips rise in the frame rather than carrying the
+	/// camera with them.</summary>
+	Vector3[] _framingPath;
+	Vector3[] BuildFramingPath()
+	{
+		if ( _clip?.SolvedFrames is not { Count: > 0 } frames || _rig.BoneForRole( BoneRole.Hips ) is not int hips )
+			return null;
+		var skeleton = _rig.Skeleton; var world = new XForm[skeleton.Count]; var hipsPath = new Vector3[frames.Count];
+		for ( var f = 0; f < frames.Count; f++ )
+		{
+			var locals = frames[f]; var count = Math.Min( locals.Length, skeleton.Count );
+			if ( hips >= count ) return null;
+			for ( var i = 0; i < count; i++ )
+			{
+				var parent = skeleton[i].ParentIndex;
+				world[i] = parent < 0 ? locals[i] : XForm.Compose( world[parent], locals[i] );
+			}
+			hipsPath[f] = RigWorldToEngine( world[hips] ).Position;
+		}
+		var restHips = RigWorldToEngine( skeleton.RestWorld[hips] ).Position;
+		var lift = ComputeRestBounds().Center.z - restHips.z;
+		var height = hipsPath.Select( p => p.z ).OrderBy( z => z ).ElementAt( frames.Count / 2 ) + lift;
+		var radius = Math.Max( 1, (int)MathF.Round( Math.Max( _clip.Fps, 1f ) * .5f ) );
+		var path = new Vector3[frames.Count];
+		for ( var f = 0; f < frames.Count; f++ )
+		{
+			float x = 0, y = 0; var n = 0;
+			for ( var k = Math.Max( 0, f - radius ); k <= Math.Min( frames.Count - 1, f + radius ); k++ ) { x += hipsPath[k].x; y += hipsPath[k].y; n++; }
+			path[f] = new Vector3( x / n, y / n, height );
+		}
+		return path;
+	}
+	Vector3? FramingCenter()
+	{
+		_framingPath ??= BuildFramingPath();
+		if ( _framingPath is not { Length: > 0 } path ) return null;
+		var t = Math.Clamp( Playing ? _time : CurrentFrame, 0, path.Length - 1 );
+		var i = Math.Min( (int)MathF.Floor( t ), path.Length - 1 ); var j = Math.Min( i + 1, path.Length - 1 );
+		return Vector3.Lerp( path[i], path[j], t - i );
 	}
 
 	/// <summary>Restore capture-camera facing for camera-relative hands and front framing
@@ -1136,7 +1181,7 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 		// with the animation (arms out ≠ zoom out). In the wireframe-skeleton view (and
 		// for model-less targets) the same policy runs off the FK'd skeleton instead.
 		var useModelBounds = _sceneModel.IsValid() && !SkeletonOnly;
-		var center = useModelBounds ? _sceneModel.Bounds.Center : _skeletonCenter;
+		var center = FramingCenter() ?? (useModelBounds ? _sceneModel.Bounds.Center : _skeletonCenter);
 		var radius = useModelBounds
 			? MathF.Max( _sceneModel.Model.Bounds.Size.Length * 0.5f, 8f )
 			: _skeletonRadius;
