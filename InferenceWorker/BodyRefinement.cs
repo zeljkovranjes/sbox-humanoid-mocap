@@ -68,10 +68,6 @@ public static class BodyRefinement
             if(!File.Exists(rotationPath))throw new FileNotFoundException("This capture has no followed camera rotation. Process the video again, or refine it as a stationary camera.",rotationPath);
             rotationBytes=File.ReadAllBytes(rotationPath);predictionHash+="|"+Convert.ToHexString(SHA256.HashData(rotationBytes));
         }
-        // The capture's HTD-Refine result, when it made one, replaces the decoded body.
-        var refinedPath=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(request.Motion))!,HtdRefine.RefinedFile);
-        var refinedBytes=File.Exists(refinedPath)?File.ReadAllBytes(refinedPath):null;
-        if(refinedBytes is not null)predictionHash+="|"+Convert.ToHexString(SHA256.HashData(refinedBytes));
         // The derived document embeds its original's location for reversible editing.
         // Identical captures copied elsewhere must not restore an unrelated old path.
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes((moving?MovingVersion:Version)+"|"+Path.GetFullPath(request.Motion)+"|"+rawHash+"|"+predictionHash+"|"+SmplxSkeleton.NeutralSha256)));
@@ -88,7 +84,7 @@ public static class BodyRefinement
         var watch=Stopwatch.StartNew();progress?.Invoke("Reading saved body predictions; no neural inference");
         var prediction=JsonSerializer.Deserialize<GvhmrTemporalNetwork.Output>(predictionBytes)??throw new InvalidDataException("Empty GVHMR prediction cache.");
         if(prediction.Frames!=source.Frames.Count)throw new InvalidDataException("Saved predictions do not match the motion sample count.");
-        var pose=HtdRefine.Load(GvhmrDecoder.Decode(prediction.PredX,prediction.Frames),refinedBytes is null?null:JsonSerializer.Deserialize<HtdRefine.Saved>(refinedBytes));
+        var pose=GvhmrDecoder.Decode(prediction.PredX,prediction.Frames);
         var skeletonPath=Path.Combine(request.Models,"smplx/SMPLX_NEUTRAL.npz");
         if(!File.Exists(skeletonPath))throw new FileNotFoundException("The SMPL-X neutral model used by body capture is missing. Restore SMPLX_NEUTRAL.npz in the configured models/smplx folder.",skeletonPath);
         var skeleton=new SmplxSkeleton(skeletonPath,cancellation);

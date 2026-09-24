@@ -17,8 +17,7 @@ public sealed class GpuBackbone : IDisposable
     public const string BuilderVersion="vit-backbone-v4";
     /// <summary>What the graph takes and returns. <see cref="Tokens"/>: embedded tokens in, normalized tokens out (WiLoR,
     /// whose extra hand tokens are made in TorchSharp). <see cref="Hmr2Features"/>: a 256x192 image in, the 1024 HMR2 head
-    /// features out. <see cref="Heatmaps"/>: a 256x192 image in, the 17 ViTPose joint heatmaps out, and its 192 normalized image
-    /// tokens (read by <see cref="RunTokens"/>, for <see cref="PvaNet"/>).</summary>
+    /// features out. <see cref="Heatmaps"/>: a 256x192 image in, the 17 ViTPose joint heatmaps out.</summary>
     /// <see cref="WilorMaps"/>: WiLoR tokens in, normalized tokens plus its refinement feature maps out.
     public enum Variant{Tokens,Hmr2Features,Heatmaps,WilorMaps}
     /// <summary>A card needs this much dedicated memory; smaller or shared-memory GPUs are slower than the CPU path or run out.</summary>
@@ -77,9 +76,8 @@ public sealed class GpuBackbone : IDisposable
         var tokenInput=variant is Variant.Tokens or Variant.WilorMaps;
         inputShape=tokenInput?new long[]{1,tokens,Width}:new long[]{1,3,256,192};inputLength=(int)inputShape.Aggregate(1L,(a,b)=>a*b);
         inputName=tokenInput?"tokens":"image";outputName=variant==Variant.Heatmaps?"heatmaps":"features";
-        outputNames=variant==Variant.WilorMaps?new[]{"features","low","middle","high"}:variant==Variant.Heatmaps?new[]{"heatmaps","features"}:new[]{outputName};
-        // The heatmap graph also returns its tokens; its name changed with that, so an older one is rebuilt.
-        var stem=$"vit-h-{checkpointSha256[..16].ToLowerInvariant()}-{(variant==Variant.Heatmaps?"heatmapstokens":variant.ToString().ToLowerInvariant())}-{tokens}t-fp16-{BuilderVersion}";var graphPath=Path.Combine(cache,stem+".onnx");
+        outputNames=variant==Variant.WilorMaps?new[]{"features","low","middle","high"}:new[]{outputName};
+        var stem=$"vit-h-{checkpointSha256[..16].ToLowerInvariant()}-{variant.ToString().ToLowerInvariant()}-{tokens}t-fp16-{BuilderVersion}";var graphPath=Path.Combine(cache,stem+".onnx");
         if(!File.Exists(graphPath))Build(checkpointPath,cache,stem,variant,tokens,cancellation);
         using var options=new SessionOptions{GraphOptimizationLevel=GraphOptimizationLevel.ORT_ENABLE_ALL,EnableMemoryPattern=false,ExecutionMode=ExecutionMode.ORT_SEQUENTIAL,LogSeverityLevel=OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR};
         options.AppendExecutionProvider_DML(device.Index);
@@ -99,15 +97,6 @@ public sealed class GpuBackbone : IDisposable
         using var outputs=session.Run(run,new[]{inputName},new[]{value},new[]{outputName});
         return outputs[0].GetTensorDataAsSpan<float>().ToArray();
     }
-    /// <summary>The 192 normalized ViTPose image tokens [192,1280] of the <see cref="Variant.Heatmaps"/> graph.</summary>
-    public float[] RunTokens(float[] image)
-    {
-        if(image.Length!=inputLength||inputName!="image"||!outputNames.Contains("features"))throw new InvalidOperationException("This graph does not return image tokens.");
-        using var value=OrtValue.CreateTensorValueFromMemory(image,inputShape);
-        using var run=new RunOptions();
-        using var outputs=session.Run(run,new[]{inputName},new[]{value},new[]{"features"});
-        return outputs[0].GetTensorDataAsSpan<float>().ToArray();
-    }
     /// <summary>Every output of the graph, in the order of <see cref="Variant"/>'s description.</summary>
     public float[][] RunAll(float[] input)
     {
@@ -122,11 +111,15 @@ public sealed class GpuBackbone : IDisposable
     public void Dispose()=>session.Dispose();
 
     /// <summary>Graphs from earlier builder versions are 1.3 GB each and never used again.</summary>
-    static void RemoveStale(string cache)
+    public static void RemoveStale(string cache)
     {
         foreach(var file in Directory.EnumerateFiles(cache,"vit-h-*"))
-            if(!Path.GetFileName(file).Contains("-"+BuilderVersion+".",StringComparison.Ordinal)||Path.GetFileName(file).Contains("-heatmaps-",StringComparison.Ordinal))
+            if(!Path.GetFileName(file).Contains("-"+BuilderVersion+".",StringComparison.Ordinal)||Path.GetFileName(file).Contains("-heatmapstokens-",StringComparison.Ordinal))
                 try{File.Delete(file);}catch(IOException){}catch(UnauthorizedAccessException){}
+        // Workers 13 and 14 also ran HTD-Refine's PVA-Net; its graph and downloaded weights are no longer used.
+        foreach(var file in Directory.EnumerateFiles(cache,"pva-head-*"))try{File.Delete(file);}catch(IOException){}catch(UnauthorizedAccessException){}
+        var refiner=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(cache))!,"pvanet");
+        if(Directory.Exists(refiner))try{Directory.Delete(refiner,true);}catch(IOException){}catch(UnauthorizedAccessException){}
     }
     static void Build(string checkpointPath,string cache,string stem,Variant variant,int tokens,CancellationToken cancellation)
     {
@@ -182,7 +175,7 @@ public sealed class GpuBackbone : IDisposable
                 for(var t=0;t<192;t++)for(var c=0;c<Width;c++)sum[t*Width+c]=pos[(t+1)*Width+c]+pos[c];
                 x=graph.Node("Add",new[]{x,Store("pos_sum",sum,new long[]{1,192,Width},false)});
             }
-            if(variant==Variant.Heatmaps){graph.Output("heatmaps",OnnxGraph.Float,1,17,64,48);graph.Output("features",OnnxGraph.Float,1,tokens,Width);}
+            if(variant==Variant.Heatmaps)graph.Output("heatmaps",OnnxGraph.Float,1,17,64,48);
             else if(variant==Variant.Hmr2Features)graph.Output("features",OnnxGraph.Float,1024);
             else graph.Output("features",OnnxGraph.Float,1,tokens,Width);
             if(variant==Variant.WilorMaps)
@@ -264,7 +257,6 @@ public sealed class GpuBackbone : IDisposable
             else
             {
                 // The ViTPose head: two 4x4 stride-2 deconvolutions with batch norm and ReLU, then a 1x1 convolution. Float32.
-                graph.Identity(x,"features");
                 x=graph.Node("Reshape",new[]{graph.Node("Transpose",new[]{x},a=>a.Ints("perm",0,2,1)),graph.Constant(1,Width,16,12)});
                 for(var block=0;block<2;block++)
                 {

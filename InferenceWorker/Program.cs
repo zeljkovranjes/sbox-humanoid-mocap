@@ -36,10 +36,6 @@ try
     else if(args.Length==2&&args[0]=="hands-bench")LiteOnnx.Bench(args[1],Console.WriteLine);
     else if(args.Length==1&&args[0]=="adapters")foreach(var a in GpuBackbone.ListAdapters())Console.WriteLine(a);
     else if(args.Length==2&&args[0]=="gpu-bench")GpuBackbone.Bench(args[1],Console.WriteLine);
-    else if(args.Length==5&&args[0]=="htd-check")HtdRefine.Check(args[1],args[2],args[3],args[4],Console.WriteLine);
-    else if(args.Length==5&&args[0]=="pva-check")PvaNet.Check(args[1],args[2],args[3],int.Parse(args[4]),Console.WriteLine);
-    else if(args.Length==2&&args[0]=="download-motion-refiner")
-        await PvaNet.EnsureDownloaded(Path.GetFullPath(args[1]),cancellation.Token);
     else if(args.Length==3&&args[0]=="download-hand-models")
         await HandModelDownloads.Ensure(Path.GetFullPath(args[1]),args[2],cancellation.Token);
     else if(args.Length==2&&args[0]=="import-hot3d")
@@ -57,6 +53,7 @@ try
         torch.set_num_threads(InferenceThreads());
         OpenCvSharp.Cv2.SetNumThreads(InferenceThreads());
         var request=JsonSerializer.Deserialize<BodyCaptureRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid body job request.");
+        {var gpuCache=Path.Combine(request.Models,"gpu");if(Directory.Exists(gpuCache))GpuBackbone.RemoveStale(gpuCache);}
         Console.WriteLine("HM_RESULT "+BodyCapture.Run(request,cancellation.Token,Console.WriteLine));
     }
     else if(args.Length==2&&args[0]=="body-refine")

@@ -24,9 +24,9 @@ internal static class NativeCapture
     // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
     // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
     // zip under a new tag and update these values.
-    const string WorkerTag = "worker-14";
-    const string WorkerSha256 = "395dcd73f48014f84e7240ea13cee16c13400d936c15dd464404792ba7b4e61d";
-    const long WorkerBytes = 173915887;
+    const string WorkerTag = "worker-15";
+    const string WorkerSha256 = "02cc2d3bccde436289e73981b03fa0db8f1d8e6f9b347302ebfe9d64a1f9359c";
+    const long WorkerBytes = 173891703;
     const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
 
     /// <summary>Only one worker is kept: every other version, and anything a failed install left behind, is
@@ -66,7 +66,7 @@ internal static class NativeCapture
                 {
                     await file.WriteAsync(buffer.AsMemory(0, count), token); hash.AppendData(buffer, 0, count); read += count;
                     var percent = (int)Math.Min(100, read * 100 / Math.Max(1, total));
-                    if (percent != step) { step = percent; var left = Math.Max(0, total - read); await Notify(progress, $"Downloading inference worker · {percent}% · {(left >= 1_000_000_000 ? $"{left / 1e9:0.0} GB" : $"{Math.Max(1, left / 1_000_000)} MB")} left"); }
+                    if (percent != step) { step = percent; var left = Math.Max(0, total - read); await Notify(progress, $"Downloading inference worker · {percent}% · {(left >= 1_000_000_000 ? $"{left / 1e9:0.0} GB" : $"{(left + 999_999) / 1_000_000} MB")} left"); }
                 }
                 if (!string.Equals(Convert.ToHexString(hash.GetHashAndReset()), WorkerSha256, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("The downloaded inference worker is damaged. Try the capture again.");
@@ -215,11 +215,6 @@ internal static class NativeCapture
         try{await RunProcess(worker,new[]{"download-hand-models",models,"wilor"},progress,token);}
         catch(OperationCanceledException){throw;}
         catch(Exception){progress?.Invoke("Finger model unavailable; capturing the body without finger motion");}
-        // HTD-Refine's motion network, for PCs with a graphics card. Optional in the same way: without it the body
-        // is captured unrefined.
-        try{await RunProcess(worker,new[]{"download-motion-refiner",models},progress,token);}
-        catch(OperationCanceledException){throw;}
-        catch(Exception){progress?.Invoke("Motion refinement model unavailable; capturing the body without it");}
         // Omitting PersonCrop enables the worker's automatic image-space subject track.
         // This does not recover camera motion or calibrate world scale.
         return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end, HorizontalFov = horizontalFov },progress,token);

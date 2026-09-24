@@ -12,7 +12,7 @@ namespace HumanoidMocap.Worker;
 public static class ModelDownload
 {
     /// <summary>Megabytes or gigabytes, for "how much is left" in progress lines.</summary>
-    public static string Size(long bytes)=>bytes>=1_000_000_000?$"{bytes/1e9:0.0} GB":$"{Math.Max(1,bytes/1_000_000)} MB";
+    public static string Size(long bytes)=>bytes>=1_000_000_000?$"{bytes/1e9:0.0} GB":$"{(Math.Max(0,bytes)+999_999)/1_000_000} MB";
     /// <param name="laterBytes">What still has to download after this file, so progress can say how much is left in all.</param>
     public static async Task Fetch(HttpClient http,string url,string destination,long bytes,string sha256,Action<string> report,CancellationToken token,long laterBytes=0)
     {
