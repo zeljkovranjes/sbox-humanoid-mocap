@@ -17,6 +17,13 @@ public sealed partial class RetargetWindow
     const int MaximumShots=16;const double MinimumShotSeconds=.5;
     /// <summary>The worker's note when a capture stopped at a cut; see the worker's ShotCutDetector.</summary>
     const string ShotCutPrefix="Footage cuts to another shot at ";
+    const string ShotsPrefix="Shots start at ";
+    static List<double> ShotStarts(IEnumerable<string> diagnostics)
+    {
+        var note=diagnostics.FirstOrDefault(d=>d.StartsWith(ShotsPrefix,StringComparison.Ordinal));
+        if(note is null)return new List<double>();
+        return note.Substring(ShotsPrefix.Length).TrimEnd('.',' ','s').Split(',').Select(v=>double.TryParse(v.Trim(),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var t)?t:double.NaN).Where(double.IsFinite).ToList();
+    }
     static double? NextShotStart(IEnumerable<string> diagnostics)
     {
         var note=diagnostics.FirstOrDefault(d=>d.StartsWith(ShotCutPrefix,StringComparison.Ordinal));
@@ -28,22 +35,23 @@ public sealed partial class RetargetWindow
     /// worker measured as still gets world-relative root and foot-contact refinement; one whose rotation it
     /// followed gets the same from GVHMR's world rollout; one that could not be followed stays camera-relative.
     /// The untouched capture stays beside it and Advanced → Restore original capture reopens it.</summary>
-    async Task<string> CaptureBodyShotAsync(string video,double start,double end,Mp4Metadata metadata,float? recordedFov,CancellationToken token)
+    /// <returns>The shot's motion and the capture's own notes (refinement does not keep all of them).</returns>
+    async Task<(string Path,List<string> Notes)> CaptureBodyShotAsync(string video,double start,double end,Mp4Metadata metadata,float? recordedFov,CancellationToken token)
     {
         var bodyPath=await NativeCapture.BodyAsync(video,start,end,metadata.Width,metadata.Height,recordedFov,ReceiveWorkerProgress,token);
         var diagnostics=await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(bodyPath)).Diagnostics,token);
         if(diagnostics.Any(d=>d.StartsWith(StationaryCameraPrefix,StringComparison.Ordinal)))
-            return await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token);
+            return (await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token),diagnostics);
         if(diagnostics.Any(d=>d.StartsWith(FollowedCameraPrefix,StringComparison.Ordinal)))
-            return await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token,followedCameraRotation:true);
+            return (await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token,followedCameraRotation:true),diagnostics);
         // Left relative to its camera: turn it upright with the network's gravity (see CaptureLevel).
-        return await Task.Run(()=>
+        return (await Task.Run(()=>
         {
             var document=MotionDocument.Parse(File.ReadAllBytes(bodyPath));
             if(CaptureLevel.Apply(document)<=0)return bodyPath;
             var levelled=Path.Combine(Path.GetDirectoryName(bodyPath),"levelled-body.hmotion");
             File.WriteAllText(levelled,document.ToJson());return levelled;
-        },token);
+        },token),diagnostics);
     }
     internal bool CaptureIsRunning => _processing is not null;
     internal string CaptureMotionPath => _motionPath;
@@ -146,19 +154,24 @@ public sealed partial class RetargetWindow
             {
                 // Edited footage: the worker captures up to the first cut. Every following shot is captured
                 // the same way, each with its own camera, and the shots are joined into one motion.
-                var shotPaths=new List<string>();double shotStart=start;double shotEnd=end??metadata.Duration;string shotFailure=null;
-                for(var shot=0;shot<MaximumShots;shot++)
+                var shotPaths=new List<string>();double shotEnd=end??metadata.Duration;var shotFailures=new List<string>();
+                var (firstShot,firstNotes)=await CaptureBodyShotAsync(video,start,shotEnd,metadata,recordedFov,token);shotPaths.Add(firstShot);
+                // The worker lists every shot's start once; each shot is then captured up to the next one.
+                var starts=ShotStarts(firstNotes);
+                var queue=new List<(double Start,double End)>();
+                if(starts.Count>1)for(var i=1;i<starts.Count;i++)queue.Add((starts[i],i+1<starts.Count?starts[i+1]:shotEnd));
+                else if(NextShotStart(firstNotes) is double next&&next>start)queue.Add((next,shotEnd));
+                queue.RemoveAll(q=>q.End-q.Start<MinimumShotSeconds);
+                for(var i=0;i<queue.Count&&i<MaximumShots-1;i++)
                 {
-                    if(shot>0)ReceiveWorkerProgress(FormattableString.Invariant($"Capturing shot {shot+1} from {shotStart:0.00} s"));
-                    string shotPath;
-                    try{shotPath=await CaptureBodyShotAsync(video,shotStart,shotEnd,metadata,recordedFov,token);}
+                    var (shotStart,shotStop)=queue[i];
+                    ReceiveWorkerProgress(FormattableString.Invariant($"Capturing shot {i+2} of {queue.Count+1}, from {shotStart:0.00} s"));
+                    try{shotPaths.Add((await CaptureBodyShotAsync(video,shotStart,shotStop,metadata,recordedFov,token)).Path);}
                     catch(OperationCanceledException){throw;}
-                    catch(Exception e) when(shot>0){shotFailure=FormattableString.Invariant($"The shot from {shotStart:0.00} s could not be captured ({e.Message}); the shots before it are kept.");break;}
-                    shotPaths.Add(shotPath);
-                    var cut=await Task.Run(()=>NextShotStart(MotionDocument.Parse(File.ReadAllBytes(shotPath)).Diagnostics),token);
-                    if(cut is not double next||next<=shotStart||shotEnd-next<MinimumShotSeconds)break;
-                    shotStart=next;
+                    // A shot the capture cannot follow (a close-up of the legs, nobody in view) is left out.
+                    catch(Exception e){shotFailures.Add(FormattableString.Invariant($"The shot from {shotStart:0.00} s was left out: {e.Message}"));}
                 }
+                string shotFailure=shotFailures.Count>0?string.Join(" ",shotFailures):null;
                 motionPath=shotPaths[0];
                 if(shotPaths.Count>1||shotFailure is not null)
                 {
@@ -168,6 +181,7 @@ public sealed partial class RetargetWindow
                         var documents=paths.Select(p=>MotionDocument.Parse(File.ReadAllBytes(p))).ToList();
                         // Only the last shot still ends at a cut that was not followed.
                         for(var i=0;i<documents.Count-1;i++)documents[i].Diagnostics.RemoveAll(d=>d.StartsWith(ShotCutPrefix,StringComparison.Ordinal));
+                        foreach(var document in documents)document.Diagnostics.RemoveAll(d=>d.StartsWith(ShotsPrefix,StringComparison.Ordinal));
                         var joined=MotionJoin.Join(documents);joined.OriginalReconstruction=null;
                         if(failure is not null)joined.Diagnostics.Add(failure);
                         var destination=Path.Combine(Path.GetDirectoryName(paths[0]),"joined-shots.hmotion");

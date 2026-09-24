@@ -40,6 +40,7 @@ public static class BodyCapture
     {
         public double RangeStart=>rangeStart;public double Time=>time;public double? LastSeen=>lastSeen;public List<FrameState> Frames=>frames;
     }
+    public const string ShotsPrefix="Shots start at ";
     public const string PartlyVisiblePrefix="Performer not in view for the whole video";
     /// <summary>The shortest stretch with the performer in view that is still worth capturing.</summary>
     public const double MinimumVisibleSeconds=1;
@@ -103,10 +104,14 @@ public static class BodyCapture
         var metadata=Mp4Metadata.Read(request.Video);var captureTimes=metadata.CaptureTimes;
         if(captureTimes.Count(t=>t>=request.Start&&t<request.End) is <1 or >1800)throw new ArgumentException("Select between one and 1,800 frames.");
         // Edited footage: capture the first shot of at least half a second, not a subject followed across a cut.
-        string? shotNote=null;
+        string? shotNote=null;string? shotsNote=null;
         if(request.PersonCrop is null)
         {
             progress?.Invoke("Checking the footage for cuts");
+            // Every shot's start, once, so the editor can capture the shots one by one without looking again.
+            var inRange=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
+            var allCuts=inRange.Length>2?ShotCutDetector.AllCuts(request.Video,inRange,cancellation):new List<int>();
+            if(allCuts.Count>0)shotsNote=FormattableString.Invariant($"{ShotsPrefix}{string.Join(", ",new[]{inRange[0]}.Concat(allCuts.Select(c=>inRange[c])).Select(t=>t.ToString("F2",System.Globalization.CultureInfo.InvariantCulture)))} s.");
             for(var guard=0;guard<64;guard++)
             {
                 var selected=captureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
@@ -379,6 +384,7 @@ public static class BodyCapture
                 ?$"Automatic single-person image crops ({PersonDetector.Version}): the detector located the subject in {state.Frames.Count(f=>f.Person!.Evidence=="detected")} frame(s), crops then followed the previous frame's 2D body joints, and {state.Frames.Count(f=>f.Person!.Evidence=="held crop")} frame(s) briefly held the last crop. Two centered five-frame crop averages follow. Crop evidence is saved separately in reconstruction.json; it is not joint confidence or camera calibration."
                 :"Explicit fixed manual person crop. Automatic subject tracking was not used.");
             if(shotNote is not null)motion.Diagnostics.Add(shotNote);
+            if(shotsNote is not null)motion.Diagnostics.Add(shotsNote);
             if(visibilityNote is not null)motion.Diagnostics.Add(visibilityNote);
             if(nextShotNote is not null&&shotNote is null)motion.Diagnostics.Add(nextShotNote);
             motion.Diagnostics.Add(lensNote??(request.HorizontalFov is float lens?FormattableString.Invariant($"Lens: the camera recorded a {lens:F0} degree horizontal field of view, used for depth and travel."):

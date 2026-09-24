@@ -48,8 +48,7 @@ public static class MotionJoin
 
     static void Append( MotionDocument into, MotionDocument next )
     {
-        if ( next.Bones.Count != into.Bones.Count || next.Bones.Where( ( b, i ) => b.Name != into.Bones[i].Name || b.Parent != into.Bones[i].Parent ).Any() )
-            throw new InvalidDataException( "The shots were captured with different skeletons." );
+        next = Conform( next, into );
         if ( !(next.Frames[0].Time > into.Frames[^1].Time) ) throw new InvalidDataException( "Shots must follow each other in time." );
         var before = into.Frames.Count;
         var (endPosition, endLateral) = Placement( into, into.Frames[^1] );
@@ -99,6 +98,45 @@ public static class MotionJoin
         into.Diagnostics.AddRange( next.Diagnostics.Select( d => FormattableString.Invariant( $"Shot from {next.Frames[0].Time:F2} s: {d}" ) ) );
     }
 
+    /// <summary>Makes <paramref name="next"/> use <paramref name="into"/>'s bones, by name. A shot's finger bones
+    /// exist only where the hand model found hands, so a close-up of the legs has none: bones a shot lacks hold
+    /// their rest pose, unobserved, and bones only it has are added to the joined skeleton at rest before it.</summary>
+    static MotionDocument Conform( MotionDocument next, MotionDocument into )
+    {
+        string ParentName( MotionDocument d, MotionBone b ) => b.Parent < 0 ? null : d.Bones[b.Parent].Name;
+        foreach ( var bone in next.Bones )
+        {
+            if ( into.Bones.Any( b => b.Name == bone.Name ) ) continue;
+            var parentName = ParentName( next, bone );
+            var parent = parentName is null ? -1 : into.Bones.FindIndex( b => b.Name == parentName );
+            if ( parentName is not null && parent < 0 ) throw new InvalidDataException( "The shots were captured with different skeletons." );
+            into.Bones.Add( new MotionBone { Name = bone.Name, Parent = parent, Role = bone.Role, Group = bone.Group, RestPosition = bone.RestPosition.ToArray(), RestRotation = bone.RestRotation.ToArray() } );
+            foreach ( var frame in into.Frames )
+            {
+                frame.Positions = frame.Positions.Append( bone.RestPosition.ToArray() ).ToArray();
+                frame.Rotations = frame.Rotations.Append( bone.RestRotation.ToArray() ).ToArray();
+                frame.Evidence = frame.Evidence.Append( JointEvidence.Unobserved ).ToArray();
+                if ( frame.Confidence is not null ) frame.Confidence = frame.Confidence.Append( null ).ToArray();
+            }
+        }
+        foreach ( var bone in into.Bones )
+        {
+            var match = next.Bones.FirstOrDefault( b => b.Name == bone.Name );
+            if ( match is not null && ParentName( next, match ) != (bone.Parent < 0 ? null : into.Bones[bone.Parent].Name) )
+                throw new InvalidDataException( "The shots were captured with different skeletons." );
+        }
+        var map = into.Bones.Select( b => next.Bones.FindIndex( n => n.Name == b.Name ) ).ToArray();
+        var result = next.Copy(); result.Bones = into.Bones.Select( b => new MotionBone { Name = b.Name, Parent = b.Parent, Role = b.Role, Group = b.Group, RestPosition = b.RestPosition.ToArray(), RestRotation = b.RestRotation.ToArray() } ).ToList();
+        for ( var f = 0; f < next.Frames.Count; f++ )
+        {
+            var source = next.Frames[f]; var frame = result.Frames[f];
+            frame.Positions = map.Select( ( m, i ) => m >= 0 ? source.Positions[m].ToArray() : into.Bones[i].RestPosition.ToArray() ).ToArray();
+            frame.Rotations = map.Select( ( m, i ) => m >= 0 ? source.Rotations[m].ToArray() : into.Bones[i].RestRotation.ToArray() ).ToArray();
+            frame.Evidence = map.Select( m => m >= 0 ? source.Evidence[m] : JointEvidence.Unobserved ).ToArray();
+            frame.Confidence = source.Confidence is null ? null : map.Select( m => m >= 0 ? source.Confidence[m] : null ).ToArray();
+        }
+        return result;
+    }
     /// <summary>Height of the floor under a shot: the 5th percentile of its lowest foot joint.</summary>
     static float Floor( MotionDocument doc )
     {

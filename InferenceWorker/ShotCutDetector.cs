@@ -14,6 +14,9 @@ public static class ShotCutDetector
     public const float MinimumDifference=.10f,MaximumCorrelation=.55f;
     /// <summary>Index into the selected frames of the first frame after a cut, or null.</summary>
     public static int? FirstCut(string video,IReadOnlyList<double> times,CancellationToken cancellation)
+        =>AllCuts(video,times,cancellation) is { Count: >0 } cuts?cuts[0]:null;
+    /// <summary>Every cut in the selected frames, from one pass over the video.</summary>
+    public static List<int> AllCuts(string video,IReadOnlyList<double> times,CancellationToken cancellation)
     {
         using var decoder=new WindowsVideoDecoder(video);
         IEnumerable<float[]> Thumbnails()
@@ -25,7 +28,9 @@ public static class ShotCutDetector
                 yield return Thumbnail(frame);
             }
         }
-        return FirstCut(Thumbnails());
+        var frames=Thumbnails().ToList();var cuts=new List<int>();var offset=0;
+        while(offset<frames.Count-2&&FirstCut(frames.Skip(offset)) is int cut){cuts.Add(offset+cut);offset+=cut;}
+        return cuts;
     }
     /// <summary>How many frames a damaged picture may last before it counts as a new shot.</summary>
     public const int MaximumGlitchFrames=3;
