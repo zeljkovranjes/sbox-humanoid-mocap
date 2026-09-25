@@ -16,18 +16,18 @@ public static class WilorCrop
         var cx=(hand.Left+hand.Right)/2;var cy=(hand.Top+hand.Bottom)/2;
         var size=Math.Max((hand.Right-hand.Left)*4/3,hand.Bottom-hand.Top)*expansion;
         var sourceBox=new GvhmrDecoder.Box(cx,cy,size);
-        using var rgba=new Mat(frame.Height,frame.Width,MatType.CV_8UC4);Marshal.Copy(frame.Rgba,0,rgba.Data,frame.Rgba.Length);
-        using var rgb=new Mat();Cv2.CvtColor(rgba,rgb,ColorConversionCodes.RGBA2RGB);
-        using var image=rgb.Clone();var factor=size/512;
+        var factor=size/512;var sigma=(factor-1)/2;var radius=factor>1.1f?(int)(4*sigma+.5f):0;
+        // Only the hand's square and the blur's reach, not the whole frame (a 1080p frame in doubles is 50 MB per hand).
+        using var image=VideoCrop.Region(frame,cx,cy,size/2,radius+4,out var left,out var top);
         if(factor>1.1f)
         {
             // skimage gaussian preserves range, promotes uint8 to double, and uses
             // nearest borders with a four-sigma truncated kernel.
-            image.ConvertTo(image,MatType.CV_64FC3);var sigma=(factor-1)/2;
-            var radius=(int)(4*sigma+.5f);
+            image.ConvertTo(image,MatType.CV_64FC3);
             Cv2.GaussianBlur(image,image,new Size(radius*2+1,radius*2+1),sigma,sigma,BorderTypes.Replicate);
         }
-        if(!right){Cv2.Flip(image,image,FlipMode.Y);cx=frame.Width-cx-1;}
+        cx-=left;cy-=top;
+        if(!right){Cv2.Flip(image,image,FlipMode.Y);cx=image.Width-cx-1;}
         using var transform=Cv2.GetAffineTransform(new[]{new Point2f(cx,cy),new Point2f(cx,cy+size/2),new Point2f(cx+size/2,cy)},
             new[]{new Point2f(128,128),new Point2f(128,256),new Point2f(256,128)});
         using var crop=new Mat();Cv2.WarpAffine(image,crop,transform,new Size(256,256),InterpolationFlags.Linear,BorderTypes.Constant,Scalar.Black);

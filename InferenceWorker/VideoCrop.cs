@@ -13,12 +13,12 @@ public static class VideoCrop
     public static float[] Prepare(DecodedVideoFrame frame,GvhmrDecoder.Box box,string? previewFile=null)
     {
         if(box.Size<=0||!float.IsFinite(box.Size)||!float.IsFinite(box.CenterX)||!float.IsFinite(box.CenterY))throw new ArgumentException("Invalid person crop.");
-        using var rgba=new Mat(frame.Height,frame.Width,MatType.CV_8UC4);Marshal.Copy(frame.Rgba,0,rgba.Data,frame.Rgba.Length);
-        using var rgb=new Mat();Cv2.CvtColor(rgba,rgb,ColorConversionCodes.RGBA2RGB);
-        using var small=rgb.Clone();
+        var cx=box.CenterX;var cy=box.CenterY;var half=box.Size*.5f;
+        // Only the crop's own square (and the blur's reach) is converted and blurred, not the whole frame.
+        using var small=Region(frame,cx,cy,half,4,out var left,out var top);
         var factor=box.Size/256/2;
         if(factor>1.1)Cv2.GaussianBlur(small,small,new Size(5,5),(factor-1)/2);
-        var cx=box.CenterX;var cy=box.CenterY;var half=box.Size*.5f;
+        cx-=left;cy-=top;
         using var affine=Cv2.GetAffineTransform(new[]{new Point2f(cx-half,cy-half),new Point2f(cx+half,cy-half),new Point2f(cx,cy)},
             new[]{new Point2f(0,0),new Point2f(255,0),new Point2f(127.5f,127.5f)});
         using var crop=new Mat();Cv2.WarpAffine(small,crop,affine,new Size(256,256),InterpolationFlags.Linear,BorderTypes.Constant,Scalar.Black);
@@ -28,6 +28,24 @@ public static class VideoCrop
         for(var c=0;c<3;c++)for(var y=0;y<256;y++)for(var x=0;x<192;x++)
             normalized[(c*256+y)*192+x]=(bytes[(y*256+x+32)*3+c]/255f-mean[c])/std[c];
         return normalized;
+    }
+    /// <summary>The frame's RGB pixels around a square crop: <paramref name="half"/> either side of the centre plus
+    /// <paramref name="margin"/> for blurring and interpolation, clipped to the picture. Crops only read their own
+    /// square, and converting and blurring whole 1080p frames for every crop was most of their cost. A crop wholly
+    /// outside the picture gets the whole frame, as before.</summary>
+    internal static Mat Region(DecodedVideoFrame frame,float cx,float cy,float half,int margin,out int left,out int top)
+    {
+        left=Math.Clamp((int)MathF.Floor(cx-half)-margin,0,frame.Width);top=Math.Clamp((int)MathF.Floor(cy-half)-margin,0,frame.Height);
+        var right=Math.Clamp((int)MathF.Ceiling(cx+half)+margin+1,0,frame.Width);var bottom=Math.Clamp((int)MathF.Ceiling(cy+half)+margin+1,0,frame.Height);
+        if(right-left<2||bottom-top<2){left=0;top=0;right=frame.Width;bottom=frame.Height;}
+        var handle=GCHandle.Alloc(frame.Rgba,GCHandleType.Pinned);
+        try
+        {
+            using var whole=Mat.FromPixelData(frame.Height,frame.Width,MatType.CV_8UC4,handle.AddrOfPinnedObject());
+            using var part=new Mat(whole,new Rect(left,top,right-left,bottom-top));
+            var rgb=new Mat();Cv2.CvtColor(part,rgb,ColorConversionCodes.RGBA2RGB);return rgb;
+        }
+        finally{handle.Free();}
     }
     public static float[] FlipImage(float[] pixels)
     {var result=new float[pixels.Length];for(var c=0;c<3;c++)for(var y=0;y<256;y++)for(var x=0;x<192;x++)result[(c*256+y)*192+x]=pixels[(c*256+y)*192+191-x];return result;}

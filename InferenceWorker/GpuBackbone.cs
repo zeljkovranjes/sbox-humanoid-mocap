@@ -14,7 +14,7 @@ namespace HumanoidMocap.Worker;
 /// the residual stream, layer norms, softmax and GELU stay float32.</summary>
 public sealed class GpuBackbone : IDisposable
 {
-    public const string BuilderVersion="vit-backbone-v4";
+    public const string BuilderVersion="vit-backbone-v5";
     /// <summary>What the graph takes and returns. <see cref="Tokens"/>: embedded tokens in, normalized tokens out (WiLoR,
     /// whose extra hand tokens are made in TorchSharp). <see cref="Hmr2Features"/>: a 256x192 image in, the 1024 HMR2 head
     /// features out. <see cref="Heatmaps"/>: a 256x192 image in, the 17 ViTPose joint heatmaps out.</summary>
@@ -55,12 +55,14 @@ public sealed class GpuBackbone : IDisposable
     public static string? KeySuffix=>Device is null?null:"directml-fp16-"+BuilderVersion;
     /// <summary>A GPU backbone for this checkpoint, or null when no suitable GPU is available or it fails its first run.
     /// A failure is reported once through <paramref name="report"/> and the caller falls back to the CPU.</summary>
-    public static GpuBackbone? TryCreate(string checkpointPath,string checkpointSha256,Variant variant,int tokens,string cache,Action<string>? report,CancellationToken cancellation)
+    /// <param name="batch">Images per graphics-card pass, fixed when the session loads: DirectML runs a size left open
+    /// at load about half as fast. Shorter batches are padded.</param>
+    public static GpuBackbone? TryCreate(string checkpointPath,string checkpointSha256,Variant variant,int tokens,string cache,Action<string>? report,CancellationToken cancellation,int batch=1)
     {
         if(Device is not { } device)return null;
         try
         {
-            var backbone=new GpuBackbone(checkpointPath,checkpointSha256,variant,tokens,cache,device,cancellation);
+            var backbone=new GpuBackbone(checkpointPath,checkpointSha256,variant,tokens,cache,device,cancellation,batch);
             var probe=new float[backbone.inputLength];var random=new Random(1);for(var i=0;i<probe.Length;i++)probe[i]=(float)(random.NextDouble()-.5);
             if(backbone.Run(probe).All(float.IsFinite))return backbone;
             backbone.Dispose();report?.Invoke($"The graphics card ({device.Name}) gave invalid results; using the processor instead");
@@ -69,8 +71,10 @@ public sealed class GpuBackbone : IDisposable
         catch(Exception error){report?.Invoke($"The graphics card ({device.Name}) could not be used ({error.Message.Split('\n')[0]}); using the processor instead");}
         chosen=null;return null;
     }
-    GpuBackbone(string checkpointPath,string checkpointSha256,Variant variant,int tokens,string cache,(int Index,string Name) device,CancellationToken cancellation)
+    public int Batch { get; }
+    GpuBackbone(string checkpointPath,string checkpointSha256,Variant variant,int tokens,string cache,(int Index,string Name) device,CancellationToken cancellation,int batch)
     {
+        if(batch<1)throw new ArgumentOutOfRangeException(nameof(batch));Batch=batch;
         if(variant is Variant.Hmr2Features or Variant.Heatmaps&&tokens!=192)throw new ArgumentException("Image input embeds 192 patches.");
         Adapter=device.Name;Directory.CreateDirectory(cache);RemoveStale(cache);
         var tokenInput=variant is Variant.Tokens or Variant.WilorMaps;
@@ -80,33 +84,43 @@ public sealed class GpuBackbone : IDisposable
         var stem=$"vit-h-{checkpointSha256[..16].ToLowerInvariant()}-{variant.ToString().ToLowerInvariant()}-{tokens}t-fp16-{BuilderVersion}";var graphPath=Path.Combine(cache,stem+".onnx");
         if(!File.Exists(graphPath))Build(checkpointPath,cache,stem,variant,tokens,cancellation);
         using var options=new SessionOptions{GraphOptimizationLevel=GraphOptimizationLevel.ORT_ENABLE_ALL,EnableMemoryPattern=false,ExecutionMode=ExecutionMode.ORT_SEQUENTIAL,LogSeverityLevel=OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR};
+        options.AddFreeDimensionOverrideByName(OnnxGraph.Symbol,batch);
         options.AppendExecutionProvider_DML(device.Index);
         session=new InferenceSession(graphPath,options);
     }
     /// <summary>Embedded tokens [tokens,1280] or a CHW 256x192 image, as the variant takes; returns normalized
     /// tokens [tokens,1280], HMR2 features [1024] or heatmaps [17,64,48].</summary>
 
-    public float[] Run(float[] input)
-    {
-        if(input.Length!=inputLength)throw new ArgumentException("Unexpected backbone input size.");
-        // Test hook: simulates the graphics driver failing after this many calls in the process.
-        if(int.TryParse(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_TEST_GPU_FAILURE"),out var failAfter)&&Interlocked.Increment(ref simulated)>failAfter)
-            throw new InvalidOperationException("Simulated graphics-card failure.");
-        using var value=OrtValue.CreateTensorValueFromMemory(input,inputShape);
-        using var run=new RunOptions();
-        using var outputs=session.Run(run,new[]{inputName},new[]{value},new[]{outputName});
-        return outputs[0].GetTensorDataAsSpan<float>().ToArray();
-    }
+    public float[] Run(float[] input)=>RunBatch(new[]{input},new[]{outputName})[0][0];
     /// <summary>Every output of the graph, in the order of <see cref="Variant"/>'s description.</summary>
-    public float[][] RunAll(float[] input)
+    public float[][] RunAll(float[] input)=>RunBatch(new[]{input},outputNames).Select(o=>o[0]).ToArray();
+    /// <summary>Several inputs in one pass: a graphics card fed one small image at a time sits partly idle (WiLoR's
+    /// hands took 29 ms each alone). Returns, per requested output, one array per input.</summary>
+    public float[][][] RunBatch(IReadOnlyList<float[]> inputs,string[]? names=null)
     {
-        if(input.Length!=inputLength)throw new ArgumentException("Unexpected backbone input size.");
-        if(int.TryParse(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_TEST_GPU_FAILURE"),out var failAfter)&&Interlocked.Increment(ref simulated)>failAfter)
+        names??=outputNames;
+        if(inputs.Count==0)return names.Select(_=>Array.Empty<float[]>()).ToArray();
+        if(inputs.Any(i=>i.Length!=inputLength))throw new ArgumentException("Unexpected backbone input size.");
+        // Test hook: simulates the graphics driver failing after this many calls in the process.
+        if(int.TryParse(Environment.GetEnvironmentVariable("HUMANOID_MOCAP_TEST_GPU_FAILURE"),out var failAfter)&&Interlocked.Add(ref simulated,inputs.Count)>failAfter)
             throw new InvalidOperationException("Simulated graphics-card failure.");
-        using var value=OrtValue.CreateTensorValueFromMemory(input,inputShape);
-        using var run=new RunOptions();
-        using var outputs=session.Run(run,new[]{inputName},new[]{value},outputNames);
-        return outputs.Select(o=>o.GetTensorDataAsSpan<float>().ToArray()).ToArray();
+        var results=names.Select(_=>new float[inputs.Count][]).ToArray();
+        for(var start=0;start<inputs.Count;start+=Batch)
+        {
+            // The session's batch is fixed; a short last batch repeats its final input and drops the extra answers.
+            var flat=new float[Batch*inputLength];
+            for(var i=0;i<Batch;i++)inputs[Math.Min(start+i,inputs.Count-1)].CopyTo(flat,i*inputLength);
+            var shape=(long[])inputShape.Clone();shape[0]=Batch;
+            using var value=OrtValue.CreateTensorValueFromMemory(flat,shape);
+            using var run=new RunOptions();
+            using var outputs=session.Run(run,new[]{inputName},new[]{value},names);
+            for(var o=0;o<names.Length;o++)
+            {
+                var all=outputs[o].GetTensorDataAsSpan<float>();var each=all.Length/Batch;
+                for(var i=0;i<Batch&&start+i<inputs.Count;i++)results[o][start+i]=all.Slice(i*each,each).ToArray();
+            }
+        }
+        return results;
     }
     public void Dispose()=>session.Dispose();
 
@@ -164,27 +178,28 @@ public sealed class GpuBackbone : IDisposable
             string Single(string x)=>graph.Node("Cast",new[]{x},a=>a.Int("to",OnnxGraph.Float));
 
             string x;
-            if(variant is Variant.Tokens or Variant.WilorMaps){graph.Input("tokens",OnnxGraph.Float,1,tokens,Width);x="tokens";}
+            // The first dimension of every input and output is the batch, chosen per run.
+            if(variant is Variant.Tokens or Variant.WilorMaps){graph.Input("tokens",OnnxGraph.Float,-1,tokens,Width);x="tokens";}
             else
             {
-                graph.Input("image",OnnxGraph.Float,1,3,256,192);
+                graph.Input("image",OnnxGraph.Float,-1,3,256,192);
                 x=graph.Node("Conv",new[]{"image",Load("backbone.patch_embed.proj.weight"),Load("backbone.patch_embed.proj.bias")},a=>a.Ints("kernel_shape",16,16).Ints("strides",16,16));
-                x=graph.Node("Transpose",new[]{graph.Node("Reshape",new[]{x,graph.Constant(1,Width,192)})},a=>a.Ints("perm",0,2,1));
+                x=graph.Node("Transpose",new[]{graph.Node("Reshape",new[]{x,graph.Constant(-1,Width,192)})},a=>a.Ints("perm",0,2,1));
                 // The class-token position is added to every patch, as the released models do.
                 var pos=checkpoint.ReadFloat("backbone.pos_embed",cancellation);var sum=new float[192*Width];
                 for(var t=0;t<192;t++)for(var c=0;c<Width;c++)sum[t*Width+c]=pos[(t+1)*Width+c]+pos[c];
                 x=graph.Node("Add",new[]{x,Store("pos_sum",sum,new long[]{1,192,Width},false)});
             }
-            if(variant==Variant.Heatmaps)graph.Output("heatmaps",OnnxGraph.Float,1,17,64,48);
-            else if(variant==Variant.Hmr2Features)graph.Output("features",OnnxGraph.Float,1024);
-            else graph.Output("features",OnnxGraph.Float,1,tokens,Width);
+            if(variant==Variant.Heatmaps)graph.Output("heatmaps",OnnxGraph.Float,-1,17,64,48);
+            else if(variant==Variant.Hmr2Features)graph.Output("features",OnnxGraph.Float,-1,1024);
+            else graph.Output("features",OnnxGraph.Float,-1,tokens,Width);
             if(variant==Variant.WilorMaps)
             {
-                graph.Output("low",OnnxGraph.Float,1,640,16,12);graph.Output("middle",OnnxGraph.Float,1,320,32,24);graph.Output("high",OnnxGraph.Float,1,160,64,48);
+                graph.Output("low",OnnxGraph.Float,-1,640,16,12);graph.Output("middle",OnnxGraph.Float,-1,320,32,24);graph.Output("high",OnnxGraph.Float,-1,160,64,48);
             }
             var scale=graph.Scalar((float)(1/Math.Sqrt(HeadWidth)),OnnxGraph.Float);
             var rootHalf=graph.Scalar((float)(1/Math.Sqrt(2)),OnnxGraph.Float);var halfScalar=graph.Scalar(.5f,OnnxGraph.Float);var one=graph.Scalar(1f,OnnxGraph.Float);
-            var heads=graph.Constant(1,tokens,Heads,HeadWidth);var flat=graph.Constant(1,tokens,Width);
+            var heads=graph.Constant(-1,tokens,Heads,HeadWidth);var flat=graph.Constant(-1,tokens,Width);
             for(var block=0;block<Blocks;block++)
             {
                 var name="backbone.blocks."+block;
@@ -209,7 +224,7 @@ public sealed class GpuBackbone : IDisposable
                 // WiLoR's refinement feature maps from the 192 image tokens, as WilorModel.Refine computes them. Float32.
                 graph.Identity(x,"features");
                 var image=graph.Node("Slice",new[]{x,graph.Constant(18),graph.Constant(210),graph.Constant(1)});
-                image=graph.Node("Reshape",new[]{graph.Node("Transpose",new[]{image},a=>a.Ints("perm",0,2,1)),graph.Constant(1,Width,16,12)});
+                image=graph.Node("Reshape",new[]{graph.Node("Transpose",new[]{image},a=>a.Ints("perm",0,2,1)),graph.Constant(-1,Width,16,12)});
                 const string refine="refine_net.deconv.";
                 var low=graph.Node("Conv",new[]{image,Load(refine+"first_conv.0.weight"),Load(refine+"first_conv.0.bias")},a=>a.Ints("kernel_shape",1,1));
                 string Up(string input,string convolution,string norm)
@@ -227,8 +242,11 @@ public sealed class GpuBackbone : IDisposable
                 // tokens and an MLP, as VisionModel.FeatureHead. Its input token is a constant: the embedding of zero.
                 const string prefix="smpl_head.transformer.";
                 var bias=checkpoint.ReadFloat(prefix+"to_token_embedding.bias",cancellation);var position=checkpoint.ReadFloat(prefix+"pos_embedding",cancellation);
-                var query=Store("hmr2_token",bias.Select((b,i)=>b+position[i]).ToArray(),new long[]{1,1,1024},false);
-                var headScale=graph.Scalar(.125f,OnnxGraph.Float);var one8=graph.Constant(1,1,8,64);var context8=graph.Constant(1,192,8,64);var flat512=graph.Constant(1,1,512);
+                var token=Store("hmr2_token",bias.Select((b,i)=>b+position[i]).ToArray(),new long[]{1,1,1024},false);
+                // One query token per image: [batch,1,1024], the batch taken from the image tokens' shape.
+                var batch=graph.Node("Slice",new[]{graph.Node("Shape",new[]{x}),graph.Constant(0),graph.Constant(1),graph.Constant(0)});
+                var query=graph.Node("Expand",new[]{token,graph.Node("Concat",new[]{batch,graph.Constant(1,1024)},a=>a.Int("axis",0))});
+                var headScale=graph.Scalar(.125f,OnnxGraph.Float);var one8=graph.Constant(-1,1,8,64);var context8=graph.Constant(-1,192,8,64);var flat512=graph.Constant(-1,1,512);
                 string Attend(string q,string k,string v)
                 {
                     var qh=graph.Node("Transpose",new[]{graph.Node("Reshape",new[]{q,one8})},a=>a.Ints("perm",0,2,1,3));
@@ -252,12 +270,12 @@ public sealed class GpuBackbone : IDisposable
                     var geluHead=graph.Node("Mul",new[]{graph.Node("Mul",new[]{inner,halfScalar}),graph.Node("Add",new[]{graph.Node("Erf",new[]{graph.Node("Mul",new[]{inner,rootHalf})}),one})});
                     h=graph.Node("Add",new[]{crossAttended,LinearSingle(geluHead,name+".2.fn.net.3")});
                 }
-                graph.Identity(graph.Node("Reshape",new[]{h,graph.Constant(1024)}),"features");
+                graph.Identity(graph.Node("Reshape",new[]{h,graph.Constant(-1,1024)}),"features");
             }
             else
             {
                 // The ViTPose head: two 4x4 stride-2 deconvolutions with batch norm and ReLU, then a 1x1 convolution. Float32.
-                x=graph.Node("Reshape",new[]{graph.Node("Transpose",new[]{x},a=>a.Ints("perm",0,2,1)),graph.Constant(1,Width,16,12)});
+                x=graph.Node("Reshape",new[]{graph.Node("Transpose",new[]{x},a=>a.Ints("perm",0,2,1)),graph.Constant(-1,Width,16,12)});
                 for(var block=0;block<2;block++)
                 {
                     var name="keypoint_head.deconv_layers.";var bn=name+(block*3+1);
@@ -275,6 +293,28 @@ public sealed class GpuBackbone : IDisposable
         File.Move(Path.Combine(cache,stem+".onnx.partial"),Path.Combine(cache,stem+".onnx"),true);
     }
 
+    /// <summary>Dev check: time per image at several batch sizes, and that a batch gives the single-image answer.</summary>
+    public static void BatchBench(string models,Action<string> report)
+    {
+        foreach(var (file,sha,variant,tokens) in new[]{("vitpose/vitpose-h-multi-coco.pth","50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc",Variant.Heatmaps,192),
+            ("hmr2/hmr2.ckpt","2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",Variant.Hmr2Features,192),
+            ("wilor/wilor_final.ckpt",WilorModel.CheckpointSha256,Variant.WilorMaps,210)})
+        {
+            var line=$"{variant}:";float[][][]? single=null;
+            foreach(var n in new[]{1,2,4,8})
+            {
+                using var gpu=TryCreate(Path.Combine(models,file),sha,variant,tokens,Path.Combine(models,"gpu"),report,CancellationToken.None,n)??throw new InvalidOperationException("No graphics card.");
+                var random=new Random(3);float[] Input()=>Enumerable.Range(0,gpu.inputLength).Select(_=>(float)(random.NextDouble()-.5)).ToArray();
+                var inputs=Enumerable.Range(0,n).Select(_=>Input()).ToArray();
+                var answer=gpu.RunBatch(inputs);single??=answer;
+                double diff=0;for(var i=0;i<single[0][0].Length;i++)diff=Math.Max(diff,Math.Abs(single[0][0][i]-answer[0][0][i]));
+                var clock=Stopwatch.StartNew();var reps=Math.Max(4,32/n);
+                for(var r=0;r<reps;r++)gpu.RunBatch(inputs);
+                line+=$" b{n} {clock.Elapsed.TotalMilliseconds/(reps*n):F1} ms/img (diff {diff:E0})";
+            }
+            report(line);
+        }
+    }
     /// <summary>Dev check against the LibTorch path: agreement and time per image.</summary>
     public static void Bench(string models,Action<string> report)
     {

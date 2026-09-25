@@ -39,8 +39,13 @@ public static class BodyHandTracks
         return new(centre.X-half,centre.Y-half,centre.X+half,centre.Y+half);
     }
     public static Sample Reconstruct(WilorModel model,DecodedVideoFrame frame,WildHandsCrop.Box box,bool left,CancellationToken cancellation)
+        =>FromHand(model.Run(Crop(frame,box,left),cancellation).Hand,left);
+    /// <summary>WiLoR's input for one hand: its crop, left hands mirrored.</summary>
+    public static float[] Crop(DecodedVideoFrame frame,WildHandsCrop.Box box,bool left)=>WilorCrop.Prepare(frame,box,!left).Image;
+    /// <summary>A reconstructed hand as finger rotations, bone offsets and orientation on this side.</summary>
+    public static Sample FromHand(ManoDecoder.DecodedHand hand,bool left)
     {
-        var hand=model.Run(WilorCrop.Prepare(frame,box,!left).Image,cancellation).Hand;var sign=left?-1:1;
+        var sign=left?-1:1;
         var rotations=new float[60];var offsets=new float[45];
         for(var j=1;j<16;j++)
         {

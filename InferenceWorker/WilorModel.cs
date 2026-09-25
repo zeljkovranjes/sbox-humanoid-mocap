@@ -48,11 +48,12 @@ public sealed class WilorModel : IDisposable
     }
     public sealed record Prediction(float[] RotationMatrices,float[] Shape,float[] WeakCamera,ManoDecoder.DecodedHand Hand);
     /// <param name="gpuCache">Folder for the graphics-card graph; null keeps everything on the CPU.</param>
-    public WilorModel(string checkpointPath,CancellationToken cancellation=default,string? precision=null,string? gpuCache=null,Action<string>? report=null)
+    /// <param name="batch">Hands per graphics-card pass for <see cref="RunBatch"/>.</param>
+    public WilorModel(string checkpointPath,CancellationToken cancellation=default,string? precision=null,string? gpuCache=null,Action<string>? report=null,int batch=1)
     {
         this.checkpointPath=checkpointPath;this.report=report;Precision=precision??ChoosePrecision();
         if(Precision is not (Float32 or BFloat16))throw new ArgumentException("Unsupported WiLoR precision.");
-        if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,CheckpointSha256,GpuBackbone.Variant.WilorMaps,210,gpuCache,report,cancellation);
+        if(gpuCache is not null)gpu=GpuBackbone.TryCreate(checkpointPath,CheckpointSha256,GpuBackbone.Variant.WilorMaps,210,gpuCache,report,cancellation,batch);
         // With a GPU the blocks and final norm live there and are not loaded here.
         var onGpu=gpu is not null;
         weights=LoadWeights(onGpu,cancellation);
@@ -66,39 +67,79 @@ public sealed class WilorModel : IDisposable
     Tensor BlockLinear(Tensor input,string name)=>weights.Linear(Precision==Float32?input:input.to(ScalarType.BFloat16),name);
     /// <summary>RGB ImageNet-normalized CHW 256x192, from the central columns of
     /// the 256x256 hand crop. Left hands must be horizontally flipped before this call.</summary>
-    public Prediction Run(float[] image,CancellationToken cancellation=default)
+    public Prediction Run(float[] image,CancellationToken cancellation=default)=>RunBatch(new[]{image},cancellation)[0];
+    /// <summary>Several hands at once: their transformer blocks share graphics-card passes (about a quarter faster per
+    /// hand), the rest runs per hand as before. On the processor this is one hand after another.</summary>
+    public Prediction[] RunBatch(IReadOnlyList<float[]> images,CancellationToken cancellation=default)=>Complete(Prepare(images,cancellation),cancellation);
+    /// <summary>A batch after its graphics-card pass, waiting for <see cref="Complete"/>.</summary>
+    public sealed record Prepared(float[][] Tokens,float[][][]? OnCard);
+    // Prepare (tokens and the graphics-card pass) of one batch may overlap Complete (per-hand work) of the previous
+    // one on another thread; both read the weights, and only a graphics-card failure replaces them.
+    readonly ReaderWriterLockSlim weightsLock=new();
+    /// <summary>The first half of <see cref="RunBatch"/>: the hands' tokens and their transformer blocks on the graphics card.</summary>
+    public Prepared Prepare(IReadOnlyList<float[]> images,CancellationToken cancellation=default)
     {
         ObjectDisposedException.ThrowIf(disposed,this);
-        if(image.Length!=3*256*192||image.Any(v=>!float.IsFinite(v)))throw new ArgumentException("Invalid WiLoR image.");
-        if(Interlocked.Exchange(ref running,1)!=0)throw new InvalidOperationException("WiLoR is already processing a frame.");
+        if(images.Any(image=>image.Length!=3*256*192||image.Any(v=>!float.IsFinite(v))))throw new ArgumentException("Invalid WiLoR image.");
+        if(Interlocked.Exchange(ref running,1)!=0)throw new InvalidOperationException("WiLoR is already preparing a batch.");
         try
         {
-            using var noGrad=no_grad();using var scope=NewDisposeScope();
-            var x=weights.Conv(tensor(image).reshape(1,3,256,192),"backbone.patch_embed.proj",16).flatten(2).transpose(1,2);
-            x=x+weights["backbone.pos_embed"].slice(1,1,193,1)+weights["backbone.pos_embed"].slice(1,0,1,1);
-            var poseToken=weights.Linear(weights["backbone.init_hand_pose"].reshape(1,16,6),"backbone.pose_emb");
-            var shapeToken=weights.Linear(weights["backbone.init_betas"],"backbone.shape_emb").unsqueeze(1);
-            var cameraToken=weights.Linear(weights["backbone.init_cam"],"backbone.cam_emb").unsqueeze(1);
-            x=cat(new[]{poseToken,shapeToken,cameraToken,x},1);
-            float[]? onCard=null;float[][]? maps=null;
-            if(gpu is not null)
+            using var noGrad=no_grad();
+            float[][] tokens;
+            weightsLock.EnterReadLock();
+            try{tokens=images.Select(image=>{using var scope=NewDisposeScope();return Tokens(image).contiguous().data<float>().ToArray();}).ToArray();}
+            finally{weightsLock.ExitReadLock();}
+            float[][][]? onCard=null;
+            if(gpu is not null&&images.Count>0)
             {
                 cancellation.ThrowIfCancellationRequested();
                 try
                 {
-                    var all=gpu.RunAll(x.contiguous().data<float>().ToArray());onCard=all[0];maps=all[1..];
-                    if(all.Any(o=>o.Any(v=>!float.IsFinite(v))))throw new ArithmeticException("Non-finite graphics-card prediction.");
+                    var all=gpu.RunBatch(tokens);
+                    if(all.Any(o=>o.Any(i=>i.Any(v=>!float.IsFinite(v)))))throw new ArithmeticException("Non-finite graphics-card prediction.");
+                    onCard=Enumerable.Range(0,images.Count).Select(i=>all.Select(o=>o[i]).ToArray()).ToArray();
                 }
                 catch(Exception error) when(error is not OperationCanceledException)
                 {
                     // A driver reset or lost device mid-job: finish on the processor rather than fail the capture.
                     report?.Invoke($"The graphics card failed ({error.Message.Split('\n')[0]}); continuing on the processor");
-                    GpuBackbone.Disable(gpu.Adapter,error);gpu.Dispose();gpu=null;onCard=null;maps=null;
-                    var full=LoadWeights(false,cancellation);weights.Dispose();weights=full;
+                    GpuBackbone.Disable(gpu.Adapter,error);gpu.Dispose();gpu=null;onCard=null;
+                    var full=LoadWeights(false,cancellation);
+                    weightsLock.EnterWriteLock();try{weights.Dispose();weights=full;}finally{weightsLock.ExitWriteLock();}
                 }
             }
-            if(onCard is not null)x=tensor(onCard).reshape(1,210,1280);
-            else for(var block=0;block<32;block++)
+            return new(tokens,onCard);
+        }
+        finally{Volatile.Write(ref running,0);}
+    }
+    /// <summary>The second half of <see cref="RunBatch"/>: each hand's pose, shape and refinement, on the processor.</summary>
+    public Prediction[] Complete(Prepared prepared,CancellationToken cancellation=default)
+    {
+        ObjectDisposedException.ThrowIf(disposed,this);
+        using var noGrad=no_grad();
+        weightsLock.EnterReadLock();
+        try{return Enumerable.Range(0,prepared.Tokens.Length).Select(i=>{using var scope=NewDisposeScope();return Finish(prepared.Tokens[i],prepared.OnCard?[i],cancellation);}).ToArray();}
+        finally{weightsLock.ExitReadLock();}
+    }
+    /// <summary>The image's patch tokens after the hand-pose, shape and camera tokens: [1,210,1280].</summary>
+    Tensor Tokens(float[] image)
+    {
+        var x=weights.Conv(tensor(image).reshape(1,3,256,192),"backbone.patch_embed.proj",16).flatten(2).transpose(1,2);
+        x=x+weights["backbone.pos_embed"].slice(1,1,193,1)+weights["backbone.pos_embed"].slice(1,0,1,1);
+        var poseToken=weights.Linear(weights["backbone.init_hand_pose"].reshape(1,16,6),"backbone.pose_emb");
+        var shapeToken=weights.Linear(weights["backbone.init_betas"],"backbone.shape_emb").unsqueeze(1);
+        var cameraToken=weights.Linear(weights["backbone.init_cam"],"backbone.cam_emb").unsqueeze(1);
+        x=cat(new[]{poseToken,shapeToken,cameraToken,x},1);
+        return x;
+    }
+    /// <summary>Hand pose, shape and camera from the tokens: the transformer blocks came from the graphics card
+    /// (<paramref name="card"/>: normalized tokens, then the three refinement maps) or run here.</summary>
+    Prediction Finish(float[] tokens,float[][]? card,CancellationToken cancellation)
+    {
+        var x=tensor(card?[0]??tokens).reshape(1,210,1280);var maps=card?[1..];
+        if(card is null)
+        {
+            for(var block=0;block<32;block++)
             {
                 cancellation.ThrowIfCancellationRequested();using var layer=NewDisposeScope();
                 var name="backbone.blocks."+block;
@@ -110,24 +151,23 @@ public sealed class WilorModel : IDisposable
                 var feedforward=BlockLinear(F.gelu(BlockLinear(weights.Norm(residual,name+".norm2",1280),name+".mlp.fc1")),name+".mlp.fc2").to(ScalarType.Float32);
                 var previous=x;x=(residual+feedforward).MoveToOuterDisposeScope();previous.Dispose();
             }
-            if(onCard is null)x=weights.Norm(x,"backbone.last_norm",1280);
-            var pose=weights.Linear(x.slice(1,0,16,1),"backbone.decpose").reshape(1,96)+weights["backbone.init_hand_pose"];
-            var shape=weights.Linear(x.slice(1,16,17,1),"backbone.decshape").reshape(1,10)+weights["backbone.init_betas"];
-            var camera=weights.Linear(x.slice(1,17,18,1),"backbone.deccam").reshape(1,3)+weights["backbone.init_cam"];
-            var features=x.slice(1,18,210,1).transpose(1,2).reshape(1,1280,16,12);
-            var preliminary=mano.Decode(HandModelWeights.Array(RotationMatrices(pose)),HandModelWeights.Array(shape),false,cancellation);
-            var vertices=tensor(preliminary.Vertices.SelectMany(v=>new[]{v.X,v.Y,v.Z}).ToArray()).reshape(1,778,3);
-            var refinement=maps is not null
-                ?Sample(new[]{tensor(maps[2]).reshape(1,160,64,48),tensor(maps[1]).reshape(1,320,32,24),tensor(maps[0]).reshape(1,640,16,12)},vertices,camera,cancellation)
-                :Refine(features,vertices,camera,cancellation);
-            pose=pose+weights.Linear(refinement,"refine_net.dec_pose");
-            shape=shape+weights.Linear(refinement,"refine_net.dec_shape");
-            camera=camera+weights.Linear(refinement,"refine_net.dec_cam");
-            var rotations=HandModelWeights.Array(RotationMatrices(pose));var betas=HandModelWeights.Array(shape);var weakCamera=HandModelWeights.Array(camera);
-            if(rotations.Concat(betas).Concat(weakCamera).Any(v=>!float.IsFinite(v)))throw new ArithmeticException("Non-finite WiLoR prediction.");
-            return new(rotations,betas,weakCamera,mano.Decode(rotations,betas,false,cancellation));
+            x=weights.Norm(x,"backbone.last_norm",1280);
         }
-        finally{Volatile.Write(ref running,0);}
+        var pose=weights.Linear(x.slice(1,0,16,1),"backbone.decpose").reshape(1,96)+weights["backbone.init_hand_pose"];
+        var shape=weights.Linear(x.slice(1,16,17,1),"backbone.decshape").reshape(1,10)+weights["backbone.init_betas"];
+        var camera=weights.Linear(x.slice(1,17,18,1),"backbone.deccam").reshape(1,3)+weights["backbone.init_cam"];
+        var features=x.slice(1,18,210,1).transpose(1,2).reshape(1,1280,16,12);
+        var preliminary=mano.Decode(HandModelWeights.Array(RotationMatrices(pose)),HandModelWeights.Array(shape),false,cancellation);
+        var vertices=tensor(preliminary.Vertices.SelectMany(v=>new[]{v.X,v.Y,v.Z}).ToArray()).reshape(1,778,3);
+        var refinement=maps is not null
+            ?Sample(new[]{tensor(maps[2]).reshape(1,160,64,48),tensor(maps[1]).reshape(1,320,32,24),tensor(maps[0]).reshape(1,640,16,12)},vertices,camera,cancellation)
+            :Refine(features,vertices,camera,cancellation);
+        pose=pose+weights.Linear(refinement,"refine_net.dec_pose");
+        shape=shape+weights.Linear(refinement,"refine_net.dec_shape");
+        camera=camera+weights.Linear(refinement,"refine_net.dec_cam");
+        var rotations=HandModelWeights.Array(RotationMatrices(pose));var betas=HandModelWeights.Array(shape);var weakCamera=HandModelWeights.Array(camera);
+        if(rotations.Concat(betas).Concat(weakCamera).Any(v=>!float.IsFinite(v)))throw new ArithmeticException("Non-finite WiLoR prediction.");
+        return new(rotations,betas,weakCamera,mano.Decode(rotations,betas,false,cancellation));
     }
     Tensor Refine(Tensor features,Tensor vertices,Tensor camera,CancellationToken cancellation)
     {
@@ -172,5 +212,5 @@ public sealed class WilorModel : IDisposable
             first.select(1,0)*second.select(1,1)-first.select(1,1)*second.select(1,0)},1);
         return stack(new[]{first,second,third},2);
     }
-    public void Dispose(){if(disposed)return;disposed=true;gpu?.Dispose();weights.Dispose();}
+    public void Dispose(){if(disposed)return;disposed=true;gpu?.Dispose();weights.Dispose();weightsLock.Dispose();}
 }

@@ -95,17 +95,24 @@ public static class BodyCapture
     }
     /// <summary>First time after <paramref name="after"/>, checked about four times a second, at which the detector finds
     /// somebody and the pose model sees enough of their body to follow, which is what the tracker itself requires.</summary>
+    const int FeatureBatch=4,HandBatch=4;
+    /// <summary>ViTPose heatmaps for a crop averaged with its mirror image, both in one graphics-card pass.</summary>
+    static float[] Flipped(VisionModel pose,float[] crop,CancellationToken cancellation)
+    {
+        var both=pose.RunBatch(new[]{crop,VideoCrop.FlipImage(crop)},cancellation);
+        return VideoCrop.AverageFlippedHeatmaps(both[0],both[1]);
+    }
     static double? FirstSubjectTime(BodyCaptureRequest request,double after,CancellationToken cancellation)
     {
         using var detector=new PersonDetector(Path.Combine(request.Models,"person/person_detection_mediapipe_2023mar.onnx"));
-        using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"));
+        using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),batch:2);
         using var decoder=new WindowsVideoDecoder(request.Video);var next=after+.25;DecodedVideoFrame? frame;
         while((frame=decoder.Read(cancellation)) is not null&&frame.Time<request.End)
         {
             if(frame.Time<next)continue;next=frame.Time+.25;
             if(PersonCropTrack.Select(null,detector.DetectFollowing(frame,null,cancellation)) is not { } subject)continue;
             var crop=VideoCrop.Prepare(frame,subject.Crop);
-            var joints=VideoCrop.DecodeHeatmaps(VideoCrop.AverageFlippedHeatmaps(pose.Run(crop,cancellation),pose.Run(VideoCrop.FlipImage(crop),cancellation)),subject.Crop);
+            var joints=VideoCrop.DecodeHeatmaps(Flipped(pose,crop,cancellation),subject.Crop);
             if(PersonCropTrack.Followable(joints,null,frame.Width,frame.Height))return frame.Time;
         }
         return null;
@@ -235,12 +242,12 @@ public static class BodyCapture
                 if(state.Frames.Count<count||state.Frames.Any(f=>f.Observations is null||f.Person is null))
                 {
                     using var detector=new PersonDetector(Path.Combine(request.Models,"person/person_detection_mediapipe_2023mar.onnx"));
-                    using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
+                    using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),batch:2,report:progress);
                     GvhmrDecoder.Box? followed=null;var lastSeen=double.NaN;float? span=null;
                     float[] Observe(DecodedVideoFrame frame,GvhmrDecoder.Box box)
                     {
                         var crop=VideoCrop.Prepare(frame,box);
-                        return VideoCrop.DecodeHeatmaps(VideoCrop.AverageFlippedHeatmaps(pose.Run(crop,cancellation),pose.Run(VideoCrop.FlipImage(crop),cancellation)),box);
+                        return VideoCrop.DecodeHeatmaps(Flipped(pose,crop,cancellation),box);
                     }
                     Visit((frame,index)=>
                     {
@@ -315,12 +322,12 @@ public static class BodyCapture
             }
             if(state.Frames.Count<count||state.Frames.Any(f=>f.Observations is null))
             {
-                using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
+                using var pose=new VisionModel(Path.Combine(request.Models,"vitpose/vitpose-h-multi-coco.pth"),VisionModel.Kind.VitPoseHeatmaps,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),batch:2,report:progress);
                 Visit((frame,index)=>
                 {
                     if(state.Frames[index].Observations is not null)return;
                     var box=state.Frames[index].Person!.Crop;
-                    var crop=VideoCrop.Prepare(frame,box);var heatmap=VideoCrop.AverageFlippedHeatmaps(pose.Run(crop,cancellation),pose.Run(VideoCrop.FlipImage(crop),cancellation));
+                    var crop=VideoCrop.Prepare(frame,box);var heatmap=Flipped(pose,crop,cancellation);
                     state.Frames[index].Observations=VideoCrop.DecodeHeatmaps(heatmap,box);
                     if(index==0||index==count-1)VideoCrop.SaveOverlay(frame,state.Frames[index].Observations!,Path.Combine(folder,$"observations-{index}.png"));
                     Progress($"Reconstructed 2D pose {index+1}/{count}");
@@ -331,16 +338,34 @@ public static class BodyCapture
             if(File.Exists(wilorPath)&&state.Frames.Any(f=>f.Hands is null))
             {
                 progress?.Invoke("Loading WiLoR for finger capture");
-                using var wilor=new WilorModel(wilorPath,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
+                using var wilor=new WilorModel(wilorPath,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress,batch:HandBatch);
+                // Hands go to the graphics card HandBatch at a time, two frames' worth.
+                // Each batch's per-hand work runs on another thread while the graphics card takes the next batch.
+                var pendingHands=new List<(int Index,int Side,float[] Crop)>();var pendingFrames=new List<int>();Task finishing=Task.CompletedTask;
+                void FlushHands()
+                {
+                    var hands=pendingHands.ToArray();var frames=pendingFrames.ToArray();pendingHands.Clear();pendingFrames.Clear();
+                    var prepared=wilor.Prepare(hands.Select(h=>h.Crop).ToArray(),cancellation);
+                    finishing.GetAwaiter().GetResult();
+                    finishing=Task.Run(()=>
+                    {
+                        var results=wilor.Complete(prepared,cancellation);
+                        foreach(var index in frames)state.Frames[index].Hands=new BodyHandTracks.Sample?[2];
+                        for(var i=0;i<hands.Length;i++)state.Frames[hands[i].Index].Hands![hands[i].Side]=BodyHandTracks.FromHand(results[i].Hand,hands[i].Side==0);
+                        Progress($"Reconstructed fingers {frames[^1]+1}/{count}");
+                    },cancellation);
+                }
                 Visit((frame,index)=>
                 {
                     var current=state.Frames[index];if(current.Hands is not null)return;
-                    var hands=new BodyHandTracks.Sample?[2];
                     for(var side=0;side<2;side++)
                         if(BodyHandTracks.Region(current.Observations!,side==0,frame.Width,frame.Height) is { } box)
-                            hands[side]=BodyHandTracks.Reconstruct(wilor,frame,box,side==0,cancellation);
-                    current.Hands=hands;Progress($"Reconstructed fingers {index+1}/{count}");
+                            pendingHands.Add((index,side,BodyHandTracks.Crop(frame,box,side==0)));
+                    pendingFrames.Add(index);
+                    if(pendingHands.Count>=HandBatch)FlushHands();
                 });
+                if(pendingFrames.Count>0)FlushHands();
+                finishing.GetAwaiter().GetResult();
                 state.Seconds["fingersThisRun"]=watch.Elapsed.TotalSeconds;Save("fingers-ready");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
             }
             // A wrong lens scales depth-wise travel: a 20% narrower crop of the kata clip lost 10% of its 8.5 m.
@@ -355,12 +380,22 @@ public static class BodyCapture
             }
             if(state.Frames.Any(f=>f.ImageFeatures is null))
             {
-                using var hmr=new VisionModel(Path.Combine(request.Models,"hmr2/hmr2.ckpt"),VisionModel.Kind.Hmr2Features,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress);
+                using var hmr=new VisionModel(Path.Combine(request.Models,"hmr2/hmr2.ckpt"),VisionModel.Kind.Hmr2Features,cancellation,gpuCache:Path.Combine(request.Models,"gpu"),report:progress,batch:FeatureBatch);
+                // Frames go to the graphics card FeatureBatch at a time: about a quarter faster per frame than one by one.
+                var pending=new List<(int Index,float[] Crop)>();
+                void Flush()
+                {
+                    var features=hmr.RunBatch(pending.Select(p=>p.Crop).ToArray(),cancellation);
+                    for(var i=0;i<pending.Count;i++)state.Frames[pending[i].Index].ImageFeatures=features[i];
+                    Progress($"Reconstructed image features {pending[^1].Index+1}/{count}");pending.Clear();
+                }
                 Visit((frame,index)=>
                 {
                     if(state.Frames[index].ImageFeatures is not null)return;
-                    state.Frames[index].ImageFeatures=hmr.Run(VideoCrop.Prepare(frame,state.Frames[index].Person!.Crop),cancellation);Progress($"Reconstructed image features {index+1}/{count}");
+                    pending.Add((index,VideoCrop.Prepare(frame,state.Frames[index].Person!.Crop)));
+                    if(pending.Count==FeatureBatch)Flush();
                 });
+                if(pending.Count>0)Flush();
             }
             state.Seconds["imageFeaturesThisRun"]=watch.Elapsed.TotalSeconds;Save("image-features-ready");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
             Save("temporal-inference");var camera=new GvhmrDecoder.Camera(focalLength,metadata.Width*.5f,metadata.Height*.5f);
