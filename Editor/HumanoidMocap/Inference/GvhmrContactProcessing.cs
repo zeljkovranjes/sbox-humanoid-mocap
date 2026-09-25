@@ -16,8 +16,11 @@ public static class GvhmrContactProcessing
     public static ReadOnlySpan<int> ContactJoints=>contactJoints;
     public sealed record Result(GvhmrDecoder.Root Root,Vector3[] JointPositions,Vector3[] ContactTargets);
 
+    /// <param name="inPlace">For a static camera, how surely the performer stays on one spot (0 to 1). The upstream
+    /// processing lets the body stray 25 cm from the camera's view of it and takes each planted foot's slide out of its
+    /// travel; a dancer's gliding feet then walked it away. In place, it keeps within 5 cm and leaves the feet alone.</param>
     public static Result CorrectRoot(SmplxSkeleton skeleton,GvhmrDecoder.Pose pose,GvhmrDecoder.Root root,
-        float[] staticLogits,Vector3[]? cameraTranslation=null,CancellationToken cancellation=default)
+        float[] staticLogits,Vector3[]? cameraTranslation=null,CancellationToken cancellation=default,float inPlace=0)
     {
         var n=pose.Frames;
         if(n<1||n>GvhmrTemporalNetwork.MaximumFrames||root.Orientation.Length!=n||root.Translation.Length!=n||
@@ -32,7 +35,7 @@ public static class GvhmrContactProcessing
         }
         // A supplied camera-translation track explicitly selects the static-camera prior.
         // Never infer a static camera from a lack of odometry.
-        var corrected=cameraTranslation is null?DynamicRoot(root.Translation,original,staticLogits):StaticRoot(skeleton,pose,root,original,staticLogits,cameraTranslation,cancellation);
+        var corrected=cameraTranslation is null?DynamicRoot(root.Translation,original,staticLogits):StaticRoot(skeleton,pose,root,original,staticLogits,cameraTranslation,cancellation,Math.Clamp(inPlace,0,1));
         var joints=new Vector3[original.Length];var ground=float.PositiveInfinity;
         for(var t=0;t<n;t++)for(var j=0;j<22;j++)
         {joints[t*22+j]=original[t*22+j]+corrected[t]-root.Translation[t];ground=Math.Min(ground,joints[t*22+j].Y);}
@@ -64,7 +67,7 @@ public static class GvhmrContactProcessing
         return corrected;
     }
     static Vector3[] StaticRoot(SmplxSkeleton skeleton,GvhmrDecoder.Pose pose,GvhmrDecoder.Root root,
-        Vector3[] world,float[] logits,Vector3[] cameraTranslation,CancellationToken cancellation)
+        Vector3[] world,float[] logits,Vector3[] cameraTranslation,CancellationToken cancellation,float inPlace)
     {
         var n=pose.Frames;
         if(cameraTranslation.Length!=n||cameraTranslation.Any(v=>!GvhmrDecoder.Finite(v)))throw new ArgumentException("Invalid static-camera translation track.");
@@ -81,7 +84,8 @@ public static class GvhmrContactProcessing
         {
             var reference=Vector3.Transform(cameraPelvis[t],cameraToWorld)+offset;
             var error=world[t*22]+accumulated-reference;
-            static float Correction(float value)=>value>-.25f&&value<.25f?0:Math.Clamp(value,-.02f,.02f);
+            var band=.25f-.2f*inPlace;
+            float Correction(float value)=>value>-band&&value<band?0:Math.Clamp(value,-.02f,.02f);
             accumulated-=new Vector3(Correction(error.X),Correction(error.Y),Correction(error.Z));
             corrected[t]+=accumulated;for(var j=0;j<22;j++)positions[t*22+j]+=accumulated;
         }
@@ -91,7 +95,7 @@ public static class GvhmrContactProcessing
             var drift=Vector3.Zero;var count=0;
             for(var j=0;j<6;j++)if(Sigmoid(logits[(t-1)*6+j])>.8f)
             {drift+=positions[t*22+contactJoints[j]]-positions[(t-1)*22+contactJoints[j]];count++;}
-            if(count>0)drift/=count;drift.Y=0;accumulated-=drift;corrected[t]+=accumulated;
+            if(count>0)drift/=count;drift.Y=0;accumulated-=drift*(1-inPlace);corrected[t]+=accumulated;
         }
         return corrected;
     }

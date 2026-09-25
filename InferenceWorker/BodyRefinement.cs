@@ -16,7 +16,7 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v12";
+    public const string Version="gvhmr-stationary-contact-ccd-v17";
     public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v9";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
@@ -26,6 +26,46 @@ public static class BodyRefinement
     /// Using the gravity recorded with the capture, foot predictions where the ankle is more than 25 cm or the
     /// toe more than 15 cm above where the feet are lowest are switched off. Channels: left ankle, left foot,
     /// right ankle, right foot, left wrist, right wrist.</summary>
+    /// <summary>Moves the still camera's camera-space path so planted ankles sit where their lines of sight meet the floor
+    /// (<see cref="StillCameraDepth"/>), and says how surely the performer stays on one spot.</summary>
+    /// <summary>A clip with more of its frames than this without a planted foot is not treated as performed in place.</summary>
+    const float MaximumAirborne=.45f;
+    static float Rate(MotionDocument source)=>source.Frames.Count>1?(float)((source.Frames.Count-1)/(source.Frames[^1].Time-source.Frames[0].Time)):30f;
+    static (string? Note,float InPlace) HoldDistance(MotionDocument source,string motionPath,GvhmrDecoder.Pose pose,float[] staticLogits,Vector3[] cameraTranslation)
+    {
+        var down=Enumerable.Range(0,pose.Frames).Aggregate(Vector3.Zero,(sum,t)=>sum+Vector3.Transform(Vector3.UnitY,Quaternion.Normalize(pose.CameraOrientation[t]*Quaternion.Conjugate(pose.GravityOrientation[t]))));
+        var reconstruction=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(motionPath))!,"reconstruction.json");
+        if(!File.Exists(reconstruction)||source.Cameras.FirstOrDefault(c=>c.Id=="video")?.Intrinsics is not {Length:9} k)return (null,StillCameraDepth.InPlace(cameraTranslation,down,Rate(source)));
+        using var saved=JsonDocument.Parse(File.ReadAllText(reconstruction));
+        var observations=saved.RootElement.GetProperty("Frames").EnumerateArray().Select(f=>f.TryGetProperty("Observations",out var o)&&o.ValueKind==JsonValueKind.Array?o.EnumerateArray().Select(v=>v.GetSingle()).ToArray():Array.Empty<float>()).ToArray();
+        int Role(HumanoidMocap.Mapping.BoneRole role)=>source.Bones.FindIndex(b=>b.Role==role);
+        var feet=new[]{Role(HumanoidMocap.Mapping.BoneRole.FootL),Role(HumanoidMocap.Mapping.BoneRole.FootR)};
+        if(observations.Length!=source.Frames.Count||staticLogits.Length!=source.Frames.Count*6||feet.Any(j=>j<0))return (null,StillCameraDepth.InPlace(cameraTranslation,down,Rate(source)));
+        // The document's axes are the camera's turned half a turn about x.
+        var toCamera=Quaternion.CreateFromAxisAngle(Vector3.UnitX,MathF.PI);
+        var ankles=source.Frames.Select(f=>
+        {
+            var count=source.Bones.Count;var p=new Vector3[count];var q=new Quaternion[count];
+            for(var i=0;i<count;i++)
+            {
+                var local=MotionDocument.V(f.Positions[i]);var rotation=MotionDocument.Q(f.Rotations[i]);var parent=source.Bones[i].Parent;
+                if(parent<0){p[i]=local;q[i]=rotation;}else{p[i]=p[parent]+Vector3.Transform(local,q[parent]);q[i]=Quaternion.Normalize(q[parent]*rotation);}
+            }
+            return feet.Select(j=>Vector3.Transform(p[j],toCamera)).ToArray();
+        }).ToArray();
+        var planted=Enumerable.Range(0,source.Frames.Count).Select(t=>new[]{staticLogits[t*6]>0,staticLogits[t*6+2]>0}).ToArray();
+        var fps=source.Frames.Count>1?(float)((source.Frames.Count-1)/(source.Frames[^1].Time-source.Frames[0].Time)):30f;
+        var solved=StillCameraDepth.Solve(ankles,observations,planted,down,k[0],k[2],k[5],fps);
+        var corrected=solved is { } s?cameraTranslation.Select((v,t)=>v+s.Offsets[t]).ToArray():cameraTranslation;
+        // Acrobatics are left as they are: while the body tumbles in the air the camera's distance to it is poorly
+        // judged and no planted foot ties it to the floor (a backflip clip read as partly in place and moved).
+        var airborne=Enumerable.Range(0,source.Frames.Count).Count(t=>Enumerable.Range(0,4).All(c=>staticLogits[t*6+c]<=0))/(float)source.Frames.Count;
+        var inPlace=airborne>MaximumAirborne?0:StillCameraDepth.InPlace(corrected,down,Rate(source));
+        if(inPlace<.05f)return (null,0);
+        // Only a performance in place is held: travelling clips keep the upstream processing untouched.
+        for(var t=0;t<cameraTranslation.Length;t++)cameraTranslation[t]=Vector3.Lerp(cameraTranslation[t],corrected[t],inPlace);
+        return (FormattableString.Invariant($"Performed in place ({inPlace*100:F0}%): the body is held where the still camera sees it, at the distance where its planted feet meet the floor in the picture{(solved is { } r?$" (corrected by up to {r.Largest*100:F0} cm)":"")}, instead of travelling with planted feet that glide."),inPlace);
+    }
     static float[] GroundedStaticLogits(MotionDocument source,float[] logits)
     {
         var result=logits.ToArray();
@@ -111,7 +151,8 @@ public static class BodyRefinement
         // Camera-space pelvis positions only anchor the root when the camera itself stood still.
         var anchored=!moving||followed is {RotationOnly:true};
         var staticLogits=GroundedStaticLogits(source,prediction.StaticConfidenceLogits);
-        var correction=GvhmrContactProcessing.CorrectRoot(skeleton,pose,root,staticLogits,anchored?cameraTranslation:null,cancellation);
+        var (depthNote,inPlace)=moving?(null,0f):HoldDistance(source,request.Motion,pose,staticLogits,cameraTranslation);
+        var correction=GvhmrContactProcessing.CorrectRoot(skeleton,pose,root,staticLogits,anchored?cameraTranslation:null,cancellation,inPlace);
         progress?.Invoke("Refining source limb contacts");
         var refinedPose=pose with {BodyRotations=GvhmrLimbIk.Solve(skeleton,pose,correction.Root,correction.ContactTargets,cancellation)};
         var refined=BodyMotionBuilder.WorldRelative(skeleton,refinedPose,correction.Root,source,true);
@@ -131,6 +172,7 @@ public static class BodyRefinement
         refined.OriginalReconstruction=new(){Path=Path.GetFullPath(request.Motion),Sha256=rawHash};
         refined.ModelVersion+="; "+(moving?MovingVersion:Version);
         refined.Diagnostics.Add("Original camera-relative reconstruction: "+Path.GetFullPath(request.Motion));
+        if(depthNote is not null)refined.Diagnostics.Add(depthNote);
         refined.Corrections.Add(new(){Type=moving?"GVHMR followed-camera-rotation contact refinement":"GVHMR stationary-camera contact refinement",Start=source.Frames[0].Time,End=source.Frames[^1].Time,Settings=new(){["stationaryCameraAssumption"]=moving?0:1,["ccdIterations"]=2}});
         if(moving)
         {

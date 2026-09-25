@@ -24,6 +24,10 @@ public static class CaptureContactRoot
     public const float MaximumPlantedSpeedCm = 400;
     /// <summary>How quickly the travel correction returns to the captured path: its e-folding time, seconds.</summary>
     public const float LeakSeconds = 2f;
+    /// <summary>Hips staying this close to their middle position (90% of the time, centimetres) mark a performance in
+    /// place: its feet glide, pivot and kick while the body stays put, so their slide is not the body drifting. The
+    /// correction fades out below InPlaceFullCm and is off entirely below InPlaceCm.</summary>
+    public const float InPlaceCm = 15, InPlaceFullCm = 30;
     /// <summary>Per frame, whether the capture's contact tracks put some foot on the floor; null without tracks.</summary>
     public static bool[] ContactMask( int count, SourceScene source, MappingResult mapping )
     {
@@ -34,6 +38,7 @@ public static class CaptureContactRoot
         if ( feet.Length == 0 ) return null;
         return Enumerable.Range( 0, count ).Select( f => feet.Any( p => p[f] >= .5f ) ).ToArray();
     }
+    static float Median( IEnumerable<float> values ) { var sorted = values.OrderBy( v => v ).ToArray(); return sorted[sorted.Length / 2]; }
     /// <returns>The largest horizontal correction, in centimetres.</returns>
     public static float Apply( List<XForm[]> frames, SourceScene source, MappingResult mapping, TargetRig target, TargetUpAxis axis )
     {
@@ -60,9 +65,11 @@ public static class CaptureContactRoot
         // 30 cm sideways off his line: the hips must be at least UprightFraction of their standing height above it.
         var hipsBone = target.BoneForRole( BoneRole.Hips ); var standing = hipsBone is int h0 ? Vector3.Dot( rig.RestWorld[h0].Pos, up ) : 0f;
         var over = new bool[feet.Count][]; for ( var i = 0; i < feet.Count; i++ ) over[i] = new bool[frames.Count];
+        var hips = new Vector3[frames.Count];
         for ( var f = 0; f < frames.Count; f++ )
         {
             FkUtil.ToWorld( frames[f], rig, world );
+            if ( hipsBone is int hb ) { hips[f] = world[hb].Pos; hips[f] -= up * Vector3.Dot( hips[f], up ); }
             for ( var i = 0; i < feet.Count; i++ )
             {
                 position[i][f] = world[feet[i].Joint].Pos;
@@ -70,6 +77,16 @@ public static class CaptureContactRoot
             }
         }
         bool Planted( int i, int f ) => Math.Max( feet[i].Heel[f], feet[i].Toe[f] ) >= .5f && over[i][f];
+        // How much this clip travels: an in-place dance (an emote's hips within 7 cm) walked 3.8 m when every glide of a
+        // "planted" foot was taken out of the body's travel.
+        var travel = 1f;
+        if ( hipsBone is int )
+        {
+            var middle = new Vector3( Median( hips.Select( p => p.X ) ), Median( hips.Select( p => p.Y ) ), Median( hips.Select( p => p.Z ) ) );
+            var spread = hips.Select( p => (p - middle).Length() * toCm ).OrderBy( d => d ).ElementAt( (int)(frames.Count * .9f) );
+            travel = Math.Clamp( (spread - InPlaceCm) / (InPlaceFullCm - InPlaceCm), 0, 1 );
+            if ( travel <= 0 ) return 0;
+        }
         var correction = Vector3.Zero; var largest = 0f; var shifts = new Vector3[frames.Count];
         for ( var f = 1; f < frames.Count; f++ )
         {
@@ -86,7 +103,7 @@ public static class CaptureContactRoot
             // that stays put cannot add up into travel: taking every slide out walked an in-place Fortnite emote 3.8 m
             // across the floor in 15 s. Within a step the planted foot still holds.
             correction *= MathF.Exp( -1f / (fps * LeakSeconds) );
-            if ( planted > 0 ) correction -= slide / planted;
+            if ( planted > 0 ) correction -= slide / planted * travel;
             shifts[f] = correction; largest = Math.Max( largest, correction.Length() * toCm );
         }
         if ( largest < 1 ) return 0;
