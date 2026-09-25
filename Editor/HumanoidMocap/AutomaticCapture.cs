@@ -224,6 +224,15 @@ public sealed partial class RetargetWindow
                 var destination = Path.Combine(Path.GetDirectoryName(motionPath), "automatic.edited.hmotion");
                 File.WriteAllText(destination, cleaned.ToJson()); return destination;
             }, token);
+            // Planted feet held in place over the whole clip. Optional: without it the retarget's own foot lock still runs.
+            if(contactModel is not null)
+            {
+                await EditorPipeline.SwitchToMainThread();if(!this.IsValid())return;
+                _captureStatus.Text="Cleaning foot contacts…";
+                try{await NativeCapture.CleanFootContactsAsync(cleanedPath,contactModel,ReceiveWorkerProgress,token);}
+                catch(OperationCanceledException){throw;}
+                catch(Exception){}
+            }
             await LoadMotionAsync(cleanedPath,motionPath,firstPerson?cleanup:null);
         }
         catch (OperationCanceledException)

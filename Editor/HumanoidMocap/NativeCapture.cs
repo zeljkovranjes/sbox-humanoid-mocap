@@ -24,9 +24,9 @@ internal static class NativeCapture
     // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
     // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
     // zip under a new tag and update these values.
-    const string WorkerTag = "worker-17";
-    const string WorkerSha256 = "d79cd584769987f8db9ab4c6f396a9cfdb44e505cbc743d48dd2623d85554b12";
-    const long WorkerBytes = 173899196;
+    const string WorkerTag = "worker-18";
+    const string WorkerSha256 = "6ae6dc4c56ad7eb01deca383463a0cefb1b2f3b94b77e0acf43a93c24e32346e";
+    const long WorkerBytes = 173903257;
     const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
 
     /// <summary>Only one worker is kept: every other version, and anything a failed install left behind, is
@@ -241,6 +241,14 @@ internal static class NativeCapture
         var (worker,models)=await Prepare(progress,token);
         return await Job(worker,"body-refinement",jobs=>new {Motion=motion,Models=models,Output=jobs,AssumeStationaryCamera=!followedCameraRotation,UseCameraRotation=followedCameraRotation},
             progress,token,command:"body-refine");
+    }
+
+    /// <summary>Holds a body capture's planted feet in place over the whole clip (the worker's LibTorch optimisation,
+    /// see FootContactCleanup), rewriting <paramref name="motion"/>. Returns the worker's note.</summary>
+    public static async Task<string> CleanFootContactsAsync(string motion,string contactModel,Action<string> progress,CancellationToken token)
+    {
+        var (worker,_)=await Prepare(progress,token);
+        return await RunProcess(worker,new[]{"foot-clean",motion,motion,contactModel},progress,token);
     }
 
     public static async Task<string> ImportHot3dAsync(string archive,Action<string> progress,CancellationToken token)

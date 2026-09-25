@@ -57,6 +57,13 @@ try
         {var gpuCache=Path.Combine(request.Models,"gpu");if(Directory.Exists(gpuCache))GpuBackbone.RemoveStale(gpuCache);}
         Console.WriteLine("HM_RESULT "+BodyCapture.Run(request,cancellation.Token,Console.WriteLine));
     }
+    else if(args.Length==4&&args[0]=="foot-clean")
+    {
+        var document=HumanoidMocap.Motion.MotionDocument.Parse(File.ReadAllBytes(args[1]));var clock=System.Diagnostics.Stopwatch.StartNew();
+        var note=FootContactCleanup.Apply(document,args[3],cancellation.Token,Console.WriteLine);
+        if(note is not null)document.Diagnostics.Add(note);File.WriteAllText(args[2],document.ToJson());
+        Console.WriteLine($"HM_RESULT {(note??"nothing to clean")} ({clock.Elapsed.TotalSeconds:F1} s)");
+    }
     else if(args.Length==2&&args[0]=="body-refine")
     {
         var request=JsonSerializer.Deserialize<BodyRefinementRequest>(File.ReadAllText(args[1]))??throw new ArgumentException("Invalid body refinement request.");
