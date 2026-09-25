@@ -22,6 +22,8 @@ public static class CaptureContactRoot
     public const float UprightFraction = .4f;
     /// <summary>Centimetres per second above which a "planted" foot is taken as moving, not sliding.</summary>
     public const float MaximumPlantedSpeedCm = 400;
+    /// <summary>How quickly the travel correction returns to the captured path: its e-folding time, seconds.</summary>
+    public const float LeakSeconds = 2f;
     /// <summary>Per frame, whether the capture's contact tracks put some foot on the floor; null without tracks.</summary>
     public static bool[] ContactMask( int count, SourceScene source, MappingResult mapping )
     {
@@ -80,6 +82,10 @@ public static class CaptureContactRoot
                 if ( step.Length() * toCm > MaximumPlantedSpeedCm / fps ) continue;
                 slide += step; planted++;
             }
+            // The correction eases back toward the captured path (LeakSeconds), so a foot that keeps sliding under a body
+            // that stays put cannot add up into travel: taking every slide out walked an in-place Fortnite emote 3.8 m
+            // across the floor in 15 s. Within a step the planted foot still holds.
+            correction *= MathF.Exp( -1f / (fps * LeakSeconds) );
             if ( planted > 0 ) correction -= slide / planted;
             shifts[f] = correction; largest = Math.Max( largest, correction.Length() * toCm );
         }
