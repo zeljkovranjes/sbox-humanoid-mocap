@@ -18,7 +18,7 @@ sealed class VideoDropArea : Widget
         var row=Layout.AddRow();row.AddStretchCell();var center=row.AddColumn();center.Spacing=12;
         center.Add(new VideoIcon(this));
         center.Add(new Label.Subtitle("Video to motion"){Alignment=TextFlag.Center});
-        var help=center.Add(new Label("Please drag and drop a video here (.mp4, .mov)",this){Alignment=TextFlag.Center});
+        var help=center.Add(new Label("Please drag and drop a video here (.mp4, .mov) or a Record3D LiDAR recording (.r3d)",this){Alignment=TextFlag.Center});
         help.SetStyles($"color: {Theme.TextLight.Hex};");
         center.Add(new Label("or",this){Alignment=TextFlag.Center});
         var choice=center.AddRow();choice.Spacing=8;choice.AddStretchCell();
@@ -27,7 +27,7 @@ sealed class VideoDropArea : Widget
         choice.AddStretchCell();
         row.AddStretchCell();Layout.AddStretchCell();
     }
-    static bool Supported(string path)=>Path.GetExtension(path).ToLowerInvariant() is ".mp4" or ".mov" or ".m4v";
+    static bool Supported(string path)=>Path.GetExtension(path).ToLowerInvariant() is ".mp4" or ".mov" or ".m4v" or ".r3d";
     public override void OnDragHover(DragEvent e)
     {bool valid=e.Data.HasFileOrFolder&&Supported(e.Data.FileOrFolder);hover=valid?1:-1;if(valid)e.Action=DropAction.Link;Update();}
     public override void OnDragDrop(DragEvent e)

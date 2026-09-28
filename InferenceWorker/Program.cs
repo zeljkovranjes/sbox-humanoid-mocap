@@ -27,6 +27,12 @@ try
         await BodyModelDownloads.Ensure(Path.GetFullPath(args[1]),cancellation.Token);
     else if(args.Length==3&&args[0]=="convert-video")
     {VideoConvert.Run(args[1],args[2],cancellation.Token,Console.WriteLine);Console.WriteLine("HM_RESULT "+args[2]);}
+    else if(args.Length==3&&args[0]=="depth-prepare")
+    {
+        var prepared=DepthPrepare.Run(args[1],args[2],cancellation.Token,Console.WriteLine);
+        var resultPath=Path.Combine(args[2],"depth-prepare.json");File.WriteAllText(resultPath,System.Text.Json.JsonSerializer.Serialize(prepared));
+        Console.WriteLine("HM_RESULT "+resultPath);
+    }
     else if(args.Length==3&&args[0]=="lens")
     {
         var metadata=HumanoidMocap.Editor.Mp4Metadata.Read(args[2]);var clock=System.Diagnostics.Stopwatch.StartNew();

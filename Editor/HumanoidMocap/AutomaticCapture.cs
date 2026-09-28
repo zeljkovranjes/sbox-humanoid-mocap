@@ -36,9 +36,9 @@ public sealed partial class RetargetWindow
     /// followed gets the same from GVHMR's world rollout; one that could not be followed stays camera-relative.
     /// The untouched capture stays beside it and Advanced → Restore original capture reopens it.</summary>
     /// <returns>The shot's motion and the capture's own notes (refinement does not keep all of them).</returns>
-    async Task<(string Path,List<string> Notes)> CaptureBodyShotAsync(string video,double start,double end,Mp4Metadata metadata,float? recordedFov,CancellationToken token)
+    async Task<(string Path,List<string> Notes)> CaptureBodyShotAsync(string video,double start,double end,Mp4Metadata metadata,float? recordedFov,CancellationToken token,string depth=null)
     {
-        var bodyPath=await NativeCapture.BodyAsync(video,start,end,metadata.Width,metadata.Height,recordedFov,ReceiveWorkerProgress,token);
+        var bodyPath=await NativeCapture.BodyAsync(video,start,end,metadata.Width,metadata.Height,recordedFov,ReceiveWorkerProgress,token,depth);
         var diagnostics=await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(bodyPath)).Diagnostics,token);
         if(diagnostics.Any(d=>d.StartsWith(StationaryCameraPrefix,StringComparison.Ordinal)))
             return (await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token),diagnostics);
@@ -113,12 +113,37 @@ public sealed partial class RetargetWindow
             try{recordedFov=await Task.Run(()=>Mp4Metadata.Read(video).HorizontalFov,token);}catch(FormatException){}catch(IOException){}
             if(recordedFov is float lensFov&&!(lensFov>=20&&lensFov<=150))recordedFov=null;
             if(firstPerson&&recordingFov is null)recordingFov=recordedFov;
+            // Depth recorded with the video (a LiDAR app's RGBD video or .r3d, or Cinematic mode) is split from the
+            // picture first: an .r3d is not a video at all. Body captures use it; without it nothing changes.
+            var depthSource=_depthSource??await Task.Run(()=>HumanoidMocap.Inference.DepthDetection.DetectWithPicture(video),token);
+            string depthTrack=null,depthNote=null;
+            // A Record3D recording is split even for first person: its picture is half of each frame, or not a video at all.
+            if(depthSource.Kind!=HumanoidMocap.Inference.DepthKind.None&&(!firstPerson||depthSource.Format!=HumanoidMocap.Inference.DepthDetection.Cinematic))
+            {
+                try
+                {
+                    // Already read for the preview (and the preview already shows its picture): reuse it.
+                    var prepared=_depthPrepared is { } ready&&(ready.Video==video||_videoName.ToolTip==video)?ready:await NativeCapture.PrepareDepthAsync(video,ReceiveWorkerProgress,token);
+                    _depthPrepared=prepared;
+                    await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
+                    if(!firstPerson){depthTrack=prepared.Depth;depthNote=prepared.Note;}
+                    if(prepared.HorizontalFov is float depthLens&&string.IsNullOrWhiteSpace(recordingFovText))recordedFov=depthLens;
+                    if(prepared.Video!=video)
+                    {
+                        var original=video;
+                        if(_sourcePath.Text!=prepared.Video){var fov=_recordingFov.Text;LoadVideo(prepared.Video,depthSource);_recordingFov.Text=fov;_videoName.Text=Path.GetFileName(original);_videoName.ToolTip=original;}
+                        video=prepared.Video;
+                    }
+                }
+                catch(OperationCanceledException){throw;}
+                catch(Exception e){depthNote="The recording's depth could not be read ("+e.Message+"); captured from the picture alone.";}
+            }
             // Footage Windows cannot decode (iPhone HEVC, 10-bit exports) is converted once and used in its place.
             var playable=await NativeCapture.PlayableVideoAsync(video,ReceiveWorkerProgress,token);
             await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
             if(playable!=video)
             {
-                var fov=_recordingFov.Text;LoadVideo(playable);_recordingFov.Text=fov;
+                var fov=_recordingFov.Text;LoadVideo(playable,depthSource);_recordingFov.Text=fov;
                 _videoName.Text=Path.GetFileName(video)+" · converted";_videoName.ToolTip=video;video=playable;
             }
             var metadata = await Task.Run(() => Mp4Metadata.Read(video), token);
@@ -155,7 +180,7 @@ public sealed partial class RetargetWindow
                 // Edited footage: the worker captures up to the first cut. Every following shot is captured
                 // the same way, each with its own camera, and the shots are joined into one motion.
                 var shotPaths=new List<string>();double shotEnd=end??metadata.Duration;var shotFailures=new List<string>();
-                var (firstShot,firstNotes)=await CaptureBodyShotAsync(video,start,shotEnd,metadata,recordedFov,token);shotPaths.Add(firstShot);
+                var (firstShot,firstNotes)=await CaptureBodyShotAsync(video,start,shotEnd,metadata,recordedFov,token,depthTrack);shotPaths.Add(firstShot);
                 // The worker lists every shot's start once; each shot is then captured up to the next one.
                 var starts=ShotStarts(firstNotes);
                 var queue=new List<(double Start,double End)>();
@@ -169,7 +194,7 @@ public sealed partial class RetargetWindow
                 {
                     var (shotStart,shotStop)=queue[i];
                     ReceiveWorkerProgress(FormattableString.Invariant($"Capturing shot {i+2} of {queue.Count+1}, from {shotStart:0.00} s"));
-                    try{shotPaths.Add((await CaptureBodyShotAsync(video,shotStart,shotStop,metadata,recordedFov,token)).Path);}
+                    try{shotPaths.Add((await CaptureBodyShotAsync(video,shotStart,shotStop,metadata,recordedFov,token,depthTrack)).Path);}
                     catch(OperationCanceledException){throw;}
                     // A shot the capture cannot follow (a close-up of the legs, nobody in view) is left out.
                     catch(Exception e){shotFailures.Add(FormattableString.Invariant($"The shot from {shotStart:0.00} s was left out: {e.Message}"));}
@@ -217,6 +242,7 @@ public sealed partial class RetargetWindow
                 if(!firstPerson&&FingerLimits.Apply(cleaned) is var fingerSamples&&fingerSamples>0)
                     cleaned.Diagnostics.Add(FormattableString.Invariant($"Fingers held within their joint limits: {fingerSamples} finger joint samples bent backwards or sideways past what fingers can do, or turned about themselves, were brought back."));
                 if(lengthNote is not null)cleaned.Diagnostics.Add(lengthNote);
+                if(depthNote is not null)cleaned.Diagnostics.Add(depthNote);
                 if(contactNote is not null)cleaned.Diagnostics.Add(contactNote);
                 if(contactModel is not null&&new HumanoidMocap.Inference.UnderPressureContacts(contactModel).Estimate(cleaned,token) is { } contacts)
                 {

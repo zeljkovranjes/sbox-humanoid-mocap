@@ -57,3 +57,5 @@ Windows Media Foundation API signatures and GUIDs follow Windows SDK 10.0.26100.
 `Code/HumanoidMocap/Motion/MocapSmooth.cs` ports the zero-phase Butterworth and Gaussian smoothing of [Dylanyz/MocapSmooth](https://github.com/Dylanyz/MocapSmooth) (`Tools/smooth_core.py`), Apache 2.0, which reproduces Rokoko Studio's filter.
 
 `InferenceWorker/MogeLens.cs` adapts the MoGe-2 architecture, DINOv2 ViT-S/14 encoder and focal/shift recovery from [microsoft/MoGe](https://github.com/microsoft/MoGe) (MIT); the `Ruicheng/moge-2-vits-normal` checkpoint is downloaded separately at a pinned revision.
+
+`InferenceWorker/Lzfse.cs` decodes the LZFSE-compressed depth frames of Record3D `.r3d` recordings. It is adapted from the C# port in ShortcutForge (MIT) of Apple's reference decoder at [lzfse/lzfse](https://github.com/lzfse/lzfse), Copyright (c) 2015-2016 Apple Inc., under the BSD 3-Clause license, whose notice is retained in the file header. The Record3D RGBD video and `.r3d` layouts follow the documentation of [marek-simonik/record3d](https://github.com/marek-simonik/record3d); no Record3D code is included.

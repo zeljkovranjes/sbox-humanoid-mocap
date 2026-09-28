@@ -9,7 +9,8 @@ using HumanoidMocap.Inference;
 namespace HumanoidMocap.Worker;
 
 /// <param name="HorizontalFov">The recording lens in degrees when the camera wrote it; null assumes GVHMR's default (focal = image diagonal).</param>
-public sealed record BodyCaptureRequest(string Video,string Models,string Output,double Start,double End,GvhmrDecoder.Box? PersonCrop=null,float? HorizontalFov=null);
+/// <param name="Depth">A <see cref="DepthTrack"/> recorded with the video (see DepthPrepare), or null.</param>
+public sealed record BodyCaptureRequest(string Video,string Models,string Output,double Start,double End,GvhmrDecoder.Box? PersonCrop=null,float? HorizontalFov=null,string? Depth=null);
 public static class BodyCapture
 {
     sealed class FrameState
@@ -421,7 +422,21 @@ public static class BodyCapture
                 motion.ModelVersion+="; "+BodyHandTracks.Version+" "+WilorModel.CheckpointSha256;
             }
             // Hands the picture shows at the head are put at the head's distance, not reaching toward the lens.
-            var wristFits=WristPictureFit.Apply(motion,state.Frames.Select(f=>f.Observations).ToArray(),camera);
+            // Depth recorded with the video (a LiDAR app, or Cinematic mode) measures what the network guesses: the body's
+            // distance and each hand's (see DepthCorrection). Without it, or where it has no reading, nothing changes.
+            float?[][]? measuredWrists=null;DepthTrack? pathTrack=null;File.Delete(Path.Combine(folder,DepthCorrection.RootFile));
+            if(request.Depth is { } depthPath&&File.Exists(depthPath))
+            {
+                var track=DepthTrack.Load(depthPath);
+                if(DepthCorrection.Measure(motion,state.Frames.Select(f=>f.Observations).ToArray(),track,(float)metadata.CaptureFrameRate) is { } measuredDepth)
+                {
+                    if(track.Kind==DepthKind.Full){DepthCorrection.ApplyRoot(motion,measuredDepth.RootScale);DepthCorrection.Save(folder,measuredDepth.RootScale);motion.MetricScaleCalibrated=true;}
+                    measuredWrists=measuredDepth.WristDepth;motion.Diagnostics.Add(measuredDepth.Note);
+                }
+                else motion.Diagnostics.Add("Depth recorded with the video did not see the performer's torso often enough to be used.");
+                pathTrack=track;
+            }
+            var wristFits=WristPictureFit.Apply(motion,state.Frames.Select(f=>f.Observations).ToArray(),camera,measuredWrists);
             WristPictureFit.Save(folder,wristFits);
             if(wristFits.Count>0)motion.Diagnostics.Add(FormattableString.Invariant($"Wrists fitted to the picture: in {wristFits.Count} arm samples the body network put a clearly seen wrist away from where the picture shows it (or a hand at the head well in front of it); the arm was re-solved to put it there."));
             // Floor sits read as crouches by the network: mark them for the retargeter to seat the hips.
@@ -466,6 +481,9 @@ public static class BodyCapture
                 var confidence=new float?[motion.Bones.Count];float sum=0;for(var j=0;j<17;j++)sum+=o[j*3+2];
                 confidence[rootBone]=Math.Clamp(sum/17,0,1);motion.Frames[f].Confidence=confidence;
             }
+            // A phone that recorded its own path (Record3D .r3d) and moved: the body goes into the world along it, last,
+            // after everything above that works in the camera's frame.
+            if(pathTrack is not null)DepthCorrection.ToWorld(motion,pathTrack,out _);
             var result=Path.Combine(folder,"raw-body.hmotion");File.WriteAllText(result+".partial",motion.ToJson());File.Move(result+".partial",result,true);
             state.Seconds["temporalAndDecodeThisRun"]=watch.Elapsed.TotalSeconds;Save("complete");return result;
         }

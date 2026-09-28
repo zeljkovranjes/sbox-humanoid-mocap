@@ -5,6 +5,7 @@ A video-to-animation tool for the [s&box](https://sbox.game) editor.
 - First Person and Third Person workspaces with automatic processing after upload.
 - Phone video uploads from Photos or Gallery, with one-hour QR pairing.
 - Experimental local hand, finger and body reconstruction in C#.
+- Automatic depth detection: Record3D LiDAR videos and `.r3d` files, and iPhone Cinematic mode depth, place the body and hands by measured distance.
 - s&box Human, classic Citizen and custom VMDL, FBX, GLB or glTF targets.
 - Estimated arm IK, optional corrections and root-motion controls.
 - Synchronized video and animation preview with a target-bone overlay and ground grid.

@@ -102,8 +102,8 @@ public sealed class PhoneUploadServer : IDisposable
                 var original=Uri.UnescapeDataString(headers.GetValueOrDefault("X-Filename","video.mp4"));
                 original=Path.GetFileName(original.Replace('\\','/'));var extension=Path.GetExtension(original).ToLowerInvariant();
                 // Only containers the capture pipeline reads; refusing here saves uploading a file that cannot be processed.
-                if(!new[]{".mp4",".mov",".m4v"}.Contains(extension))
-                {await Reply(stream,415,"Choose an MP4, MOV or M4V video. Phone cameras record these; convert other formats to H.264 MP4 first.",cancellation);return;}
+                if(!new[]{".mp4",".mov",".m4v",".r3d"}.Contains(extension))
+                {await Reply(stream,415,"Choose an MP4, MOV or M4V video, or a Record3D .r3d recording. Phone cameras record these; convert other formats to H.264 MP4 first.",cancellation);return;}
                 ownsUpload=await uploads.WaitAsync(0,cancellation);
                 if(!ownsUpload){await Reply(stream,409,"Another upload is in progress. Try again shortly.",cancellation);return;}
                 var safe=new string(Path.GetFileNameWithoutExtension(original).Where(c=>char.IsLetterOrDigit(c)||c=='-'||c=='_').Take(70).ToArray());
@@ -120,11 +120,16 @@ public sealed class PhoneUploadServer : IDisposable
                     }
                 }
                 var header=new byte[12];using(var input=File.OpenRead(partial))input.ReadExactly(header);
-                var mp4=Encoding.ASCII.GetString(header,4,4)=="ftyp";
-                if(!mp4)
+                // The upload is stored byte for byte: depth tracks (Cinematic mode) and .r3d depth arrive as the phone sent them.
+                var mp4=Encoding.ASCII.GetString(header,4,4)=="ftyp";var bundle=extension==".r3d"&&header[0]=='P'&&header[1]=='K';
+                if(!mp4&&!bundle)
                 {await Reply(stream,415,"The file is not a recognized video container.",cancellation);return;}
-                File.Move(partial,destination);partial=null;Received?.Invoke(destination);
-                await Reply(stream,200,"Received. You can choose another video; pairing remains active for one hour.",cancellation);
+                File.Move(partial,destination);partial=null;
+                var depth=await Task.Run(()=>HumanoidMocap.Inference.DepthDetection.DetectWithPicture(destination),cancellation);
+                Received?.Invoke(destination);
+                var depthLine=depth.Kind!=HumanoidMocap.Inference.DepthKind.None?depth.Label+". ":
+                    depth.Format==HumanoidMocap.Inference.DepthDetection.Cinematic?"This Cinematic mode video arrived without its depth: iOS sends a converted copy when a video is picked from Photos. To keep the depth, save it to Files first (Share > Save to Files) and pick it with Choose File here. ":"";
+                await Reply(stream,200,"Received. "+depthLine+"You can choose another video; pairing remains active for one hour.",cancellation);
             }
             catch(OperationCanceledException){}
             catch(Exception e){Error?.Invoke(e.Message);}
@@ -162,7 +167,7 @@ public sealed class PhoneUploadServer : IDisposable
 <title>Humanoid Mocap · Send video</title><style>
 :root{--window:#181818;--surface:#2a2a2a;--border:#3e3e3e;--text:#fff;--muted:#9e9e9e;--primary:#2e70ea}/*EDITOR_THEME*/body{margin:0;background:var(--window);color:var(--text);font:16px Inter,Segoe UI,system-ui,sans-serif}main{max-width:440px;margin:8vh auto;padding:24px}h1{font-size:26px;margin-bottom:8px}p{color:var(--muted);line-height:1.5}label,button{display:block;background:var(--primary);color:white;border:0;border-radius:4px;padding:16px;text-align:center;font:inherit;cursor:pointer}input{box-sizing:border-box;width:100%;margin:20px 0;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text)}input::file-selector-button{padding:8px 12px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;margin-right:12px}button{width:100%;margin-top:20px}button:disabled{opacity:.45}progress{width:100%;height:12px;margin-top:24px}#status{white-space:pre-wrap}small{color:var(--muted)}</style>
 <main><h1>Humanoid Mocap</h1><p>Send a video from your photo library to the editor on your PC. Stay on the same Wi-Fi network.</p>
-<small id="session">Checking pairing…</small><input id="file" type="file" accept="video/*"><button id="send" disabled>Upload video</button>
+<small id="session">Checking pairing…</small><input id="file" type="file" accept="video/*,.mov,.mp4,.m4v,.r3d"><p><small>Recorded with depth (Cinematic mode, or a Record3D .r3d)? Pick the file through Choose File or Browse (the Files app), not the photo library: iOS strips the depth from videos picked from Photos. Save it to Files first with Share &gt; Save to Files.</small></p><button id="send" disabled>Upload video</button>
 <progress id="progress" value="0" max="100"></progress><p id="status" role="status" aria-live="polite"></p></main><script>
 const token=location.hash.slice(1),file=document.querySelector('#file'),send=document.querySelector('#send'),status=document.querySelector('#status'),progress=document.querySelector('#progress');let active=false,busy=false;
 async function session(){try{const r=await fetch('/session',{headers:{'X-Mocap-Token':token}});if(!r.ok)throw Error(await r.text());const seconds=Number(await r.text());active=seconds>0;document.querySelector('#session').textContent='Paired · '+Math.ceil(seconds/60)+' minutes remaining';send.disabled=busy||!active||!file.files.length;}catch(e){active=false;send.disabled=true;document.querySelector('#session').textContent='Pairing ended. Scan a new QR code in the editor.';}}

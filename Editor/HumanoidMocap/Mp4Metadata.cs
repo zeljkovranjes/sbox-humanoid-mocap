@@ -159,10 +159,12 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
             var ctts=tables.FirstOrDefault(b=>b.Type=="ctts");
             if(ctts is not null)
             {
-                stream.Position=ctts.Start;var cv=r.ReadByte();stream.Position=ctts.Start+4;entries=U32(r);frame=0;
+                stream.Position=ctts.Start+4;entries=U32(r);frame=0;
                 for(var i=0;i<entries;i++)
                 {
-                    var repeats=U32(r);var rawOffset=U32(r);long offset=cv==1?unchecked((int)rawOffset):rawOffset;
+                    // iPhones write negative offsets in version 0 tables too (a Cinematic mode clip had -40); no real
+                    // offset reaches 2^31 ticks, so the value is always read as signed.
+                    var repeats=U32(r);var rawOffset=U32(r);long offset=unchecked((int)rawOffset);
                     if(frame+repeats>count)throw new FormatException("Invalid composition times.");
                     for(var j=0;j<repeats;j++)times[frame++]+=(double)offset/scale;
                 }

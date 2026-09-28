@@ -19,13 +19,15 @@ namespace HumanoidMocap.Worker;
 public static class WristPictureFit
 {
     public const string File="wrist-picture-fit.json";
-    public const float FrontMetres=.15f,BehindMetres=.1f,TolerancePicture=.015f,TogetherPicture=.15f,PairPicture=.12f,PairMetres=.2f,PairScore=.4f,MaximumMetres=.25f,MinimumScore=.6f;
+    public const float FrontMetres=.15f,BehindMetres=.1f,TolerancePicture=.015f,TogetherPicture=.15f,PairPicture=.12f,PairMetres=.2f,PairScore=.4f,MaximumMetres=.25f,MaximumMeasuredMetres=.6f,MinimumScore=.6f;
     /// <summary>The corrected local rotations of one arm (upper arm, forearm, hand) in one frame.</summary>
     public sealed record Correction(int Frame,bool Left,float[][] Rotations);
 
     /// <param name="observations">Per frame, COCO 2D joints (x, y, score) in the picture.</param>
     /// <returns>The corrections made, already applied to <paramref name="motion"/> (camera-relative).</returns>
-    public static List<Correction> Apply(MotionDocument motion,IReadOnlyList<float[]?> observations,GvhmrDecoder.Camera camera)
+    /// <param name="measured">Per side (left, right) and frame, the wrist's distance from the camera measured by a depth
+    /// sensor (see <see cref="DepthCorrection"/>), or null; a measurement replaces the head, paired-hands and torso rules.</param>
+    public static List<Correction> Apply(MotionDocument motion,IReadOnlyList<float[]?> observations,GvhmrDecoder.Camera camera,float?[][]? measured=null)
     {
         var result=new List<Correction>();var bones=motion.Bones;var count=motion.Frames.Count;
         int Role(BoneRole role)=>bones.FindIndex(b=>b.Role==role);
@@ -86,31 +88,37 @@ public static class WristPictureFit
                     var keep=slack/error;var tu=ou+(u-ou)*keep;var tv=ov+(v-ov)*keep;
                     goal=new Vector3((tu-camera.CenterX)/camera.FocalLength*z,-(tv-camera.CenterY)/camera.FocalLength*z,-z);
                 }
-                if(Score(1)>=.5f&&Score(2)>=.5f)
+                var target=measured?[left?0:1][t];
+                if(target is float distance&&distance>.05f)goal*=distance/-goal.Z;
+                else
                 {
-                    var eyeY=Math.Min(o[1*3+1],o[2*3+1]);var eyeX=(o[1*3]+o[2*3])/2;
-                    var width=Score(3)>.3f&&Score(4)>.3f?MathF.Abs(o[3*3]-o[4*3]):2.5f*MathF.Abs(o[1*3]-o[2*3]);
-                    if(width>=3&&ov<eyeY&&MathF.Abs(ou-eyeX)<1.2f*width&&ov>eyeY-2.5f*width)
+                    if(Score(1)>=.5f&&Score(2)>=.5f)
                     {
-                        var depth=-goal.Z-(-positions[head].Z);var shift=Math.Clamp(depth,-FrontMetres,BehindMetres)-depth;
-                        goal*=(-goal.Z+shift)/-goal.Z;
+                        var eyeY=Math.Min(o[1*3+1],o[2*3+1]);var eyeX=(o[1*3]+o[2*3])/2;
+                        var width=Score(3)>.3f&&Score(4)>.3f?MathF.Abs(o[3*3]-o[4*3]):2.5f*MathF.Abs(o[1*3]-o[2*3]);
+                        if(width>=3&&ov<eyeY&&MathF.Abs(ou-eyeX)<1.2f*width&&ov>eyeY-2.5f*width)
+                        {
+                            var depth=-goal.Z-(-positions[head].Z);var shift=Math.Clamp(depth,-FrontMetres,BehindMetres)-depth;
+                            goal*=(-goal.Z+shift)/-goal.Z;
+                        }
+                    }
+                    if(pairShift[left?0:1][t] is var pair&&pair!=0)goal*=(-goal.Z+pair)/-goal.Z;
+                    // Never deeper into the torso than the network had it: pulled toward the other hand or the head, a
+                    // hand went 5 cm into the chest. It slides along its line of sight, so the picture does not change.
+                    if(Torso(positions,hips,neck,shoulderL,shoulderR) is { } torso)
+                    {
+                        var need=Math.Min(1,torso.Clearance(wrist));
+                        if(torso.Clearance(goal)<need)
+                        {
+                            Vector3? best=null;
+                            for(var k=1;k<=80&&best is null;k++)foreach(var scale in new[]{1+k*.005f,1-k*.005f})
+                                if(best is null&&torso.Clearance(goal*scale)>=need)best=goal*scale;
+                            goal=best??wrist;
+                        }
                     }
                 }
-                if(pairShift[left?0:1][t] is var pair&&pair!=0)goal*=(-goal.Z+pair)/-goal.Z;
-                // Never deeper into the torso than the network had it: pulled toward the other hand or the head, a
-                // hand went 5 cm into the chest. It slides along its line of sight, so the picture does not change.
-                if(Torso(positions,hips,neck,shoulderL,shoulderR) is { } torso)
-                {
-                    var need=Math.Min(1,torso.Clearance(wrist));
-                    if(torso.Clearance(goal)<need)
-                    {
-                        Vector3? best=null;
-                        for(var k=1;k<=80&&best is null;k++)foreach(var scale in new[]{1+k*.005f,1-k*.005f})
-                            if(best is null&&torso.Clearance(goal*scale)>=need)best=goal*scale;
-                        goal=best??wrist;
-                    }
-                }
-                var change=goal-wrist;if(change.Length()>MaximumMetres)change=Vector3.Normalize(change)*MaximumMetres;
+                var limit=target is not null?MaximumMeasuredMetres:MaximumMetres;
+                var change=goal-wrist;if(change.Length()>limit)change=Vector3.Normalize(change)*limit;
                 move[t]=change;
             }
             // Smoothed so the arm does not snap, and so a single doubtful 2D frame barely moves it.

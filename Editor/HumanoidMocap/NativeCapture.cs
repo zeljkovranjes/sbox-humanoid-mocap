@@ -24,9 +24,9 @@ internal static class NativeCapture
     // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
     // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
     // zip under a new tag and update these values.
-    const string WorkerTag = "worker-19";
-    const string WorkerSha256 = "c0ba3900baf9ec3ca0229cf4d41601908761d1913d68d69c0ff04e85d5ab4464";
-    const long WorkerBytes = 173921133;
+    const string WorkerTag = "worker-20";
+    const string WorkerSha256 = "a1b73ecb29063e33bea46af7b1f122db1b902cb88ff167a2e707ca7ca45c7e8c";
+    const long WorkerBytes = 174837928;
     const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
 
     /// <summary>Only one worker is kept: every other version, and anything a failed install left behind, is
@@ -185,16 +185,31 @@ internal static class NativeCapture
         var folder=Path.Combine(CacheRoot,"converted");var output=Path.Combine(folder,key+".mp4");
         if(!File.Exists(output))
         {
-            PruneConversions(folder);
-            var (worker,_)=await Prepare(progress,token);
-            await Notify(progress,"Converting the video to H.264 for this PC");
-            try{await RunProcess(worker,new[]{"convert-video",video,output},progress,token);}
+            // The preview asks for the same copy as soon as a video is chosen; one conversion serves both.
+            Task job;
+            lock(Converting)
+            {
+                if(!Converting.TryGetValue(output,out job))
+                {
+                    job=Task.Run(async()=>
+                    {
+                        PruneConversions(folder);
+                        var (worker,_)=await Prepare(progress,CancellationToken.None);
+                        await Notify(progress,"Converting the video to H.264 for this PC");
+                        await RunProcess(worker,new[]{"convert-video",video,output},progress,CancellationToken.None);
+                    });
+                    Converting[output]=job;
+                }
+            }
+            try{await job.WaitAsync(token);}
             catch(OperationCanceledException){throw;}
             catch(Exception error){throw new NotSupportedException(undecodable.Message+" Automatic conversion did not work either: "+error.Message,error);}
+            finally{if(job.IsCompleted)lock(Converting)Converting.Remove(output);}
         }
         await Task.Run(()=>EnsureDecodable(output),token);
         return output;
     }
+    static readonly Dictionary<string,Task> Converting=new();
     /// <summary>Converted copies are large; keep those used in the last two weeks, at most eight.</summary>
     static void PruneConversions(string folder)
     {
@@ -205,7 +220,8 @@ internal static class NativeCapture
     }
 
     /// <param name="horizontalFov">The lens the camera recorded, when known; otherwise the worker assumes one.</param>
-    public static async Task<string> BodyAsync(string video,double start,double end,int width,int height,float? horizontalFov,Action<string> progress,CancellationToken token)
+    /// <param name="depth">A depth track recorded with the video (see <see cref="PrepareDepthAsync"/>), or null.</param>
+    public static async Task<string> BodyAsync(string video,double start,double end,int width,int height,float? horizontalFov,Action<string> progress,CancellationToken token,string depth=null)
     {
         await Task.Run(()=>EnsureDecodable(video),token);
         var (worker,models)=await Prepare(progress,token);
@@ -217,7 +233,38 @@ internal static class NativeCapture
         catch(Exception){progress?.Invoke("Finger model unavailable; capturing the body without finger motion");}
         // Omitting PersonCrop enables the worker's automatic image-space subject track.
         // This does not recover camera motion or calibrate world scale.
-        return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end, HorizontalFov = horizontalFov },progress,token);
+        return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end, HorizontalFov = horizontalFov, Depth = depth },progress,token);
+    }
+
+    /// <summary>What the worker's depth-prepare found and wrote: the video to capture (a picture-only copy for
+    /// Record3D recordings, the input otherwise) and the depth track beside it.</summary>
+    public sealed record DepthPrepared(HumanoidMocap.Inference.DepthKind Kind,string Format,string Label,string Video,string Depth,string Note,float? HorizontalFov);
+    /// <summary>Splits a recording with depth into picture and depth (see the worker's DepthPrepare), once per file.</summary>
+    public static async Task<DepthPrepared> PrepareDepthAsync(string video,Action<string> progress,CancellationToken token)
+    {
+        var info=new FileInfo(video);
+        var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{info.FullName}|{info.Length}|{info.LastWriteTimeUtc.Ticks}|depth-1")))[..24];
+        var folder=Path.Combine(CacheRoot,"depth",key);var resultPath=Path.Combine(folder,"depth-prepare.json");
+        DepthPrepared Read()=>JsonSerializer.Deserialize<DepthPrepared>(File.ReadAllText(resultPath));
+        if(File.Exists(resultPath)&&Read() is { } cached&&File.Exists(cached.Video)&&(cached.Depth is null||File.Exists(cached.Depth)))return cached;
+        // The preview reads the depth as soon as a recording is chosen, and capture asks again; one run serves both.
+        Task job;
+        lock(Converting)
+        {
+            if(!Converting.TryGetValue(resultPath,out job))
+            {
+                job=Task.Run(async()=>
+                {
+                    var (worker,_)=await Prepare(progress,CancellationToken.None);
+                    await Notify(progress,"Reading the recording's depth");
+                    await RunProcess(worker,new[]{"depth-prepare",video,folder},progress,CancellationToken.None);
+                });
+                Converting[resultPath]=job;
+            }
+        }
+        try{await job.WaitAsync(token);}
+        finally{if(job.IsCompleted)lock(Converting)Converting.Remove(resultPath);}
+        return Read();
     }
 
     public static async Task<string> HandsAsync(string video,string backend,double start,double end,int width,int height,Action<string> progress,CancellationToken token,float? recordingHorizontalFov=null)

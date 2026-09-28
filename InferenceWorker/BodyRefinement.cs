@@ -16,7 +16,7 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v18";
+    public const string Version="gvhmr-stationary-contact-ccd-v19";
     public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v9";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
@@ -55,7 +55,9 @@ public static class BodyRefinement
         }).ToArray();
         var planted=Enumerable.Range(0,source.Frames.Count).Select(t=>new[]{staticLogits[t*6]>0,staticLogits[t*6+2]>0}).ToArray();
         var fps=source.Frames.Count>1?(float)((source.Frames.Count-1)/(source.Frames[^1].Time-source.Frames[0].Time)):30f;
-        var solved=StillCameraDepth.Solve(ankles,observations,planted,down,k[0],k[2],k[5],fps);
+        // A depth sensor already placed the body at its measured distance (DepthCorrection); the floor-line estimate is not needed.
+        var measured=DepthCorrection.Load(Path.GetDirectoryName(Path.GetFullPath(motionPath))!) is not null;
+        var solved=measured?null:StillCameraDepth.Solve(ankles,observations,planted,down,k[0],k[2],k[5],fps);
         var corrected=solved is { } s?cameraTranslation.Select((v,t)=>v+s.Offsets[t]).ToArray():cameraTranslation;
         // Acrobatics are left as they are: while the body tumbles in the air the camera's distance to it is poorly
         // judged and no planted foot ties it to the floor (a backflip clip read as partly in place and moved).

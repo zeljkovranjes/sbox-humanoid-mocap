@@ -40,7 +40,33 @@ public sealed partial class RetargetWindow
     Widget _advancedPanel;
     Label _motionDetails;
     Button _exportMotionButton, _cancelCaptureButton, _retryCaptureButton;
-    IconButton _uploadVideoButton, _phoneVideoButton;
+    IconButton _uploadVideoButton, _phoneVideoButton, _lidarButton;
+    const string NoLidarTip="LiDAR view: this video has no depth. Record with a LiDAR app (Record3D) or in Cinematic mode to capture depth.";
+    /// <summary>The depth prepared for the loaded recording (its picture-only copy and depth track), once read.</summary>
+    NativeCapture.DepthPrepared _depthPrepared;
+    /// <summary>The file the user chose; the preview may show a converted or picture-only copy of it.</summary>
+    string _recordingPath;
+    bool _lidarView;
+    internal string GateDepthLabel=>_depthSource?.Label??"";
+    internal bool GateLidarAvailable=>_lidarButton.IsValid()&&_lidarButton.Enabled;
+    internal bool GateLidarShown=>_video.IsValid()&&_video.ShowDepth;
+    internal string GateLidarState=>$"view={_lidarView} widget={_video.IsValid()} track={(_video.IsValid()&&_video.HasDepthTrack)} shown={GateLidarShown} widgetId={(_video.IsValid()?_video.GetHashCode():0)}";
+    internal void GateToggleLidar()=>ToggleLidarView();
+    void ToggleLidarView()
+    {
+        if(!_video.IsValid()||!_video.HasDepthTrack)return;
+        _lidarView=!_lidarView;_video.ShowDepth=_lidarView;UpdateLidarButton();
+    }
+    void UpdateLidarButton()
+    {
+        if(!_lidarButton.IsValid())return;
+        var ready=_video.IsValid()&&_video.HasDepthTrack;
+        // A preview swapped for a converted or picture-only copy starts as a new widget: keep the chosen view on it.
+        if(ready&&_video.ShowDepth!=_lidarView)_video.ShowDepth=_lidarView;
+        _lidarButton.Enabled=ready;_lidarButton.Icon=_lidarView&&ready?"videocam":"sensors";
+        _lidarButton.ToolTip=!ready?(_depthSource is {Kind:not HumanoidMocap.Inference.DepthKind.None}?"LiDAR view: reading the recording's depth…":NoLidarTip)
+            :_lidarView?"Show the video":_depthSource.Kind==HumanoidMocap.Inference.DepthKind.Full?"LiDAR view: show the depth the sensor measured":"Depth view: show the depth Cinematic mode estimated";
+    }
     bool _exportCaptured;
     bool _previewFirstPerson = true;
     SegmentedControl _viewPicker;
@@ -78,6 +104,7 @@ public sealed partial class RetargetWindow
         _videoName=upload.Add(new Label("",sourcePanel){MinimumWidth=20},1);
         _videoName.SetStyles($"color: {Theme.TextLight.Hex};");
         // IconButton centers its glyph; an empty-label Button still reserves room for text.
+        _lidarButton=upload.Add(new IconButton("sensors",ToggleLidarView,sourcePanel){FixedSize=26,IconSize=16,Enabled=false,ToolTip=NoLidarTip});
         _uploadVideoButton=upload.Add(new IconButton("video_file",ChooseVideo,sourcePanel){FixedSize=26,IconSize=16,ToolTip="Replace the video: choose another file"});
         _phoneVideoButton=upload.Add(new IconButton("qr_code_2",UploadFromPhone,sourcePanel){FixedSize=26,IconSize=16,ToolTip="Replace the video: upload one from your phone"});
         _videoHost=sourcePanel.Layout.Add(new Widget(sourcePanel),1);_videoHost.Layout=Layout.Column();
@@ -289,11 +316,15 @@ public sealed partial class RetargetWindow
     }
     void ChooseVideo()
     {
-        var path=EditorUtility.OpenFileDialog("Upload video","Video (*.mp4 *.mov)",null);
+        var path=EditorUtility.OpenFileDialog("Upload video","Video or LiDAR recording (*.mp4 *.mov *.m4v *.r3d)",null);
         if(!string.IsNullOrEmpty(path))ImportVideoAndProcess(path);
     }
     void UploadFromPhone()=>new PhoneUploadDialog(this,ImportVideoAndProcess).Show();
-    public void LoadVideo(string path)
+    /// <summary>What <see cref="HumanoidMocap.Inference.DepthDetection"/> found in the loaded recording; null while it looks.</summary>
+    HumanoidMocap.Inference.DepthSourceInfo _depthSource;
+    /// <param name="depth">Depth already found in the recording this file was made from (a converted or picture-only copy), or
+    /// null to look in the file itself.</param>
+    public void LoadVideo(string path,HumanoidMocap.Inference.DepthSourceInfo depth=null)
     {
         // A lens override belongs to this recording. Never carry it into a new
         // upload, including queued phone videos from another camera.
@@ -306,10 +337,63 @@ public sealed partial class RetargetWindow
         _targetHost.Layout.Clear(true);_mocapPreview=null;
         _loader=_targetHost.Layout.Add(new ProcessingIndicator(_targetHost),1);_loader.SetMessage("Preparing…");
         _video=_videoHost.Layout.Add(new MocapVideoWidget(_videoHost,path),1);
+        _depthSource=depth;_lidarView=false;
+        if(depth is not null)
+        {
+            _video.DepthSource=depth;
+            // The depth belongs to the recording, whichever copy of its picture is shown (picture-only, converted for this PC).
+            if(_depthPrepared is { Depth: not null } prepared)_video.SetDepthTrack(prepared.Depth,UpdateLidarButton);
+        }
+        else{_depthPrepared=null;_recordingPath=path;_=DetectDepthAsync(path,_video);}
+        UpdateLidarButton();
+        if(!Path.GetExtension(path).Equals(".r3d",StringComparison.OrdinalIgnoreCase))_=PreviewPlayableAsync(path,_video);
         _video.TogglePlayback=TogglePlayback;
         _video.Show();
         ResetPlayback();
         _captureStatus.Text="Inspect source visibility and lens distortion. No camera calibration is assumed.";
+    }
+    /// <summary>Video this PC cannot decode (iPhone HEVC without Microsoft's HEVC Video Extensions) is converted right away,
+    /// the same conversion capture uses, and the preview switches to the converted copy.</summary>
+    async Task PreviewPlayableAsync(string path,MocapVideoWidget widget)
+    {
+        string playable;
+        try{playable=await NativeCapture.PlayableVideoAsync(path,null,CancellationToken.None);}
+        catch(Exception){return;}
+        await EditorPipeline.SwitchToMainThread();
+        if(playable==path||!this.IsValid()||!widget.IsValid()||_video!=widget)return;
+        _videoHost.Layout.Clear(true);
+        _video=_videoHost.Layout.Add(new MocapVideoWidget(_videoHost,playable),1);_video.TogglePlayback=TogglePlayback;
+        if(_depthSource is not null)_video.DepthSource=_depthSource;
+        if(_depthPrepared is { Depth: not null } prepared)_video.SetDepthTrack(prepared.Depth,UpdateLidarButton);
+        _video.Show();
+    }
+    /// <summary>Reads the depth as soon as it is found, so the LiDAR view is ready and a Record3D recording's preview shows its
+    /// picture (not the depth half beside it). Processing reuses the same prepared files.</summary>
+    async Task PrepareDepthPreviewAsync(string path)
+    {
+        NativeCapture.DepthPrepared prepared;
+        try{prepared=await NativeCapture.PrepareDepthAsync(path,null,CancellationToken.None);}
+        catch(Exception){return;}
+        await EditorPipeline.SwitchToMainThread();
+        if(!this.IsValid()||_recordingPath!=path||prepared.Depth is null)return;
+        _depthPrepared=prepared;
+        if(prepared.Video!=path&&_processing is null&&_sourcePath.Text==path)
+        {
+            var name=_videoName.Text;var fov=_recordingFov.Text;LoadVideo(prepared.Video,_depthSource);_recordingFov.Text=fov;
+            _videoName.Text=name;_videoName.ToolTip=path;
+        }
+        else if(_video.IsValid())_video.SetDepthTrack(prepared.Depth,UpdateLidarButton);
+    }
+    /// <summary>Looks for depth recorded with the video and marks the preview (border and badge) when there is some.</summary>
+    async Task DetectDepthAsync(string path,MocapVideoWidget widget)
+    {
+        var found=await Task.Run(()=>HumanoidMocap.Inference.DepthDetection.DetectWithPicture(path));
+        await EditorPipeline.SwitchToMainThread();
+        if(!this.IsValid()||!widget.IsValid()||_video!=widget)return;
+        _depthSource=found;widget.DepthSource=found;UpdateLidarButton();
+        if(found.Kind!=HumanoidMocap.Inference.DepthKind.None)_=PrepareDepthPreviewAsync(path);
+        if(found.Kind==HumanoidMocap.Inference.DepthKind.None&&found.Format==HumanoidMocap.Inference.DepthDetection.Cinematic)_captureStatus.Text=found.Detail;
+        else if(found.Kind!=HumanoidMocap.Inference.DepthKind.None&&_firstPerson)_captureStatus.Text=found.Label+". Depth is used for full-body captures (Third Person).";
     }
     public async Task LoadMotionAsync(string path,string originalPath=null,CleanupSettings initialCleanup=null)
     {
@@ -323,7 +407,14 @@ public sealed partial class RetargetWindow
             _editSession=loaded.session;_rawMotion=loaded.session.Raw;_editedMotion=doc;_motionPath=path;
             RefreshBodyRefinementButton();
             _appliedCleanup=loaded.session.State.Cleanup;ResetAdjustmentFields();
-            if(File.Exists(doc.SourceVideo))LoadVideo(doc.SourceVideo);
+            if(File.Exists(doc.SourceVideo))
+            {
+                // The same video reloaded with its capture keeps what was found in it (depth, the original file's name).
+                var same=!string.IsNullOrEmpty(_sourcePath.Text)&&string.Equals(Path.GetFullPath(doc.SourceVideo),Path.GetFullPath(_sourcePath.Text),StringComparison.OrdinalIgnoreCase);
+                var name=_videoName.Text;var tip=_videoName.ToolTip;
+                LoadVideo(doc.SourceVideo,same?_depthSource:null);
+                if(same){_videoName.Text=name;_videoName.ToolTip=tip;}
+            }
             else
             {
                 _videoHost.Layout.Clear(true);_video=null;_videoName.Text="Source video unavailable";_videoName.ToolTip=doc.SourceVideo;
