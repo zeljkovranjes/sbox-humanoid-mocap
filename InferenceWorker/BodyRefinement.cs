@@ -16,7 +16,7 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v17";
+    public const string Version="gvhmr-stationary-contact-ccd-v18";
     public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v9";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
@@ -156,6 +156,15 @@ public static class BodyRefinement
         progress?.Invoke("Refining source limb contacts");
         var refinedPose=pose with {BodyRotations=GvhmrLimbIk.Solve(skeleton,pose,correction.Root,correction.ContactTargets,cancellation)};
         var refined=BodyMotionBuilder.WorldRelative(skeleton,refinedPose,correction.Root,source,true);
+        // The builder takes the wrists from the network again; the capture turned them to the hand WiLoR saw.
+        foreach(var role in new[]{HumanoidMocap.Mapping.BoneRole.HandL,HumanoidMocap.Mapping.BoneRole.HandR})
+        {
+            var hand=source.Bones.FindIndex(b=>b.Role==role);if(hand<0)continue;
+            for(var t=0;t<source.Frames.Count;t++){raw.Frames[t].Rotations[hand]=source.Frames[t].Rotations[hand].ToArray();refined.Frames[t].Rotations[hand]=source.Frames[t].Rotations[hand].ToArray();}
+        }
+        // The builder takes the arms from the network again; wrists the capture fitted to the picture stay there.
+        var wristFits=WristPictureFit.Load(Path.GetDirectoryName(Path.GetFullPath(request.Motion))!);
+        WristPictureFit.Replay(raw,wristFits);WristPictureFit.Replay(refined,wristFits);
         for(var channel=0;channel<6;channel++)
         {
             int c=channel;

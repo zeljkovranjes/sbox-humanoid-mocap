@@ -25,7 +25,7 @@ public static class LandmarkCapture
     {
         if(!double.IsFinite(request.Start)||request.Start<0||request.End is double end&&(!double.IsFinite(end)||end<=request.Start))
             throw new ArgumentException("Select a nonempty video range.");
-        var metadata=Mp4Metadata.Read(request.Video);
+        var metadata=PrefetchedFrames.Metadata(request.Video);
         var times=metadata.CaptureTimes.Where(t=>t>=request.Start&&(!request.End.HasValue||t<request.End)).ToArray();
         if(times.Length is <1 or >1800)throw new ArgumentException("Choose between 1 and 1800 frames; the end time is exclusive.");
         var canonical=TargetRig.SboxDefault(File.ReadAllText(request.Template));

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using HumanoidMocap.Editor;
 using HumanoidMocap.Inference;
 
 namespace HumanoidMocap.Worker;
@@ -10,6 +11,12 @@ public static class PrefetchedFrames
 {
     /// <summary>Frames ahead of the consumer. Each 1080p frame is 8 MB, 4K 33 MB.</summary>
     public const int Depth=3;
+    /// <summary>The video's timing, listing only frames the decoder presents (see <see cref="Mp4Metadata.StartingAt"/>).</summary>
+    internal static Mp4Metadata Metadata(string video)
+    {
+        var metadata=Mp4Metadata.Read(video);
+        return WindowsVideoDecoder.FirstFrameTime(video) is double first?metadata.StartingAt(first):metadata;
+    }
     /// <param name="start">Seconds to seek to first (the preceding keyframe); earlier frames may still arrive.</param>
     public static IEnumerable<DecodedVideoFrame> Read(string video,CancellationToken cancellation,double start=0)
     {

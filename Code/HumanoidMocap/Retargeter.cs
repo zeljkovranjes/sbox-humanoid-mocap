@@ -866,6 +866,10 @@ public static class Retargeter
             // After the shoulders are placed: restore the performer's hand spacing on differently proportioned shoulders.
             var arms=Motion.CaptureArmProportion.Apply(frames,scene.Skeleton,map,target.Rig);
             if(arms.Samples>0)AddNote(report,$"Hand spacing: wrists in front of or across the body moved up to {arms.HalfWidthCorrection:F2} target units toward the centre line, because this target's shoulders are wider relative to its arms than the performer's. Arm lengths and hand orientation are preserved; outstretched arms are left alone.");
+            var together=Motion.CaptureHandRelation.Apply(frames,scene.Clips[take].Frames,scene.Skeleton,map,target.Rig);
+            if(together>0)AddNote(report,$"Hands together: in {together} frames the performer's hands were close (crossing, clapping or touching) and the character's hands were placed the same way from each other, scaled to its arms.");
+            var clearance=Motion.CaptureArmClearance.Apply(frames,scene.Clips[take].Frames,scene.Skeleton,map,target.Rig,solved.Fps);
+            if(clearance.Samples>0)AddNote(report,FormattableString.Invariant($"Arms kept out of the body: in {clearance.Samples} hand samples this character's forearm or hand came closer to its torso than the performer's did, and the hand was moved out by up to {clearance.Largest:F1} target units."));
             var relaxed=Motion.RelaxedHands.Apply(frames,map,target.Rig);
             if(relaxed>0)AddNote(report,$"Hands: this body capture has no finger tracks, so {relaxed} target finger joints hold one authored, slightly curled resting pose instead of the bind pose. It is not captured finger motion.");
         }
@@ -896,6 +900,8 @@ public static class Retargeter
                 if(hovering>0)AddNote(report,$"Kept on the floor in {hovering} frames: brief hovering above it or sinking into it removed.");
                 var seatedFrames=Motion.CaptureSeat.Apply(frames,scene,map,target.Rig,target.UpAxis);
                 if(seatedFrames>0)AddNote(report,$"Seated on the floor in {seatedFrames} frames: hips lowered onto the floor, feet and resting hands held in place.");
+                var handsHeld=Motion.CaptureHandPlant.Apply(frames,target.Rig,target.UpAxis,solved.Fps);
+                if(handsHeld>0)AddNote(report,$"Hands on the floor held in place in {handsHeld} hand samples: palms resting on the floor no longer slide or hover.");
             }
         }
         ApplyRootMotion(request.RootMotion, frames, context, report);

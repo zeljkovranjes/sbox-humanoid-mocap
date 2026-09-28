@@ -25,6 +25,8 @@ public static class CaptureSeat
     public const float SeatFraction = .13f;
     /// <summary>Hands this close to the floor, in centimetres, are treated as resting on it.</summary>
     public const float RestingHandCm = 15;
+    /// <summary>Below RestingHandCm a hand is held more the closer it is to the floor, fully this many centimetres lower.</summary>
+    public const float RestingBlendCm = 7;
 
     /// <returns>The number of frames lowered.</returns>
     public static int Apply( List<XForm[]> frames, SourceScene source, MappingResult mapping, TargetRig target, TargetUpAxis axis )
@@ -44,7 +46,7 @@ public static class CaptureSeat
         var arms = new[] { Chain( BoneRole.UpperArmL, BoneRole.LowerArmL, BoneRole.HandL ), Chain( BoneRole.UpperArmR, BoneRole.LowerArmR, BoneRole.HandR ) }
             .Where( c => c is not null ).Select( c => c.Value ).ToArray();
         (int Left, int Right)? level = target.BoneForRole( BoneRole.UpperLegL ) is int legL && target.BoneForRole( BoneRole.UpperLegR ) is int legR ? (legL, legR) : null;
-        var handParts = arms.ToDictionary( a => a.C, a => Enumerable.Range( 0, rig.Count ).Where( b => IsWithin( rig, b, a.C ) ).ToArray() );
+        var handParts = arms.ToDictionary( a => a.C, a => HandParts( target, a.C ) );
         var world = new XForm[rig.Count]; var lowered = 0;
         // Sitting on the floor the hips are a contact: they stay where the sit put them. A seated tumbler's hips
         // otherwise slid 28 cm across the floor while he sat still. Each seated stretch holds the hips at its
@@ -90,10 +92,14 @@ public static class CaptureSeat
             var goals = legs.Select( ( l, i ) => (Chain: l, Goal: feetAnchor[f] is { } held ? new XForm( Vector3.Lerp( world[l.C].Pos, held[i], w ), world[l.C].Rot ) : world[l.C]) ).ToList();
             foreach ( var a in arms )
             {
-                // The fingers reach below the wrist; the lowest of them is the hand's height.
+                // The fingers reach below the wrist; the lowest of them is the hand's height. A hand on the floor stays
+                // where it is, one RestingHandCm or more above it goes down with the body, and one between blends: switching
+                // at one height made a hand dropping past it jump 27 cm in a frame on a sit-down. None goes below the floor.
                 var hand = world[a.C]; var height = handParts[a.C].Min( b => Vector3.Dot( world[b].Pos, up ) );
-                if ( height < RestingHandCm * cm ) goals.Add( (a, hand) );
-                else if ( height < drop ) goals.Add( (a, new XForm( hand.Pos - up * height, hand.Rot )) );
+                var hold = Math.Clamp( (RestingHandCm * cm - height) / (RestingBlendCm * cm), 0, 1 ); hold = hold * hold * (3 - 2 * hold);
+                var down = drop * (1 - hold); var above = height - down;
+                if ( above < 0 ) down += above;
+                if ( down < drop ) goals.Add( (a, new XForm( hand.Pos - up * down, hand.Rot )) );
             }
             for ( var b = 0; b < rig.Count; b++ ) if ( rig[b].ParentIndex < 0 ) frame[b].Pos -= up * drop;
             if ( level is { } pelvis )
@@ -125,6 +131,11 @@ public static class CaptureSeat
         }
         return lowered;
     }
+    /// <summary>The hand and its finger bones. Rigs hang helpers under the hand too (the s&amp;box citizen's
+    /// hand_R_to_L_ikrule sits at the other hand), which made a raised hand count as resting on the floor.</summary>
+    internal static int[] HandParts( TargetRig target, int hand )
+        => Enumerable.Range( 0, target.Skeleton.Count ).Where( b => b == hand || IsWithin( target.Skeleton, b, hand ) && IsFinger( target.RoleOf( b ) ) ).ToArray();
+    static bool IsFinger( BoneRole? role ) => role?.ToString() is { } name && (name.StartsWith( "Thumb" ) || name.StartsWith( "Index" ) || name.StartsWith( "Middle" ) || name.StartsWith( "Ring" ) || name.StartsWith( "Pinky" ));
     static bool IsWithin( HumanoidMocap.Skeleton.Skeleton rig, int bone, int ancestor )
     {
         for ( var b = bone; b >= 0; b = rig[b].ParentIndex ) if ( b == ancestor ) return true;

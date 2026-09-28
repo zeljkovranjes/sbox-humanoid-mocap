@@ -73,7 +73,7 @@ public static class BodyCapture
                     // shot after it can be captured too.
                     if(request.PersonCrop is null&&nextShot is null)
                     {
-                        var times=Mp4Metadata.Read(request.Video).CaptureTimes.Where(t=>t>=lost.RangeStart&&t<request.End).ToArray();
+                        var times=PrefetchedFrames.Metadata(request.Video).CaptureTimes.Where(t=>t>=lost.RangeStart&&t<request.End).ToArray();
                         if(times.Length>2&&ShotCutDetector.FirstCut(request.Video,times,cancellation) is int cut&&times[cut]>seen)
                             nextShot=FormattableString.Invariant($"{ShotCutDetector.Prefix} at {times[cut]:F2} s. The performer was lost before it, at {lost.Time:F2} s; the shot after the cut is captured on its own.");
                     }
@@ -120,7 +120,7 @@ public static class BodyCapture
     static string RunRange(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress,List<FrameState>? seed,string? visibilityNote,string? nextShotNote=null)
     {
         if(!double.IsFinite(request.Start+request.End)||request.Start<0||request.End<=request.Start)throw new ArgumentException("Select a finite non-empty video range.");
-        var metadata=Mp4Metadata.Read(request.Video);var captureTimes=metadata.CaptureTimes;
+        var metadata=PrefetchedFrames.Metadata(request.Video);var captureTimes=metadata.CaptureTimes;
         if(captureTimes.Count(t=>t>=request.Start&&t<request.End) is <1 or >1800)throw new ArgumentException("Select between one and 1,800 frames.");
         // Edited footage: capture the first shot of at least half a second, not a subject followed across a cut.
         string? shotNote=null;string? shotsNote=null;
@@ -219,7 +219,7 @@ public static class BodyCapture
                 if(frame.Time<wanted[index]-.00001)continue;
                 if(index>=1800)throw new InvalidDataException("Decoded range exceeds frame limit.");
                 if(index>=state.Frames.Count)state.Frames.Add(new(){Time=frame.Time});
-                if(Math.Abs(state.Frames[index].Time-frame.Time)>tolerance)throw new InvalidDataException("Decoded timestamps differ from reconstruction checkpoint.");
+                if(Math.Abs(state.Frames[index].Time-frame.Time)>tolerance)throw new InvalidDataException(FormattableString.Invariant($"Decoded timestamps differ from reconstruction checkpoint: frame {index} decoded at {frame.Time:F4} s, saved at {state.Frames[index].Time:F4} s."));
                 process(frame,index++);
             }
             // A damaged or cut-short file lists more frames than it holds; capture what it holds (see Run).
@@ -416,10 +416,14 @@ public static class BodyCapture
             if(state.Frames.All(f=>f.Hands is not null))
             {
                 var turned=BodyHandTracks.FuseWristOrientation(motion,state.Frames.Select(f=>f.Hands!).ToArray());
-                if(turned.Sum()>0)motion.Diagnostics.Add(FormattableString.Invariant($"Wrists: turned toward the hand orientation WiLoR saw in {turned[0]} left and {turned[1]} right frames where it agreed with the body model within {BodyHandTracks.DisagreeDegrees:F0} degrees."));
+                if(turned.Sum()>0)motion.Diagnostics.Add(FormattableString.Invariant($"Wrists: turned toward the hand orientation WiLoR saw in {turned[0]} left and {turned[1]} right frames where it is a hand a wrist can make (bent no more than {BodyHandTracks.DisagreeDegrees:F0} degrees off the forearm)."));
                 BodyHandTracks.Append(motion,state.Frames.Select(f=>f.Hands!).ToArray());
                 motion.ModelVersion+="; "+BodyHandTracks.Version+" "+WilorModel.CheckpointSha256;
             }
+            // Hands the picture shows at the head are put at the head's distance, not reaching toward the lens.
+            var wristFits=WristPictureFit.Apply(motion,state.Frames.Select(f=>f.Observations).ToArray(),camera);
+            WristPictureFit.Save(folder,wristFits);
+            if(wristFits.Count>0)motion.Diagnostics.Add(FormattableString.Invariant($"Wrists fitted to the picture: in {wristFits.Count} arm samples the body network put a clearly seen wrist away from where the picture shows it (or a hand at the head well in front of it); the arm was re-solved to put it there."));
             // Floor sits read as crouches by the network: mark them for the retargeter to seat the hips.
             var cameraDown=Enumerable.Range(0,count).Select(t=>System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY,System.Numerics.Quaternion.Normalize(decoded.CameraOrientation[t]*System.Numerics.Quaternion.Conjugate(decoded.GravityOrientation[t])))).ToArray();
             // Record which way is up in the picture, for levelling a capture that stays camera-relative.

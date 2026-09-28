@@ -212,6 +212,10 @@ public sealed partial class RetargetWindow
                 var raw = MotionDocument.Parse(File.ReadAllBytes(motionPath));
                 // GVHMR already has a temporal model; do not stack generic cleanup on it.
                 var cleaned = firstPerson ? MotionCleanup.Apply(raw, cleanup) : MotionCleanup.SmoothBody(MotionCleanup.RemoveSpikes(MotionCleanup.BridgeDoubtfulFrames(raw).Motion).Motion, cleanup.Smoothing);
+                if(!firstPerson&&LimbHinges.Apply(cleaned) is {Changed:>0} hinges)
+                    cleaned.Diagnostics.Add(FormattableString.Invariant($"Elbows and knees kept bending on their hinge: {hinges.Changed} limb frames bent more than {LimbHinges.ToleranceDegrees:F0} degrees sideways had the upper arm or thigh rolled instead (up to {hinges.LargestDegrees:F0} degrees); no joint moved."));
+                if(!firstPerson&&FingerLimits.Apply(cleaned) is var fingerSamples&&fingerSamples>0)
+                    cleaned.Diagnostics.Add(FormattableString.Invariant($"Fingers held within their joint limits: {fingerSamples} finger joint samples bent backwards or sideways past what fingers can do, or turned about themselves, were brought back."));
                 if(lengthNote is not null)cleaned.Diagnostics.Add(lengthNote);
                 if(contactNote is not null)cleaned.Diagnostics.Add(contactNote);
                 if(contactModel is not null&&new HumanoidMocap.Inference.UnderPressureContacts(contactModel).Estimate(cleaned,token) is { } contacts)

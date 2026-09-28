@@ -10,6 +10,11 @@ namespace HumanoidMocap.Editor;
 internal sealed record Mp4Metadata(double Duration,int Width,int Height,double FrameRate)
 {
     public double[] Times { get; init; } = Array.Empty<double>();
+    /// <summary>The table without the frames before <paramref name="firstDecoded"/>. Windows' decoder (since the
+    /// September 2026 update) no longer presents the first one or two frames of many H.264 files; a table that
+    /// still lists them puts every decoded frame one or two places off.</summary>
+    public Mp4Metadata StartingAt(double firstDecoded)=>Times.Length>0&&firstDecoded>Times[0]+.0001
+        ?this with{Times=Times.Where(t=>t>=firstDecoded-.0001).ToArray()}:this;
     public int RotationDegrees { get; init; }
     /// <summary>The recording lens as a 35 mm-equivalent focal length, when the camera wrote one
     /// (iPhones store com.apple.quicktime.camera.focal_length.35mm_equivalent). Null otherwise.</summary>

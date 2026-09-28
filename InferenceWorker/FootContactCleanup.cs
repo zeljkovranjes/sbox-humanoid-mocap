@@ -18,12 +18,20 @@ namespace HumanoidMocap.Worker;
 ///  - every joint rotation kept close to the original, and rotations kept unit length.</summary>
 public static class FootContactCleanup
 {
-    public const string Version="foot-contact-cleanup-v1";
+    public const string Version="foot-contact-cleanup-v2";
     const int Steps=100;const double LearningRate=1e-2,Rate=100;
-    const double ContactWeight=1,VelocityWeight=.01,ForceWeight=.1,PoseWeight=1,UnitWeight=1e-3;
+    /// <summary>Contacts outweigh the rest: at 1 fast footwork (contacts of five frames) kept two thirds of its slide.</summary>
+    const double ContactWeight=100,VelocityWeight=.01,ForceWeight=.1,PoseWeight=1,UnitWeight=1e-3;
     /// <summary>Weight on the corrections' own acceleration (per frame squared): each frame's change is kept in step with its neighbours', so the clean-up adds no shake.</summary>
     const double SmoothWeight=100;
+    /// <summary>A contact is weighted in over this long at each end, or over a third of it when shorter.</summary>
     const float MarginSeconds=.15f;
+    /// <summary>A planted joint the capture moved this far (metres) from the contact's middle is left to move, fully
+    /// beyond Far: a handspring's toes or a pivot's heel are motion, not a slide.</summary>
+    const float Near=.25f,Far=.45f;
+    /// <summary>Hips less than this far (metres) above a planted joint, fading in to HipsFull: an inverted or rolling
+    /// body is not standing on it.</summary>
+    const float HipsAbove=.2f,HipsFull=.35f;
     static readonly BoneRole[] Roles={BoneRole.Hips,BoneRole.Spine0,BoneRole.Spine1,BoneRole.Spine2,BoneRole.Neck,BoneRole.Head,
         BoneRole.ClavicleR,BoneRole.UpperArmR,BoneRole.LowerArmR,BoneRole.HandR,BoneRole.ClavicleL,BoneRole.UpperArmL,BoneRole.LowerArmL,BoneRole.HandL,
         BoneRole.UpperLegR,BoneRole.LowerLegR,BoneRole.FootR,BoneRole.ToeR,BoneRole.UpperLegL,BoneRole.LowerLegL,BoneRole.FootL,BoneRole.ToeL};
@@ -54,9 +62,10 @@ public static class FootContactCleanup
             var world=new Dictionary<int,(Tensor Rotation,Tensor Position)>();
             foreach(var b in order)
             {
-                var parent=bones[b].Parent;
-                if(parent<0){world[b]=(rotations[b],rootPosition);continue;}
-                var (pr,pp)=world[parent];world[b]=(Multiply(pr,rotations[b]),pp+Rotate(pr,offsets[b]));
+                // Unit rotations: left free, the fit stretched limbs to reach its targets and lost it when written back.
+                var parent=bones[b].Parent;var rotation=rotations[b]/rotations[b].norm(1,true);
+                if(parent<0){world[b]=(rotation,rootPosition);continue;}
+                var (pr,pp)=world[parent];world[b]=(Multiply(pr,rotation),pp+Rotate(pr,offsets[b]));
             }
             return world;
         }
@@ -91,9 +100,11 @@ public static class FootContactCleanup
             // Contact targets: each planted run holds its joint where it is at the run's middle.
             var margin=Math.Max(1,(int)Math.Round(MarginSeconds*count/Math.Max(1e-3,duration)));
             var goals=new List<(int Bone,Tensor Frames,Tensor Target,Tensor Weight)>();
+            static float Fade(float value,float from,float to){var w=Math.Clamp((value-from)/(to-from),0,1);return w*w*(3-2*w);}
+            var hips=world0[mapped[0]].Position.data<float>().ToArray();
             for(var c=0;c<4;c++)
             {
-                var track=tracks[c]!;var bone=contactBones[c];var positions=world0[bone].Position;
+                var track=tracks[c]!;var bone=contactBones[c];var positions=world0[bone].Position;var joint=positions.data<float>().ToArray();
                 for(var f=0;f<count;)
                 {
                     if(track[f]<.5f){f++;continue;}
@@ -101,8 +112,14 @@ public static class FootContactCleanup
                     var length=end-f+1;
                     if(length>=3)
                     {
-                        var weights=Enumerable.Range(0,length).Select(k=>{var edge=Math.Min(k+1,length-k)/(float)(margin+1);var w=Math.Clamp(edge,0,1);return w*w*(3-2*w);}).ToArray();
-                        goals.Add((bone,tensor(Enumerable.Range(f,length).Select(i=>(long)i).ToArray()),positions[(f+end)/2].clone().MoveToOuterDisposeScope(),tensor(weights).MoveToOuterDisposeScope()));
+                        var middle=(f+end)/2;var m=Math.Min(margin,(length-1)/3);
+                        var weights=Enumerable.Range(0,length).Select(k=>
+                        {
+                            var i=f+k;float dx=joint[i*3]-joint[middle*3],dy=joint[i*3+1]-joint[middle*3+1],dz=joint[i*3+2]-joint[middle*3+2];
+                            var moved=MathF.Sqrt(dx*dx+dy*dy+dz*dz);
+                            return Fade(Math.Min(k+1,length-k),0,m+1)*(1-Fade(moved,Near,Far))*Fade(hips[i*3+1]-joint[i*3+1],HipsAbove,HipsFull);
+                        }).ToArray();
+                        if(weights.Any(w=>w>0))goals.Add((bone,tensor(Enumerable.Range(f,length).Select(i=>(long)i).ToArray()),positions[middle].clone().MoveToOuterDisposeScope(),tensor(weights).MoveToOuterDisposeScope()));
                     }
                     f=end+1;
                 }

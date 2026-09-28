@@ -67,13 +67,20 @@ public static class BodyHandTracks
         int start=t,end=t;while(start>0&&samples[start-1][side] is not null)start--;while(end+1<samples.Count&&samples[end+1][side] is not null)end++;
         return end-start+1;
     }
-    /// <summary>Degrees within which WiLoR's hand orientation is taken over, and beyond which it is ignored.</summary>
-    public const float AgreeDegrees=30,DisagreeDegrees=60;
-    /// <summary>Turns each wrist toward the orientation WiLoR saw, where the two roughly agree. The body model
-    /// judges the hand from the whole arm and misses its roll (a palm turned sideways came out facing forward);
-    /// WiLoR sees the hand itself but loses it against dark gloves (it pointed a raised hand downward). Within
-    /// AgreeDegrees WiLoR's orientation is used, beyond DisagreeDegrees the body model's, blended between and
-    /// smoothed over five frames. MANO and the body model share hand axes. Call on the camera-relative document.</summary>
+    /// <summary>Degrees the hand may bend off the forearm in WiLoR's view before it is doubted, and beyond which it
+    /// is ignored.</summary>
+    public const float AgreeDegrees=70,DisagreeDegrees=90;
+    /// <summary>WiLoR's sightings within ConsistencyFrames either side are averaged; spread (mean degrees from their
+    /// average) up to SteadyDegrees is trusted fully, fading to not at all at UnsteadyDegrees.</summary>
+    public const int ConsistencyFrames=3;public const float SteadyDegrees=10,UnsteadyDegrees=25;
+    /// <summary>Turns each wrist to the orientation WiLoR saw where that is a hand a wrist can make. The body model
+    /// judges the hand from the whole arm and keeps it close to the forearm's line: on the "Take the L" emote it
+    /// leaned the raised hand 45 degrees and turned it 90 degrees from what the picture shows, and WiLoR, which
+    /// sees the hand itself, had it right. WiLoR does lose hands against dark gloves (it pointed a raised hand
+    /// downward, off the forearm by more than a wrist bends), so a sighting bent more than AgreeDegrees off the
+    /// forearm counts less and one past DisagreeDegrees not at all, and sightings that do not hold steady from frame
+    /// to frame count less (see ConsistencyFrames). Smoothed over five frames. MANO and the body model share hand axes. Call on the
+    /// camera-relative document.</summary>
     /// <returns>Frames turned, left then right.</returns>
     public static int[] FuseWristOrientation(MotionDocument document,IReadOnlyList<Sample?[]> samples)
     {
@@ -83,6 +90,9 @@ public static class BodyHandTracks
         {
             var wrist=bones.FindIndex(b=>b.Role==(side==0?BoneRole.HandL:BoneRole.HandR));if(wrist<0)continue;
             var parentWorld=new Quaternion[samples.Count];var target=new Quaternion?[samples.Count];var weight=new float[samples.Count];
+            // At rest the hand continues the forearm, along the wrist's offset from the elbow.
+            var forearm=MotionDocument.V(bones[wrist].RestPosition);if(forearm.LengthSquared()<1e-10f)continue;forearm=Vector3.Normalize(forearm);
+            static float Degrees(Quaternion a,Quaternion b)=>2*MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(a,b)),0,1))*180/MathF.PI;
             for(var t=0;t<samples.Count;t++)
             {
                 var chain=new List<int>();for(var b=bones[wrist].Parent;b>=0;b=bones[b].Parent)chain.Add(b);
@@ -90,10 +100,25 @@ public static class BodyHandTracks
                 parentWorld[t]=world;
                 if(samples[t][side]?.Orientation is not {Length:4} o)continue;
                 var seen=Quaternion.Normalize(cameraToDocument*new Quaternion(o[0],o[1],o[2],o[3]));
-                var current=Quaternion.Normalize(world*MotionDocument.Q(document.Frames[t].Rotations[wrist]));
-                var degrees=2*MathF.Acos(Math.Clamp(MathF.Abs(Quaternion.Dot(seen,current)),0,1))*180/MathF.PI;
-                target[t]=seen;weight[t]=Math.Clamp((DisagreeDegrees-degrees)/(DisagreeDegrees-AgreeDegrees),0,1);
+                var local=Quaternion.Normalize(Quaternion.Inverse(world)*seen);
+                var bend=MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Transform(forearm,local),forearm),-1,1))*180/MathF.PI;
+                target[t]=seen;weight[t]=Math.Clamp((DisagreeDegrees-bend)/(DisagreeDegrees-AgreeDegrees),0,1);
             }
+            // WiLoR judges each frame on its own. Its orientation is averaged over neighbouring sightings, and trusted
+            // only as far as they agree: on a steady bare hand they stayed within 5 degrees of each other, on dark
+            // gloves they jumped 30 degrees a frame and passed that shake straight into the wrist.
+            var averaged=new Quaternion?[samples.Count];
+            for(var t=0;t<samples.Count;t++)if(target[t] is { } q)
+            {
+                var sum=Vector4.Zero;var neighbours=new List<Quaternion>();
+                for(var k=Math.Max(0,t-ConsistencyFrames);k<=Math.Min(samples.Count-1,t+ConsistencyFrames);k++)if(target[k] is { } n)
+                {var aligned=Quaternion.Dot(n,q)<0?-n:n;neighbours.Add(aligned);sum+=new Vector4(aligned.X,aligned.Y,aligned.Z,aligned.W);}
+                var mean=Quaternion.Normalize(new Quaternion(sum.X,sum.Y,sum.Z,sum.W));averaged[t]=mean;
+                var spread=neighbours.Average(n=>Degrees(n,mean));
+                weight[t]*=Math.Clamp((UnsteadyDegrees-spread)/(UnsteadyDegrees-SteadyDegrees),0,1);
+                if(neighbours.Count<3)weight[t]=0;
+            }
+            for(var t=0;t<samples.Count;t++)target[t]=averaged[t];
             for(var t=0;t<samples.Count;t++)
             {
                 float sum=0;var n=0;for(var k=Math.Max(0,t-2);k<=Math.Min(samples.Count-1,t+2);k++){sum+=weight[k];n++;}

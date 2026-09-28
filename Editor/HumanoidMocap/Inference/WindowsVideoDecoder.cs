@@ -91,6 +91,8 @@ public sealed class WindowsVideoDecoder : IDisposable
             throw new InvalidDataException("Fractional video aperture offsets are not supported. Export the video with square pixels and an integer crop.");
         return (BitConverter.ToInt16(bytes,2),BitConverter.ToInt16(bytes,6),BitConverter.ToInt32(bytes,8),BitConverter.ToInt32(bytes,12));
     }
+    /// <summary>When the decoder presents a video's first frame, in seconds, or null when it presents none.</summary>
+    public static double? FirstFrameTime(string path){using var decoder=new WindowsVideoDecoder(path);return decoder.Read(default)?.Time;}
     /// <summary>Seek to the preceding keyframe. Read forward to the requested presentation timestamp.</summary>
     public void Seek(double seconds)
     {

@@ -51,7 +51,7 @@ public static class HandCapture
             throw new ArgumentException("Select a nonempty video range.");
         if(request.Camera is null||request.Camera.Fx<=0||request.Camera.Fy<=0||!new[]{request.Camera.Fx,request.Camera.Fy,request.Camera.Cx,request.Camera.Cy}.All(float.IsFinite))
             throw new ArgumentException("Supply estimated or calibrated pinhole camera parameters.");
-        var metadata=Mp4Metadata.Read(request.Video);
+        var metadata=PrefetchedFrames.Metadata(request.Video);
         var times=metadata.CaptureTimes.Where(t=>t>=request.Start&&t<request.End).ToArray();
         if(times.Length is <1 or >1800)throw new ArgumentException("Choose between 1 and 1800 frames; the end time is exclusive.");
         var wild=request.Backend=="wildhands";var mobile=request.Backend=="mobilehand";
