@@ -58,6 +58,8 @@ public static class MotionBricksRebuild
         public bool RecoverMisses { get; init; } = true;
         /// <summary>Raise the AI's leg to the capture's height at each kick's peak (the thigh only, eased in and out), keeping its timing and knee.</summary>
         public bool KeepKickHeight { get; init; } = true;
+        /// <summary>Pin each foot where the capture's foot is planted (leg IK), so the AI's feet do not slide.</summary>
+        public bool PlantFeet { get; init; } = true;
         /// <summary>Degrees the AI's pelvis may lean or turn away from the capture's before the pelvis and spine are eased back
         /// toward it (fully at <see cref="TorsoFull"/>); 0 turns it off.</summary>
         public float TorsoFrom { get; init; } = 4f;
@@ -172,6 +174,9 @@ public static class MotionBricksRebuild
         if ( Settings.TorsoFrom > 0 )
             RecoverTorso( bones, working, original, detail, root );
         var kicks = Settings.KeepKickHeight ? KeepKickHeight( bones, working, originalWorld ) : 0;
+        // Last, so nothing above moves a planted foot again.
+        if ( Settings.PlantFeet )
+            PlantFeet( bones, working, capture, originalWorld );
 
         // Back to the capture's own frames, floor and tilt.
         var unlevel = Quaternion.Conjugate( level );
@@ -390,6 +395,147 @@ public static class MotionBricksRebuild
                 frames[t][j] = new XForm( Vector3.Lerp( frames[t][j].Pos, target[t][j].Pos, weight ),
                     Quaternion.Normalize( Quaternion.Slerp( frames[t][j].Rot, target[t][j].Rot, weight ) ) );
         }
+    }
+
+    /// <summary>A foot counts as planted in the capture within this height (metres) of its lowest and below this horizontal speed (m/s).</summary>
+    const float PlantHeight = .03f, PlantSpeed = .2f;
+    /// <summary>Frames over which a plant lock eases in and out (measured: over 3 frames the foot snapped onto its spot at 40 cm/s),
+    /// and the longest lift inside a plant that is bridged.</summary>
+    const int PlantBlend = 6, PlantBridge = 3;
+
+    /// <summary>The model moves its own legs between key poses, and its hips wander a few centimetres from the capture's, so a foot the
+    /// performer kept planted slid (measured on a floss dance: 3 cm/s in the capture, 50 cm/s rebuilt). Wherever the capture's foot is
+    /// planted, the rebuilt leg is re-solved (two-bone IK, the knee kept on its side) so the ankle sits where the capture's does and the
+    /// foot and toe take the capture's angle, easing in and out over <see cref="PlantBlend"/> frames. Everything above the feet stays
+    /// the model's.</summary>
+    static void PlantFeet( IReadOnlyList<MotionBone> bones, XForm[][] frames, XForm[][] capture, Vector3[][] captureWorld )
+    {
+        var count = frames.Length;
+        var chains = new[]
+        {
+            (BoneRole.UpperLegL, BoneRole.LowerLegL, BoneRole.FootL, BoneRole.ToeL),
+            (BoneRole.UpperLegR, BoneRole.LowerLegR, BoneRole.FootR, BoneRole.ToeR),
+        };
+        int Role( BoneRole r ) => bones.ToList().FindIndex( b => b.Role == r );
+        var weights = chains.Select( c => PlantWeights( captureWorld, Role( c.Item3 ) ) ).ToArray();
+        // A planted leg can only reach the capture's spot if the hips are near where the capture had them (the model's hips
+        // wander up to 10-20 cm): while either foot is planted the hips ease to the capture's position.
+        var root = bones.ToList().FindIndex( b => b.Parent < 0 );
+        if ( root >= 0 )
+            for ( var t = 0; t < count; t++ )
+            {
+                var w = Math.Max( weights[0]?[t] ?? 0, weights[1]?[t] ?? 0 );
+                if ( w > 0 )
+                    frames[t][root] = new XForm( Vector3.Lerp( frames[t][root].Pos, capture[t][root].Pos, w ), frames[t][root].Rot );
+            }
+        for ( var c = 0; c < chains.Length; c++ )
+        {
+            var (thighRole, shinRole, footRole, toeRole) = chains[c];
+            int thigh = Role( thighRole ), shin = Role( shinRole ), foot = Role( footRole ), toe = Role( toeRole );
+            if ( weights[c] is not { } plant || thigh < 0 || shin < 0 || bones[shin].Parent != thigh || bones[foot].Parent != shin )
+                continue;
+            for ( var t = 0; t < count; t++ )
+            {
+                var weight = plant[t];
+                if ( weight <= 0 )
+                    continue;
+                var world = WorldTransforms( bones, frames[t] );
+                var target = Vector3.Lerp( world[foot].Pos, captureWorld[t][foot], weight );
+                Vector3 s = world[thigh].Pos, e = world[shin].Pos, w = world[foot].Pos;
+                float upper = Vector3.Distance( s, e ), lower = Vector3.Distance( e, w );
+                if ( upper < 1e-4f || lower < 1e-4f )
+                    continue;
+                var toGoal = target - s;
+                var d = Math.Clamp( toGoal.Length(), MathF.Abs( upper - lower ) + 1e-4f, upper + lower - 1e-4f );
+                var direction = Vector3.Normalize( toGoal );
+                var pole = e - s;
+                pole -= direction * Vector3.Dot( pole, direction );
+                if ( pole.LengthSquared() < 1e-10f )
+                    continue;
+                pole = Vector3.Normalize( pole );
+                var along = (upper * upper - lower * lower + d * d) / (2 * d);
+                var knee = s + direction * along + pole * MathF.Sqrt( Math.Max( 0, upper * upper - along * along ) );
+                var ankle = s + direction * d;
+                var bend = Between( e - s, knee - s );
+                var thighWorld = Quaternion.Normalize( bend * world[thigh].Rot );
+                var shinTurned = Quaternion.Normalize( bend * world[shin].Rot );
+                var shinWorld = Quaternion.Normalize( Between( Vector3.Transform( w - e, bend ), ankle - knee ) * shinTurned );
+                // The foot takes the capture's angle as the lock comes in.
+                var captureFoot = WorldTransforms( bones, capture[t] )[foot].Rot;
+                var footWorld = Quaternion.Normalize( Quaternion.Slerp( world[foot].Rot, captureFoot, weight ) );
+                var parentWorld = bones[thigh].Parent < 0 ? Quaternion.Identity : world[bones[thigh].Parent].Rot;
+                frames[t][thigh] = new XForm( frames[t][thigh].Pos, Quaternion.Normalize( Quaternion.Conjugate( parentWorld ) * thighWorld ) );
+                frames[t][shin] = new XForm( frames[t][shin].Pos, Quaternion.Normalize( Quaternion.Conjugate( thighWorld ) * shinWorld ) );
+                frames[t][foot] = new XForm( frames[t][foot].Pos, Quaternion.Normalize( Quaternion.Conjugate( shinWorld ) * footWorld ) );
+                if ( toe >= 0 && bones[toe].Parent == foot )
+                    frames[t][toe] = new XForm( frames[t][toe].Pos, Quaternion.Normalize( Quaternion.Slerp( frames[t][toe].Rot, capture[t][toe].Rot, weight ) ) );
+            }
+        }
+    }
+
+    /// <summary>Per frame, how firmly the capture plants <paramref name="foot"/>: 1 while it is low and still, easing to 0 over
+    /// <see cref="PlantBlend"/> frames either side; lifts up to <see cref="PlantBridge"/> frames inside a plant are bridged. Null when there is no such bone.</summary>
+    static float[] PlantWeights( Vector3[][] captureWorld, int foot )
+    {
+        if ( foot < 0 )
+            return null;
+        var count = captureWorld.Length;
+        var heights = captureWorld.Select( w => w[foot].Y ).OrderBy( y => y ).ToArray();
+        var lowest = heights[Math.Min( heights.Length - 1, heights.Length / 20 )];
+        var planted = new bool[count];
+        for ( var t = 0; t < count; t++ )
+        {
+            int a = Math.Max( 0, t - 1 ), b = Math.Min( count - 1, t + 1 );
+            var step = captureWorld[b][foot] - captureWorld[a][foot];
+            var speed = MathF.Sqrt( step.X * step.X + step.Z * step.Z ) * Fps / Math.Max( 1, b - a );
+            planted[t] = captureWorld[t][foot].Y < lowest + PlantHeight && speed < PlantSpeed;
+        }
+        var bridged = (bool[])planted.Clone();
+        for ( var t = 0; t < count; t++ )
+            if ( !planted[t] )
+            {
+                var before = Enumerable.Range( 1, PlantBridge ).Any( k => t - k >= 0 && planted[t - k] );
+                var after = Enumerable.Range( 1, PlantBridge ).Any( k => t + k < count && planted[t + k] );
+                if ( before && after )
+                    bridged[t] = true;
+            }
+        var result = new float[count];
+        for ( var t = 0; t < count; t++ )
+        {
+            if ( bridged[t] ) { result[t] = 1; continue; }
+            var distance = Enumerable.Range( 1, PlantBlend ).FirstOrDefault( k => (t - k >= 0 && bridged[t - k]) || (t + k < count && bridged[t + k]) );
+            if ( distance == 0 )
+                continue;
+            var w = 1f - distance / (PlantBlend + 1f);
+            result[t] = w * w * (3 - 2 * w);
+        }
+        return result;
+    }
+
+    static XForm[] WorldTransforms( IReadOnlyList<MotionBone> bones, XForm[] pose )
+    {
+        var world = new XForm[bones.Count];
+        for ( var j = 0; j < bones.Count; j++ )
+            world[j] = bones[j].Parent < 0 ? pose[j] : XForm.Compose( world[bones[j].Parent], pose[j] );
+        return world;
+    }
+
+    static Quaternion Between( Vector3 from, Vector3 to )
+    {
+        from = Vector3.Normalize( from );
+        to = Vector3.Normalize( to );
+        var dot = Vector3.Dot( from, to );
+        if ( dot > .999999f )
+            return Quaternion.Identity;
+        if ( dot < -.999999f )
+        {
+            var axis = Vector3.Cross( Vector3.UnitX, from );
+            if ( axis.LengthSquared() < 1e-6f )
+                axis = Vector3.Cross( Vector3.UnitY, from );
+            return Quaternion.CreateFromAxisAngle( Vector3.Normalize( axis ), MathF.PI );
+        }
+        var c = Vector3.Cross( from, to );
+        return Quaternion.Normalize( new Quaternion( c.X, c.Y, c.Z, 1 + dot ) );
     }
 
     /// <summary>Degrees a leg must swing from hanging straight down for its peak to count as a kick, and the least shortfall corrected.</summary>

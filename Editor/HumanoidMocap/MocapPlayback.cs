@@ -22,6 +22,7 @@ public sealed partial class RetargetWindow
         }
     }
     internal double PlaybackTime=>_playhead;
+    internal (double Start,double Last) GatePlaybackRange{get{var r=PlaybackRange;return(r.Start,r.Last);}}
     internal double? SourcePlaybackTime=>_video?.FrameTime;
     internal bool SourcePlaybackPaused=>!_playing;
     internal string PlayButtonIcon=>_playButton.Icon;
