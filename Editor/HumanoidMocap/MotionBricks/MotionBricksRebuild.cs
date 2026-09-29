@@ -37,7 +37,7 @@ public static class MotionBricksRebuild
     const int ModelMinimumLength = 10;
     /// <summary>How far (metres, relative to the hips) a body joint of an in-between may stray from the capture before a key pose
     /// is added there: enough for the model's own timing and style, not for a missing kick or swing.</summary>
-    public const float Tolerance = .2f;
+    public const float Tolerance = .15f;
 
     /// <summary>Tuning, for the offline comparison harness; the defaults are what the editor uses.</summary>
     public sealed record Options
@@ -58,9 +58,13 @@ public static class MotionBricksRebuild
         public bool RecoverMisses { get; init; } = true;
         /// <summary>Raise the AI's leg to the capture's height at each kick's peak (the thigh only, eased in and out), keeping its timing and knee.</summary>
         public bool KeepKickHeight { get; init; } = true;
+        /// <summary>Degrees the AI's pelvis may lean or turn away from the capture's before the pelvis and spine are eased back
+        /// toward it (fully at <see cref="TorsoFull"/>); 0 turns it off.</summary>
+        public float TorsoFrom { get; init; } = 4f;
+        public float TorsoFull { get; init; } = 10f;
         /// <summary>A move counts as missed beyond this distance (metres, relative to the hips), and is fully recovered at <see cref="RecoverFull"/>.</summary>
-        public float RecoverFrom { get; init; } = .3f;
-        public float RecoverFull { get; init; } = .45f;
+        public float RecoverFrom { get; init; } = .06f;
+        public float RecoverFull { get; init; } = .14f;
         /// <summary>Frames either side a miss is held, and the smoothing (frames) of the blend weight.</summary>
         public int RecoverHold { get; init; }
         public float RecoverSigma { get; init; } = 2f;
@@ -101,7 +105,7 @@ public static class MotionBricksRebuild
         var anchors = Anchors( bones, original );
         var working = original.Select( p => (XForm[])p.Clone() ).ToArray();
         var detail = DetailBones( bones );
-        var body = Enumerable.Range( 0, bones.Count ).Where( j => !detail.Contains( j ) || bones[j].Role is BoneRole.Head ).ToArray();
+        var body = Enumerable.Range( 0, bones.Count ).Where( j => !detail.Contains( j ) || bones[j].Role is BoneRole.Head or BoneRole.HandL or BoneRole.HandR ).ToArray();
         var originalWorld = capture.Select( p => World( bones, p ) ).ToArray();
         var generated = 0;
         var keys = new SortedSet<int>( anchors );
@@ -165,6 +169,8 @@ public static class MotionBricksRebuild
         if ( Settings.SmoothJoins )
             SmoothJoins( bones, working, anchors, detail, root );
         var captureShare = Settings.RecoverMisses ? RecoverMisses( bones, working, original, originalWorld, detail, root ) : 0;
+        if ( Settings.TorsoFrom > 0 )
+            RecoverTorso( bones, working, original, detail, root );
         var kicks = Settings.KeepKickHeight ? KeepKickHeight( bones, working, originalWorld ) : 0;
 
         // Back to the capture's own frames, floor and tilt.
@@ -193,7 +199,7 @@ public static class MotionBricksRebuild
                 frame.Rotations[j] = MotionDocument.A( q );
             }
         }
-        rebuilt.Diagnostics.Add( $"Rebuilt with MotionBricks: {anchors.Count} key poses from the capture, {generated} in-betweens generated{(captureShare >= .005f ? FormattableString.Invariant( $", {captureShare * 100:F0}% of the limb motion taken back from the capture where the model missed a move" ) : "")}{(kicks > 0 ? $", {kicks} kicks raised to the captured height" : "")}; fingers, neck and head kept from the capture." );
+        rebuilt.Diagnostics.Add( $"Rebuilt with MotionBricks: {anchors.Count} key poses from the capture, {generated} in-betweens generated{(captureShare >= .005f ? FormattableString.Invariant( $", {captureShare * 100:F0}% of the limb motion taken back from the capture where the model missed a move" ) : "")}{(kicks > 0 ? $", {kicks} kicks raised to the captured height" : "")}; fingers, wrists, neck and head kept from the capture." );
         rebuilt.Corrections.Add( new MotionCorrection { Type = "motionbricks-rebuild", Start = source.Frames[0].Time, End = source.Frames[^1].Time,
             Settings = new Dictionary<string, float> { ["keyPoses"] = anchors.Count, ["inBetweens"] = generated } } );
         progress?.Report( 1 );
@@ -350,6 +356,40 @@ public static class MotionBricksRebuild
             }
         }
         return groups.Count == 0 ? 0 : capture / (groups.Count * count);
+    }
+
+    /// <summary>The model keeps the pelvis more upright than a performer who leans into a move (measured on a dance: 9° typical,
+    /// 23° at worst), which squares the whole body up against the video. Where the pelvis leans or turns more than
+    /// <see cref="Options.TorsoFrom"/> away from the capture's, its rotation and the spine's are eased toward the capture's, fully at
+    /// <see cref="Options.TorsoFull"/>, the weight smoothed over time. The pelvis position (the path) stays the model's.</summary>
+    static void RecoverTorso( IReadOnlyList<MotionBone> bones, XForm[][] frames, XForm[][] target, HashSet<int> detail, int root )
+    {
+        var count = frames.Length;
+        var limbs = new[] { BoneRole.UpperLegL, BoneRole.UpperLegR, BoneRole.ClavicleL, BoneRole.ClavicleR, BoneRole.UpperArmL, BoneRole.UpperArmR }
+            .Select( r => bones.ToList().FindIndex( b => b.Role == r ) ).Where( i => i >= 0 ).ToArray();
+        var spine = Enumerable.Range( 0, bones.Count ).Where( j => j != root && !detail.Contains( j ) && !limbs.Any( l => Under( bones, j, l ) ) ).ToArray();
+        float Degrees( Quaternion a, Quaternion b ) => 2 * MathF.Acos( Math.Clamp( MathF.Abs( Quaternion.Dot( Quaternion.Normalize( a ), Quaternion.Normalize( b ) ) ), 0f, 1f ) ) * 180 / MathF.PI;
+        var raw = Enumerable.Range( 0, count ).Select( t => Math.Clamp( (Degrees( frames[t][root].Rot, target[t][root].Rot ) - Settings.TorsoFrom)
+            / Math.Max( .1f, Settings.TorsoFull - Settings.TorsoFrom ), 0, 1 ) ).ToArray();
+        var sigma = Settings.RecoverSigma;
+        var radius = (int)MathF.Ceiling( 3 * sigma );
+        for ( var t = 0; t < count; t++ )
+        {
+            float sum = 0, total = 0;
+            for ( var k = -radius; k <= radius; k++ )
+            {
+                var w = MathF.Exp( -k * k / (2 * sigma * sigma) );
+                sum += raw[Math.Clamp( t + k, 0, count - 1 )] * w;
+                total += w;
+            }
+            var weight = Math.Min( 1f, sum / total );
+            if ( weight < .01f )
+                continue;
+            frames[t][root] = new XForm( frames[t][root].Pos, Quaternion.Normalize( Quaternion.Slerp( frames[t][root].Rot, target[t][root].Rot, weight ) ) );
+            foreach ( var j in spine )
+                frames[t][j] = new XForm( Vector3.Lerp( frames[t][j].Pos, target[t][j].Pos, weight ),
+                    Quaternion.Normalize( Quaternion.Slerp( frames[t][j].Rot, target[t][j].Rot, weight ) ) );
+        }
     }
 
     /// <summary>Degrees a leg must swing from hanging straight down for its peak to count as a kick, and the least shortfall corrected.</summary>
@@ -527,7 +567,10 @@ public static class MotionBricksRebuild
         return anchors;
     }
 
-    /// <summary>Fingers, neck and head: bones the model does not have.</summary>
+    /// <summary>Bones kept from the capture: fingers, neck and head (the model has none), and the wrists. The model's G1 wrist is three
+    /// robot hinges it turns freely (measured: the rebuilt wrist turned nearly twice as fast as the capture's and wobbled 3×), while the
+    /// capture's wrist was fitted to the hand seen in the video. The hand still follows the model's forearm; only its bend at the wrist
+    /// is the capture's.</summary>
     static HashSet<int> DetailBones( IReadOnlyList<MotionBone> bones )
     {
         var neck = bones.ToList().FindIndex( b => b.Role == BoneRole.Neck );
@@ -535,7 +578,7 @@ public static class MotionBricksRebuild
         var hands = bones.Select( ( b, i ) => (b, i) ).Where( x => x.b.Role is BoneRole.HandL or BoneRole.HandR ).Select( x => x.i ).ToArray();
         var result = new HashSet<int>();
         for ( var j = 0; j < bones.Count; j++ )
-            if ( Under( bones, j, neck ) || Under( bones, j, head ) || hands.Any( h => h != j && Under( bones, j, h ) ) || bones[j].Group == "fingers" )
+            if ( Under( bones, j, neck ) || Under( bones, j, head ) || hands.Any( h => Under( bones, j, h ) ) || bones[j].Group == "fingers" )
                 result.Add( j );
         return result;
     }

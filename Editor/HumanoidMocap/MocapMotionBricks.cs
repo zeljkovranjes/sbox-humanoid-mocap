@@ -16,7 +16,7 @@ public sealed partial class RetargetWindow
 {
     /// <summary>Added to the exported file name of the rebuilt animation.</summary>
     public const string RebuiltSuffix="_rebuilt";
-    const string MotionBricksTip="Reconstruct the animation with AI (MotionBricks, NVIDIA's motion model) and compare it side by side with the capture. Key poses come from the capture; the motion between them is generated. Fingers, neck and head keep the capture. Export then writes both.";
+    const string MotionBricksTip="Reconstruct the animation with AI (MotionBricks, NVIDIA's motion model) and compare it side by side with the capture. Key poses come from the capture; the motion between them is generated. Fingers, wrists, neck and head keep the capture. Export then writes both.";
     global::Editor.Button _motionBricksButton;
     /// <summary>The rebuilt capture and the capture it was built from; dropped when the capture changes.</summary>
     MotionDocument _rebuiltMotion,_rebuiltFrom;
