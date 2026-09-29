@@ -6,6 +6,7 @@ A video-to-animation tool for the [s&box](https://sbox.game) editor.
 - Phone video uploads from Photos or Gallery, with one-hour QR pairing.
 - Experimental local hand, finger and body reconstruction in C#.
 - Automatic depth detection: Record3D LiDAR videos and `.r3d` files, and iPhone Cinematic mode depth, place the body and hands by measured distance.
+- Optional **Reconstruct with AI** (NVIDIA MotionBricks) for body captures, shown BEFORE / AFTER and exported as `<name>_rebuilt.fbx`. Needs [Humanoid Retargeter](https://github.com/zeljkovranjes/humanoid-retargeter); the model (about 730 MB) downloads once on request.
 - s&box Human, classic Citizen and custom VMDL, FBX, GLB or glTF targets.
 - Estimated arm IK, optional corrections and root-motion controls.
 - Synchronized video and animation preview with a target-bone overlay and ground grid.

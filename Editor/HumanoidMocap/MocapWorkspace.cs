@@ -47,6 +47,8 @@ public sealed partial class RetargetWindow
     /// <summary>The file the user chose; the preview may show a converted or picture-only copy of it.</summary>
     string _recordingPath;
     bool _lidarView;
+    IconButton _resetViewButton;
+    internal string GateHeaderGeometry=>$"dropdown {_previewTargetPicker.ScreenRect} reset {_resetViewButton.ScreenRect} holder {_resetViewButton.Parent?.ScreenRect}";
     internal string GateDepthLabel=>_depthSource?.Label??"";
     internal bool GateLidarAvailable=>_lidarButton.IsValid()&&_lidarButton.Enabled;
     internal bool GateLidarShown=>_video.IsValid()&&_video.ShowDepth;
@@ -86,6 +88,7 @@ public sealed partial class RetargetWindow
         _workspacePicker.OnSelectedChanged=_=>SetWorkspace(_workspacePicker.SelectedIndex==0);
         _workspacePicker.ToolTip="First Person captures hands for viewmodel arms; Third Person captures the whole body.";
         header.AddStretchCell();
+        _motionBricksButton=header.Add(new Button("Reconstruct with AI","auto_awesome"){FixedHeight=30,Visible=false,ToolTip=MotionBricksTip,Clicked=MotionBricksClicked});
         var advanced=header.Add(new Button("Advanced","tune"){FixedHeight=30});
         advanced.Clicked=ShowAdjustments;
         _exportMotionButton=header.Add(new Button.Primary("Export"){Icon="file_download",Tint=Theme.Green,Enabled=false,FixedHeight=30,MinimumWidth=110});
@@ -125,7 +128,11 @@ public sealed partial class RetargetWindow
         _viewPicker.OnSelectedChanged=_=>SetPreviewView(_viewPicker.SelectedIndex==0);
         // Native IconButton centers its glyph. Button reserves a trailing text gap
         // even with an empty label, shifting this icon two pixels to the left.
-        viewBar.Add(new IconButton("center_focus_strong",()=>_mocapPreview?.ResetView(),animationPanel)
+        // Centred on the framed character dropdown beside it, which its border and padding make 32 px tall
+        // (measured in the editor: the holder sits 3 px above the dropdown, so the 26 px button needs 6 px above it).
+        var reset=viewBar.Add(new Widget(animationPanel){FixedWidth=26,FixedHeight=32});reset.Layout=Layout.Column();
+        reset.Layout.Margin=new Sandbox.UI.Margin(0,6,0,0);
+        _resetViewButton=reset.Layout.Add(new IconButton("center_focus_strong",()=>{_mocapPreview?.ResetView();if(_rebuiltPreview.IsValid())_rebuiltPreview.ResetView();},reset)
             {FixedSize=26,IconSize=16,ToolTip="Reset preview camera"});
         _targetHost=animationPanel.Layout.Add(new Widget(animationPanel),1);_targetHost.Layout=Layout.Column();
         _loader=_targetHost.Layout.Add(new ProcessingIndicator(_targetHost),1);_loader.SetMessage("Preparing…");
@@ -147,7 +154,7 @@ public sealed partial class RetargetWindow
         _clock=transport.Add(new Label("0.00 s",this){MinimumWidth=70});
         _clock.SetStyles($"color: {Theme.TextLight.Hex};");
         var bones=transport.Add(new Checkbox("Bones"){Value=true});
-        bones.Clicked=()=>{_showTargetBones=bones.Value;if(_mocapPreview.IsValid())_mocapPreview.ShowTargetBones=bones.Value;};
+        bones.Clicked=()=>{_showTargetBones=bones.Value;if(_mocapPreview.IsValid())_mocapPreview.ShowTargetBones=bones.Value;if(_rebuiltPreview.IsValid())_rebuiltPreview.ShowTargetBones=bones.Value;};
 
         // Status line: a light (working, ready) and what is happening, with Cancel and Retry beside it.
         var status=Layout.AddRow();status.Spacing=8;
@@ -296,6 +303,7 @@ public sealed partial class RetargetWindow
         _previewFirstPerson=firstPerson;
         if(_viewPicker.SelectedIndex!=(firstPerson?0:1))_viewPicker.SelectedIndex=firstPerson?0:1;
         if(_mocapPreview.IsValid())_mocapPreview.FirstPerson=firstPerson;
+        if(_rebuiltPreview.IsValid())_rebuiltPreview.FirstPerson=firstPerson;
     }
     internal void ShowAdjustments()
     {
@@ -497,12 +505,24 @@ public sealed partial class RetargetWindow
             var session=_editSession;var cleanup=_appliedCleanup;var targetKey=MocapAdjustmentStore.TargetKey(spec,_firstPerson);
             var edit=new MocapAdjustmentStore.TargetEdit{Corrections=corrections,RootMotion=rootMotion,
                 Fov=Number(_fov,75),ViewPitch=Number(_viewPitch,0),NearClip=Number(_viewNear,15)};
-            var result=await Task.Run(()=>Retargeter.Convert(new RetargetRequest{SourceData=bytes,SourceFileName="capture.hmotion",FootPlantCleanup=!corrections.FirstPerson,ArmEffectorIk=false,MocapCorrections=corrections,RootMotion=rootMotion},spec));
+            RetargetResult Convert(byte[] data)=>Retargeter.Convert(new RetargetRequest{SourceData=data,SourceFileName="capture.hmotion",FootPlantCleanup=!corrections.FirstPerson,ArmEffectorIk=false,MocapCorrections=corrections,RootMotion=rootMotion},spec);
+            ClipResult Clip(RetargetResult converted)=>converted.Clips.FirstOrDefault(c=>c.Success)??
+                throw new InvalidOperationException("No convertible motion: "+(converted.Clips.Select(c=>c.Error).FirstOrDefault(e=>!string.IsNullOrWhiteSpace(e))??string.Join(" ",converted.Errors)));
+            var result=await Task.Run(()=>Convert(bytes));
+            // A MotionBricks rebuild of this capture is retargeted the same way and shown beside it.
+            var rebuilt=CurrentRebuilt;
+            var rebuiltResult=rebuilt is null?null:await Task.Run(()=>Convert(Encoding.UTF8.GetBytes(rebuilt.ToJson())));
             await EditorPipeline.SwitchToMainThread();if(!this.IsValid()||revision!=_previewRevision)return;
-            var clip=result.Clips.FirstOrDefault(c=>c.Success);
-            if(clip is null)throw new InvalidOperationException("No convertible motion: "+(result.Clips.Select(c=>c.Error).FirstOrDefault(e=>!string.IsNullOrWhiteSpace(e))??string.Join(" ",result.Errors)));
-            _targetHost.Layout.Clear(true);
-            _mocapPreview=_targetHost.Layout.Add(new PreviewWidget(_targetHost,spec.Rig,target.PreviewModelPath,target.PreviewPositionScale,spec.UpAxis),1);
+            var clip=Clip(result);var rebuiltClip=rebuiltResult is null?null:Clip(rebuiltResult);
+            _targetHost.Layout.Clear(true);_rebuiltPreview=null;_rebuiltBaked=null;
+            PreviewWidget Create(Widget parent)=>new PreviewWidget(parent,spec.Rig,target.PreviewModelPath,target.PreviewPositionScale,spec.UpAxis);
+            if(rebuiltClip is null)_mocapPreview=AddPreviewPane(_targetHost,null,Create);
+            else
+            {
+                var comparison=_targetHost.Layout.Add(new Widget(_targetHost),1);comparison.Layout=Layout.Row();comparison.Layout.Spacing=6;
+                _mocapPreview=AddPreviewPane(comparison,BeforeLabel,Create);
+                _rebuiltPreview=AddPreviewPane(comparison,AfterLabel,Create);
+            }
             _mocapPreview.Playing=false;_mocapPreview.FirstPerson=_previewFirstPerson;_mocapPreview.ViewmodelFov=edit.Fov;_mocapPreview.ViewmodelPitch=edit.ViewPitch;
             _mocapPreview.ShowTargetBones=_showTargetBones;
             var handCoverage=motion.Bones.Select((b,i)=>(b,i))
@@ -522,7 +542,21 @@ public sealed partial class RetargetWindow
             _welcome.Visible=false;_uploadBar.Visible=true;_previewArea.Visible=true;_transportBar.Visible=true;
             Update();
             _previewFps=clip.Fps;_mocapPreview.SetClip(clip);_mocapPreview.ResetView();
-            _mocapPreview.Show();_targetHost.Update();
+            _mocapPreview.Show();
+            if(rebuiltClip is not null)
+            {
+                // The same view, camera and overlays as the capture beside it.
+                var after=_rebuiltPreview;
+                after.Playing=false;after.FirstPerson=_previewFirstPerson;after.ViewmodelFov=edit.Fov;after.ViewmodelPitch=edit.ViewPitch;
+                after.ShowTargetBones=_showTargetBones;after.FramingHands=_mocapPreview.FramingHands;after.ViewmodelNearClipCm=edit.NearClip;after.CaptureView=_mocapPreview.CaptureView;
+                after.SetClip(rebuiltClip);after.ResetView();after.Show();
+                // Turning either view turns the other: the two characters stay seen from the same side.
+                var before=_mocapPreview;
+                before.ViewChanged=()=>{if(after.IsValid())after.CopyViewFrom(before);};
+                after.ViewChanged=()=>{if(before.IsValid())before.CopyViewFrom(after);};
+                _rebuiltBaked=new BakedPreview(rebuiltClip,spec,rebuilt.Space.ToString(),revision,corrections.FirstPerson,props,propPlacement,supportsProps,rebuilt,corrections.WristOffsets);
+            }
+            _targetHost.Update();
             _bakedPreview=new BakedPreview(clip,spec,motion.Space.ToString(),revision,corrections.FirstPerson,props,propPlacement,supportsProps,motion,corrections.WristOffsets);
             SynchronizePreview();
             RefreshContacts();

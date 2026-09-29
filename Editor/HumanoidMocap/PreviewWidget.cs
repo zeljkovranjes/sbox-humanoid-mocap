@@ -1209,7 +1209,18 @@ public sealed partial class PreviewWidget : SceneRenderingWidget
 		{
 			if(FirstPerson){_lookYaw=Math.Clamp(_lookYaw+delta.x*.25f,-100,100);_lookPitch=Math.Clamp(_lookPitch+delta.y*.25f,-70,70);}
 			else _yaw -= delta.x * 0.4f;
+			ViewChanged?.Invoke();
 		}
+	}
+
+	/// <summary>Raised when the user turns the view by dragging; a preview shown beside this one can follow with <see cref="CopyViewFrom"/>.</summary>
+	public Action ViewChanged { get; set; }
+	/// <summary>Takes the orbit angle and head-cam look direction of <paramref name="other"/>, so two previews side by side turn together.</summary>
+	public void CopyViewFrom( PreviewWidget other )
+	{
+		if ( other is null ) return;
+		_yaw = other._yaw; _lookYaw = other._lookYaw; _lookPitch = other._lookPitch;
+		UpdateCamera();
 	}
 
 	public override void OnDestroyed()

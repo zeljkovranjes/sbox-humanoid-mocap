@@ -18,14 +18,15 @@ public sealed partial class RetargetWindow
 
     void InvalidateMocapPreview()
     {
-        ++_previewRevision;_bakedPreview=null;_previewPending=false;
+        ++_previewRevision;_bakedPreview=null;_rebuiltBaked=null;_previewPending=false;
         UpdateTrackingStatus();
         UpdateExportAvailability();
     }
     void UpdateExportAvailability()
     {
         if(_exportMotionButton.IsValid())
-            _exportMotionButton.Enabled=_editedMotion is not null&&_processing is null&&!_exportingMotion
+            _exportMotionButton.Enabled=_editedMotion is not null&&_processing is null&&!_exportingMotion&&_rebuilding is null
                 &&(_exportCaptured||(!_previewPending&&_bakedPreview is not null));
+        RefreshMotionBricksButton();
     }
 }

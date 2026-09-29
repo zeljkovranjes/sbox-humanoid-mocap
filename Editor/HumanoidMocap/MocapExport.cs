@@ -14,6 +14,12 @@ namespace HumanoidMocap.Editor;
 public sealed partial class RetargetWindow
 {
     bool _exportingMotion;
+    /// <summary>Where the last export wrote the MotionBricks rebuild, or null when there was none.</summary>
+    string _exportedRebuilt;
+
+    /// <summary><c>walk.fbx</c> → <c>walk_rebuilt.fbx</c>, beside it.</summary>
+    internal static string RebuiltPath(string path)
+        => Path.Combine(Path.GetDirectoryName(path) ?? "", Path.GetFileNameWithoutExtension(path) + RebuiltSuffix + Path.GetExtension(path));
 
     async void PickMotionExport(bool retarget)
     {
@@ -27,7 +33,9 @@ public sealed partial class RetargetWindow
         {
             await ExportMotionFbxAsync(path, retarget);
             await EditorPipeline.SwitchToMainThread();
-            if (this.IsValid()) _captureStatus.Text = $"Exported {Path.GetFileName(path)} · armature and bone animation.";
+            if (this.IsValid()) _captureStatus.Text = _exportedRebuilt is { } rebuilt
+                ? $"Exported {Path.GetFileName(path)} and {Path.GetFileName(rebuilt)} (AI version) · armature and bone animation."
+                : $"Exported {Path.GetFileName(path)} · armature and bone animation.";
         }
         catch (Exception e) { await EditorPipeline.SwitchToMainThread(); if (this.IsValid()) _captureStatus.Text = e.Message; }
     }
@@ -54,6 +62,19 @@ public sealed partial class RetargetWindow
             if (!this.IsValid()) return;
             var motion = _editedMotion;var preview=_bakedPreview;
             if(retarget&&preview is null)throw new InvalidOperationException("Wait for a valid animation preview before exporting.");
+            // A MotionBricks rebuild shown beside the capture is exported beside it.
+            var rebuilt=CurrentRebuilt;var rebuiltPreview=_rebuiltBaked;_exportedRebuilt=null;
+            if(rebuilt is not null&&retarget&&rebuiltPreview is null)throw new InvalidOperationException("Wait for the rebuilt animation's preview before exporting.");
+            var rebuiltDestination=rebuilt is null?null:RebuiltPath(destination);
+            if(rebuiltDestination is not null&&_target?.ModelFilePath is { } model&&string.Equals(rebuiltDestination,Path.GetFullPath(model),StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Choose a new animation filename to preserve the original target model.");
+            await Write(destination,motion,preview);
+            if(rebuiltDestination is not null){await Write(rebuiltDestination,rebuilt,rebuiltPreview);_exportedRebuilt=rebuiltDestination;}
+        }
+        finally { await EditorPipeline.SwitchToMainThread(); _exportingMotion = false;if(this.IsValid())UpdateExportAvailability(); }
+
+        async Task Write(string destination,MotionDocument motion,BakedPreview preview)
+        {
             var bytes = await Task.Run(() =>
             {
                 if (!retarget) return MotionFbxExport.Write(motion);
@@ -78,6 +99,5 @@ public sealed partial class RetargetWindow
             }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
-        finally { await EditorPipeline.SwitchToMainThread(); _exportingMotion = false;if(this.IsValid())UpdateExportAvailability(); }
     }
 }

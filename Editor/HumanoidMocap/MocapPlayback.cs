@@ -68,8 +68,9 @@ public sealed partial class RetargetWindow
         if(!_mocapPreview.IsValid()||_editedMotion is null)return;
         // Follow the frame actually on screen when decoding is slower than playback.
         var time=_video?.FrameTime??_playhead;
-        _mocapPreview.Scrub((int)Math.Round((time-_editedMotion.Frames[0].Time)*_previewFps));
-        _mocapPreview.ApplyCurrentFrame();
+        var frame=(int)Math.Round((time-_editedMotion.Frames[0].Time)*_previewFps);
+        _mocapPreview.Scrub(frame);_mocapPreview.ApplyCurrentFrame();
+        if(_rebuiltPreview.IsValid()){_rebuiltPreview.Scrub(frame);_rebuiltPreview.ApplyCurrentFrame();}
         UpdateTrackingStatus();
     }
 }
