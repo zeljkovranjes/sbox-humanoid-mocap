@@ -56,9 +56,11 @@ public static class MotionBricksRebuild
         public float Tolerance { get; init; } = MotionBricksRebuild.Tolerance;
         /// <summary>Blend back toward the (smoothed) capture where the model still misses a move it could not be split around.</summary>
         public bool RecoverMisses { get; init; } = true;
+        /// <summary>Raise the AI's leg to the capture's height at each kick's peak (the thigh only, eased in and out), keeping its timing and knee.</summary>
+        public bool KeepKickHeight { get; init; } = true;
         /// <summary>A move counts as missed beyond this distance (metres, relative to the hips), and is fully recovered at <see cref="RecoverFull"/>.</summary>
-        public float RecoverFrom { get; init; } = .1f;
-        public float RecoverFull { get; init; } = .2f;
+        public float RecoverFrom { get; init; } = .3f;
+        public float RecoverFull { get; init; } = .45f;
         /// <summary>Frames either side a miss is held, and the smoothing (frames) of the blend weight.</summary>
         public int RecoverHold { get; init; }
         public float RecoverSigma { get; init; } = 2f;
@@ -163,6 +165,7 @@ public static class MotionBricksRebuild
         if ( Settings.SmoothJoins )
             SmoothJoins( bones, working, anchors, detail, root );
         var captureShare = Settings.RecoverMisses ? RecoverMisses( bones, working, original, originalWorld, detail, root ) : 0;
+        var kicks = Settings.KeepKickHeight ? KeepKickHeight( bones, working, originalWorld ) : 0;
 
         // Back to the capture's own frames, floor and tilt.
         var unlevel = Quaternion.Conjugate( level );
@@ -190,7 +193,7 @@ public static class MotionBricksRebuild
                 frame.Rotations[j] = MotionDocument.A( q );
             }
         }
-        rebuilt.Diagnostics.Add( $"Rebuilt with MotionBricks: {anchors.Count} key poses from the capture, {generated} in-betweens generated{(captureShare >= .005f ? FormattableString.Invariant( $", {captureShare * 100:F0}% of the limb motion taken back from the capture where the model missed a move" ) : "")}; fingers, neck and head kept from the capture." );
+        rebuilt.Diagnostics.Add( $"Rebuilt with MotionBricks: {anchors.Count} key poses from the capture, {generated} in-betweens generated{(captureShare >= .005f ? FormattableString.Invariant( $", {captureShare * 100:F0}% of the limb motion taken back from the capture where the model missed a move" ) : "")}{(kicks > 0 ? $", {kicks} kicks raised to the captured height" : "")}; fingers, neck and head kept from the capture." );
         rebuilt.Corrections.Add( new MotionCorrection { Type = "motionbricks-rebuild", Start = source.Frames[0].Time, End = source.Frames[^1].Time,
             Settings = new Dictionary<string, float> { ["keyPoses"] = anchors.Count, ["inBetweens"] = generated } } );
         progress?.Report( 1 );
@@ -347,6 +350,71 @@ public static class MotionBricksRebuild
             }
         }
         return groups.Count == 0 ? 0 : capture / (groups.Count * count);
+    }
+
+    /// <summary>Degrees a leg must swing from hanging straight down for its peak to count as a kick, and the least shortfall corrected.</summary>
+    const float KickDegrees = 30, KickShortfallDegrees = 3;
+    /// <summary>Frames either side of a kick's peak over which the correction eases in and out.</summary>
+    const int KickReach = 6;
+    /// <summary>Frames either side of the capture's kick peak searched for the AI's own peak.</summary>
+    const int KickSearch = 4;
+
+    /// <summary>The model tends to kick lower than the performer (its training motion and the G1's hips). For each peak of a leg's swing
+    /// in the capture (the leg's angle from straight down, at least <see cref="KickDegrees"/>), the AI's own peak nearby is found and its
+    /// thigh raised within its own swing plane by the missing angle, fully at the AI's peak and eased (Hann) over <see cref="KickReach"/>
+    /// frames either side. The timing, direction and knee bend stay the model's; only the height changes. Returns the kicks corrected.</summary>
+    static int KeepKickHeight( IReadOnlyList<MotionBone> bones, XForm[][] frames, Vector3[][] captureWorld )
+    {
+        var count = frames.Length;
+        var corrected = 0;
+        foreach ( var (thighRole, footRole) in new[] { (BoneRole.UpperLegL, BoneRole.FootL), (BoneRole.UpperLegR, BoneRole.FootR) } )
+        {
+            var thigh = bones.ToList().FindIndex( b => b.Role == thighRole );
+            var foot = bones.ToList().FindIndex( b => b.Role == footRole );
+            if ( thigh < 0 || foot < 0 )
+                continue;
+            float Swing( Vector3[] w ) => MathF.Acos( Math.Clamp( Vector3.Dot( Vector3.Normalize( w[foot] - w[thigh] ), -Vector3.UnitY ), -1f, 1f ) ) * 180 / MathF.PI;
+            var captured = captureWorld.Select( Swing ).ToArray();
+            // Each correction: the AI's peak frame and the world rotation raising its leg by the shortfall.
+            var rebuilt = frames.Select( f => World( bones, f ) ).ToArray();
+            var swing = rebuilt.Select( Swing ).ToArray();
+            var peaks = new List<(int Frame, Quaternion Turn)>();
+            for ( var t = 2; t < count - 2; t++ )
+            {
+                if ( captured[t] < KickDegrees || captured[t] < captured[t - 1] || captured[t] < captured[t + 1] || captured[t] < captured[t - 2] || captured[t] < captured[t + 2] )
+                    continue;
+                var own = t;
+                for ( var k = Math.Max( 0, t - KickSearch ); k <= Math.Min( count - 1, t + KickSearch ); k++ )
+                    if ( swing[k] > swing[own] )
+                        own = k;
+                var shortfall = captured[t] - swing[own];
+                if ( shortfall < KickShortfallDegrees || peaks.Any( p => Math.Abs( p.Frame - own ) <= KickReach ) )
+                    continue;
+                var leg = Vector3.Normalize( rebuilt[own][foot] - rebuilt[own][thigh] );
+                var axis = Vector3.Cross( -Vector3.UnitY, leg );
+                if ( axis.LengthSquared() < 1e-6f )
+                    continue;
+                peaks.Add( (own, Quaternion.CreateFromAxisAngle( Vector3.Normalize( axis ), shortfall * MathF.PI / 180 )) );
+            }
+            foreach ( var (peak, turn) in peaks )
+            {
+                corrected++;
+                for ( var t = Math.Max( 0, peak - KickReach ); t <= Math.Min( count - 1, peak + KickReach ); t++ )
+                {
+                    var weight = .5f + .5f * MathF.Cos( MathF.PI * (t - peak) / (KickReach + 1f) );
+                    weight *= weight * (3 - 2 * weight);
+                    var partial = Quaternion.Slerp( Quaternion.Identity, turn, weight );
+                    // World turn of the thigh, written back as a local rotation under its (unchanged) parent.
+                    var parentWorld = Quaternion.Identity;
+                    for ( var b = bones[thigh].Parent; b >= 0; b = bones[b].Parent )
+                        parentWorld = Quaternion.Normalize( frames[t][b].Rot * parentWorld );
+                    var worldThigh = Quaternion.Normalize( parentWorld * frames[t][thigh].Rot );
+                    var local = Quaternion.Normalize( Quaternion.Conjugate( parentWorld ) * Quaternion.Normalize( partial * worldThigh ) );
+                    frames[t][thigh] = new XForm( frames[t][thigh].Pos, local );
+                }
+            }
+        }
+        return corrected;
     }
 
     /// <summary>Frames either side of a join that are eased.</summary>
