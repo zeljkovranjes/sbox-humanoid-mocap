@@ -247,6 +247,9 @@ public sealed partial class RetargetWindow
         cleanupCard.Header("auto_fix_high","Cleanup");
         var cleanup=cleanupCard.Layout.AddRow();cleanup.Spacing=8;
         _rootSmooth=Field(cleanup,"Root cleanup","0.25");_armSmooth=Field(cleanup,"Arms","0.10");_fingerSmooth=Field(cleanup,"Fingers","0.025");
+        _speedField=Field(cleanup,"Animation speed (%)","100");
+        _speedField.ToolTip="How fast the animation plays and exports, in percent of the video's speed. A very fast clip is offered a slower speed after capture.";
+        _speedField.EditingFinished+=AnimationSpeedEdited;
         _smoothing=Field(cleanup,"Smoothing","7");_smoothing.ToolTip="Zero-phase smoothing strength, 0.5 to 10 (higher is smoother); 0 turns it off. 7 matches Rokoko's default.";
         cleanup.Add(new Button("Apply adjustments","check"){Clicked=()=>_=ProcessMotionAsync()});
         var contacts=_advancedPanel.Layout.Add(new MocapCard(this));contacts.Layout.Margin=10;

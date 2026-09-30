@@ -44,6 +44,13 @@ internal sealed record Mp4Metadata(double Duration,int Width,int Height,double F
     {
         get{var stride=CaptureStride;return stride==1?Times:Times.Where((_,i)=>i%stride==0).ToArray();}
     }
+    /// <summary>The frames a second capture pass reads to fill in the ones <see cref="CaptureTimes"/> skips: with every other frame
+    /// captured, phase 1 is the odd frames. Phase 0, or footage captured whole, is <see cref="CaptureTimes"/>.</summary>
+    public double[] CaptureTimesAt(int phase)
+    {
+        var stride=CaptureStride;if(stride==1||phase<=0)return CaptureTimes;
+        return Times.Where((_,i)=>i%stride==phase%stride).ToArray();
+    }
     /// <summary>Frames per second of the captured samples.</summary>
     public double CaptureFrameRate=>FrameRate/CaptureStride;
     public const string SamplingPrefix="High frame rate footage";

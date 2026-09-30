@@ -24,9 +24,9 @@ internal static class NativeCapture
     // prebuilt from the project's GitHub release instead. A changed worker needs a new release: publish
     // InferenceWorker self-contained for win-x64 with DebugType none, zip the folder's contents, upload the
     // zip under a new tag and update these values.
-    const string WorkerTag = "worker-21";
-    const string WorkerSha256 = "619e5bbff82f15640f6f11c5f7ad05a60e72728fefbdca1d3233dab71a11c8e7";
-    const long WorkerBytes = 174838950;
+    const string WorkerTag = "worker-22";
+    const string WorkerSha256 = "9203600348f4f764dd85f20ea4d337e37083a20b51eee4b7ba106da6510cd625";
+    const long WorkerBytes = 174845225;
     const string WorkerUrl = "https://github.com/zeljkovranjes/sbox-humanoid-mocap/releases/download/" + WorkerTag + "/HumanoidMocap.Worker-win-x64.zip";
 
     /// <summary>Only one worker is kept: every other version, and anything a failed install left behind, is
@@ -221,7 +221,7 @@ internal static class NativeCapture
 
     /// <param name="horizontalFov">The lens the camera recorded, when known; otherwise the worker assumes one.</param>
     /// <param name="depth">A depth track recorded with the video (see <see cref="PrepareDepthAsync"/>), or null.</param>
-    public static async Task<string> BodyAsync(string video,double start,double end,int width,int height,float? horizontalFov,Action<string> progress,CancellationToken token,string depth=null)
+    public static async Task<string> BodyAsync(string video,double start,double end,int width,int height,float? horizontalFov,Action<string> progress,CancellationToken token,string depth=null,int phase=0)
     {
         await Task.Run(()=>EnsureDecodable(video),token);
         var (worker,models)=await Prepare(progress,token);
@@ -233,7 +233,7 @@ internal static class NativeCapture
         catch(Exception){progress?.Invoke("Finger model unavailable; capturing the body without finger motion");}
         // Omitting PersonCrop enables the worker's automatic image-space subject track.
         // This does not recover camera motion or calibrate world scale.
-        return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end, HorizontalFov = horizontalFov, Depth = depth },progress,token);
+        return await Job(worker,"body",jobs=>new { Video = video, Models = models, Output = jobs, Start = start, End = end, HorizontalFov = horizontalFov, Depth = depth, Phase = phase },progress,token);
     }
 
     /// <summary>What the worker's depth-prepare found and wrote: the video to capture (a picture-only copy for

@@ -49,6 +49,8 @@ public sealed partial class RetargetWindow
         if (_target?.ModelFilePath is { } modelPath && string.Equals(destination, Path.GetFullPath(modelPath), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Choose a new animation filename to preserve the original target model.");
         _exportingMotion = true;
+        // A slowed-down clip (see MocapClipSpeed) exports at that speed: the same frames, further apart.
+        var speed=_animationSpeed;
         UpdateExportAvailability();
         try
         {
@@ -77,7 +79,7 @@ public sealed partial class RetargetWindow
         {
             var bytes = await Task.Run(() =>
             {
-                if (!retarget) return MotionFbxExport.Write(motion);
+                if (!retarget) return MotionFbxExport.Write(ClipSpeed.Retimed(motion,speed));
                 // Export the exact baked transforms shown in the viewport. Unapplied
                 // edits in Advanced must not silently change the exported animation.
                 var clip=preview.Clip;var target=preview.Target;
@@ -85,8 +87,9 @@ public sealed partial class RetargetWindow
                     throw new InvalidOperationException("Target prop export currently needs First Person workspace, camera-relative hand capture and root-motion removal off. Export the captured skeleton to retain objects in source coordinates.");
                 var sourceTimes=Enumerable.Range(0,clip.SolvedFrames.Count).Select(i=>Math.Min(preview.Props.StartTime+i/(double)clip.Fps,preview.Props.EndTime)).ToArray();
                 var combined=PropAnimation.Append(target.Rig.Skeleton,clip.SolvedFrames,sourceTimes,preview.Props,preview.Placement);
+                var fps=clip.Fps*speed;
                 return FbxAnimationWriter.Write(combined.Skeleton, clip.ClipName, combined.Frames,
-                    Enumerable.Range(0, clip.SolvedFrames.Count).Select(i => i / (double)clip.Fps).ToArray(), clip.Fps,
+                    Enumerable.Range(0, clip.SolvedFrames.Count).Select(i => i / (double)fps).ToArray(), fps,
                     target.UpAxis == TargetUpAxis.YUpCm ? 1 : 2, target.UpAxis == TargetUpAxis.ZUpEngine ? 2.54 : 1,
                     preview.Space + "; retargeted");
             });

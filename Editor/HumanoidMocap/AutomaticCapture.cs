@@ -36,9 +36,9 @@ public sealed partial class RetargetWindow
     /// followed gets the same from GVHMR's world rollout; one that could not be followed stays camera-relative.
     /// The untouched capture stays beside it and Advanced → Restore original capture reopens it.</summary>
     /// <returns>The shot's motion and the capture's own notes (refinement does not keep all of them).</returns>
-    async Task<(string Path,List<string> Notes)> CaptureBodyShotAsync(string video,double start,double end,Mp4Metadata metadata,float? recordedFov,CancellationToken token,string depth=null)
+    async Task<(string Path,List<string> Notes)> CaptureBodyShotAsync(string video,double start,double end,Mp4Metadata metadata,float? recordedFov,CancellationToken token,string depth=null,int phase=0)
     {
-        var bodyPath=await NativeCapture.BodyAsync(video,start,end,metadata.Width,metadata.Height,recordedFov,ReceiveWorkerProgress,token,depth);
+        var bodyPath=await NativeCapture.BodyAsync(video,start,end,metadata.Width,metadata.Height,recordedFov,ReceiveWorkerProgress,token,depth,phase);
         var diagnostics=await Task.Run(()=>MotionDocument.Parse(File.ReadAllBytes(bodyPath)).Diagnostics,token);
         if(diagnostics.Any(d=>d.StartsWith(StationaryCameraPrefix,StringComparison.Ordinal)))
             return (await NativeCapture.RefineBodyAsync(bodyPath,ReceiveWorkerProgress,token),diagnostics);
@@ -75,6 +75,7 @@ public sealed partial class RetargetWindow
             _captureStatus.Text = $"Video saved · {_queuedVideos.Count} queued.";
             return;
         }
+        ResetClipSpeed();
         LoadVideo(path);
         _rangeStart.Text = start.ToString(System.Globalization.CultureInfo.InvariantCulture);
         _rangeEnd.Text = end?.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";
@@ -148,6 +149,7 @@ public sealed partial class RetargetWindow
             }
             var metadata = await Task.Run(() => Mp4Metadata.Read(video), token);
             await EditorPipeline.SwitchToMainThread(); if (!this.IsValid()) return;
+            _lastCaptureStride=metadata.CaptureStride;
             // A long video is not refused: the first 1,800 captured frames (about a minute) are processed
             // and the range shows it, so another part can be chosen under Advanced.
             string lengthNote=null;
@@ -158,7 +160,7 @@ public sealed partial class RetargetWindow
                 _rangeEnd.Text=end.Value.ToString("0.###",System.Globalization.CultureInfo.InvariantCulture);
                 lengthNote=FormattableString.Invariant($"Long video: captured {start:0.#}–{end.Value:0.#} s of {metadata.Duration:0.#} s (1,800 frames at a time). Set another range under Advanced to capture a later part.");
             }
-            string motionPath;
+            string motionPath;float? pictureSpeed=null;
             if (firstPerson && handBackend=="mediapipe")
             {
                 if (!File.Exists(_handModelPath))
@@ -181,6 +183,7 @@ public sealed partial class RetargetWindow
                 // the same way, each with its own camera, and the shots are joined into one motion.
                 var shotPaths=new List<string>();double shotEnd=end??metadata.Duration;var shotFailures=new List<string>();
                 var (firstShot,firstNotes)=await CaptureBodyShotAsync(video,start,shotEnd,metadata,recordedFov,token,depthTrack);shotPaths.Add(firstShot);
+                pictureSpeed=ClipSpeed.FromNotes(firstNotes);
                 // The worker lists every shot's start once; each shot is then captured up to the next one.
                 var starts=ShotStarts(firstNotes);
                 var queue=new List<(double Start,double End)>();
@@ -201,6 +204,23 @@ public sealed partial class RetargetWindow
                 }
                 string shotFailure=shotFailures.Count>0?string.Join(" ",shotFailures):null;
                 motionPath=shotPaths[0];
+                // A fast clip recorded at a high frame rate, to be followed at every frame: the frames in between are captured as a
+                // second pass and the two joined (single-shot clips; edited footage keeps its usual capture).
+                if(_everyFrame&&metadata.CaptureStride==2&&shotPaths.Count==1&&shotFailure is null)
+                {
+                    ReceiveWorkerProgress("Capturing the frames in between, for every frame of the fast clip");
+                    var (secondShot,_)=await CaptureBodyShotAsync(video,start,shotEnd,metadata,recordedFov,token,depthTrack,phase:1);
+                    var firstPath=motionPath;
+                    motionPath=await Task.Run(()=>
+                    {
+                        var first=MotionDocument.Parse(File.ReadAllBytes(firstPath));var second=MotionDocument.Parse(File.ReadAllBytes(secondShot));
+                        // Passes that ended up in different spaces (one refined, one not) cannot be joined; the first stands.
+                        if(first.Space!=second.Space)return firstPath;
+                        var merged=MotionInterleave.Merge(first,second);
+                        var destination=Path.Combine(Path.GetDirectoryName(firstPath),"every-frame.hmotion");
+                        File.WriteAllText(destination,merged.ToJson());return destination;
+                    },token);
+                }
                 if(shotPaths.Count>1||shotFailure is not null)
                 {
                     var paths=shotPaths.ToArray();var failure=shotFailure;
@@ -264,6 +284,7 @@ public sealed partial class RetargetWindow
                 catch(Exception){}
             }
             await LoadMotionAsync(cleanedPath,motionPath,firstPerson?cleanup:null);
+            if(!firstPerson)await OfferSlowDownAsync(video,metadata.CaptureStride,pictureSpeed);
         }
         catch (OperationCanceledException)
         {

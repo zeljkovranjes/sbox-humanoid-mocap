@@ -50,7 +50,8 @@ public sealed partial class RetargetWindow
         var range=PlaybackRange;
         if(_playing&&range.End>range.Start)
         {
-            _playhead+=RealTime.Delta;
+            // A slowed-down animation plays the video at the same slower speed, so the two stay together.
+            _playhead+=RealTime.Delta*_animationSpeed;
             if(_playhead>=range.End)_playhead=range.Start+(_playhead-range.Start)%(range.End-range.Start);
         }
         _video?.Request(Math.Clamp(_playhead,range.Start,range.Last));

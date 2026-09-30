@@ -16,8 +16,8 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 /// the image/temporal networks or rewrites the original reconstruction.</summary>
 public static class BodyRefinement
 {
-    public const string Version="gvhmr-stationary-contact-ccd-v19";
-    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v9";
+    public const string Version="gvhmr-stationary-contact-ccd-v20";
+    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v10";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
     public const string CameraRotationFile="camera-rotation.json";
@@ -167,6 +167,9 @@ public static class BodyRefinement
         // The builder takes the arms from the network again; wrists the capture fitted to the picture stay there.
         var wristFits=WristPictureFit.Load(Path.GetDirectoryName(Path.GetFullPath(request.Motion))!);
         WristPictureFit.Replay(raw,wristFits);WristPictureFit.Replay(refined,wristFits);
+        // The builder takes the head from the network again; a head thrown back that it bowed stays thrown back.
+        var headFits=HeadThrownBack.Load(Path.GetDirectoryName(Path.GetFullPath(request.Motion))!);
+        HeadThrownBack.Replay(raw,headFits);HeadThrownBack.Replay(refined,headFits);
         for(var channel=0;channel<6;channel++)
         {
             int c=channel;

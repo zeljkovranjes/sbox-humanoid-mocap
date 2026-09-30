@@ -10,7 +10,9 @@ namespace HumanoidMocap.Worker;
 
 /// <param name="HorizontalFov">The recording lens in degrees when the camera wrote it; null assumes GVHMR's default (focal = image diagonal).</param>
 /// <param name="Depth">A <see cref="DepthTrack"/> recorded with the video (see DepthPrepare), or null.</param>
-public sealed record BodyCaptureRequest(string Video,string Models,string Output,double Start,double End,GvhmrDecoder.Box? PersonCrop=null,float? HorizontalFov=null,string? Depth=null);
+/// <param name="Phase">Which of the skipped frames of high-frame-rate footage to capture: 0 the usual ones, 1 the ones in between
+/// (the editor captures both and joins them when a fast clip is to be followed at every frame).</param>
+public sealed record BodyCaptureRequest(string Video,string Models,string Output,double Start,double End,GvhmrDecoder.Box? PersonCrop=null,float? HorizontalFov=null,string? Depth=null,int Phase=0);
 public static class BodyCapture
 {
     sealed class FrameState
@@ -74,7 +76,7 @@ public static class BodyCapture
                     // shot after it can be captured too.
                     if(request.PersonCrop is null&&nextShot is null)
                     {
-                        var times=PrefetchedFrames.Metadata(request.Video).CaptureTimes.Where(t=>t>=lost.RangeStart&&t<request.End).ToArray();
+                        var times=PrefetchedFrames.Metadata(request.Video).CaptureTimesAt(request.Phase).Where(t=>t>=lost.RangeStart&&t<request.End).ToArray();
                         if(times.Length>2&&ShotCutDetector.FirstCut(request.Video,times,cancellation) is int cut&&times[cut]>seen)
                             nextShot=FormattableString.Invariant($"{ShotCutDetector.Prefix} at {times[cut]:F2} s. The performer was lost before it, at {lost.Time:F2} s; the shot after the cut is captured on its own.");
                     }
@@ -121,7 +123,7 @@ public static class BodyCapture
     static string RunRange(BodyCaptureRequest request,CancellationToken cancellation,Action<string>? progress,List<FrameState>? seed,string? visibilityNote,string? nextShotNote=null)
     {
         if(!double.IsFinite(request.Start+request.End)||request.Start<0||request.End<=request.Start)throw new ArgumentException("Select a finite non-empty video range.");
-        var metadata=PrefetchedFrames.Metadata(request.Video);var captureTimes=metadata.CaptureTimes;
+        var metadata=PrefetchedFrames.Metadata(request.Video);var captureTimes=metadata.CaptureTimesAt(request.Phase);
         if(captureTimes.Count(t=>t>=request.Start&&t<request.End) is <1 or >1800)throw new ArgumentException("Select between one and 1,800 frames.");
         // Edited footage: capture the first shot of at least half a second, not a subject followed across a cut.
         string? shotNote=null;string? shotsNote=null;
@@ -167,7 +169,7 @@ public static class BodyCapture
         if(count<1)throw new ArgumentException("No shot of at least half a second was found in the selected range.");
         using var video=File.OpenRead(request.Video);var sourceSha=Convert.ToHexString(SHA256.HashData(video));
         var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{
-            version="gvhmr-csharp-person-crop-v2"+(metadata.CaptureStride>1?"-every"+metadata.CaptureStride:""),detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,request.HorizontalFov,
+            version="gvhmr-csharp-person-crop-v2"+(metadata.CaptureStride>1?"-every"+metadata.CaptureStride+(request.Phase>0?"-phase"+request.Phase:""):""),detector=request.PersonCrop is null?PersonDetector.Version+PersonDetector.CheckpointSha256:"manual",decoder=WindowsVideoDecoder.ImplementationVersion,sourceSha,request.Start,request.End,request.PersonCrop,request.HorizontalFov,
             temporal=GvhmrTemporalNetwork.CheckpointSha256,hmr="2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",pose="50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc",
             // Reduced precision changes image features slightly, so it keeps its own cache.
             // The graphics-card path agrees to about four digits, not bit for bit; it keeps its own cache too.
@@ -335,6 +337,13 @@ public static class BodyCapture
                 });
             }
             state.Seconds["poseThisRun"]=watch.Elapsed.TotalSeconds;Save("pose-ready");GC.Collect();GC.WaitForPendingFinalizers();watch.Restart();
+            // Stretches where the 2D pose swapped left and right (a hidden face read as the back of the head) are put back before
+            // anything uses the sides: the finger crops, the body network and the wrist fits. Fingers already reconstructed from a
+            // swapped stretch (an earlier run) are redone.
+            var swaps=LeftRightSwaps.Find(state.Frames.Select(f=>f.Observations).ToArray(),state.Frames.Select(f=>f.Time).ToArray());
+            foreach(var (swapStart,swapEnd) in swaps)
+                for(var i=swapStart;i<=swapEnd;i++){LeftRightSwaps.Swap(state.Frames[i].Observations!);state.Frames[i].Hands=null;}
+            if(swaps.Count>0)Save("left-right-swaps-undone");
             var wilorPath=Path.Combine(request.Models,"wilor/wilor_final.ckpt");
             if(File.Exists(wilorPath)&&state.Frames.Any(f=>f.Hands is null))
             {
@@ -414,6 +423,10 @@ public static class BodyCapture
             var decoded=GvhmrDecoder.Decode(prediction.PredX,count);var translation=GvhmrDecoder.CameraTranslation(prediction.PredCam,boxes,cameras);
             var skeleton=new SmplxSkeleton(Path.Combine(request.Models,"smplx/SMPLX_NEUTRAL.npz"),cancellation);
             var motion=BodyMotionBuilder.CameraRelative(skeleton,decoded,translation,state.Frames.Select(f=>f.Time).ToArray(),Path.GetFileNameWithoutExtension(request.Video),request.Video,sourceSha,metadata.CaptureFrameRate,camera);
+            // How fast the joints cross the picture, for the editor's offer to slow a too-fast clip down (see ClipSpeed).
+            if(HumanoidMocap.Motion.ClipSpeed.Picture(state.Frames.Select(f=>f.Observations!).ToArray(),state.Frames.Select(f=>f.Time).ToArray()) is float pictureSpeed)
+                motion.Diagnostics.Add(HumanoidMocap.Motion.ClipSpeed.Note(pictureSpeed));
+            if(swaps.Count>0)motion.Diagnostics.Add(FormattableString.Invariant($"Left and right put back: the 2D pose swapped the performer's sides in {swaps.Count} stretch{(swaps.Count==1?"":"es")} ({string.Join(", ",swaps.Select(w=>$"{state.Frames[w.Start].Time:F2}-{state.Frames[w.End].Time:F2} s"))}), as when a hidden face is read as the back of the head; the body is no longer turned around there."));
             if(state.Frames.All(f=>f.Hands is not null))
             {
                 var turned=BodyHandTracks.FuseWristOrientation(motion,state.Frames.Select(f=>f.Hands!).ToArray());
@@ -438,6 +451,8 @@ public static class BodyCapture
             }
             var wristFits=WristPictureFit.Apply(motion,state.Frames.Select(f=>f.Observations).ToArray(),camera,measuredWrists);
             WristPictureFit.Save(folder,wristFits);
+            var headFits=HeadThrownBack.Apply(motion,state.Frames.Select(f=>f.Observations).ToArray());HeadThrownBack.Save(folder,headFits);
+            if(headFits.Count>0)motion.Diagnostics.Add($"Head thrown back: in {headFits.Count} frames the face was hidden while the performer faced the camera, with the head tilted back either side; the network had bowed it forward, so it was tilted back.");
             if(wristFits.Count>0)motion.Diagnostics.Add(FormattableString.Invariant($"Wrists fitted to the picture: in {wristFits.Count} arm samples the body network put a clearly seen wrist away from where the picture shows it (or a hand at the head well in front of it); the arm was re-solved to put it there."));
             // Floor sits read as crouches by the network: mark them for the retargeter to seat the hips.
             var cameraDown=Enumerable.Range(0,count).Select(t=>System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY,System.Numerics.Quaternion.Normalize(decoded.CameraOrientation[t]*System.Numerics.Quaternion.Conjugate(decoded.GravityOrientation[t])))).ToArray();
