@@ -7,7 +7,9 @@
   "IncludeSourceFiles": false,
   "PackageReferences": [],
   "Metadata": {
-    "Summary": "Local video reconstruction, editable humanoid motion and s&box animation export.",
-    "WebsiteUrl": "https://github.com/zeljkovranjes/sbox-humanoid-mocap"
+    "Summary": "Turns a video of a person into humanoid animation for s&box, reconstructed locally in the editor.",
+    "Description": "An editor tool that reconstructs body, hand and finger motion from a video on your own PC and retargets it onto the s&box Human, the classic Citizen or a custom humanoid model. Open View > Humanoid Mocap, upload a video from disk or your phone, review the capture beside the source and export it as FBX for ModelDoc. Inference runs on the CPU in a separate worker program that is downloaded with its models (several GB) the first time you capture. Windows x64 only.",
+    "WebsiteUrl": "https://github.com/zeljkovranjes/sbox-humanoid-mocap",
+    "Tags": [ "animation", "motion-capture", "video", "humanoid", "retargeting" ]
   }
 }
