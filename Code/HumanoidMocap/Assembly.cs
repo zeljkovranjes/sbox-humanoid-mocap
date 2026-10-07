@@ -1,8 +1,11 @@
 #nullable enable annotations
 
+// Everything under Code/HumanoidMocap is the engine-agnostic Core (Core/): no Sandbox/Editor
+// references. dev/HumanoidMocap.Core.csproj compiles it as plain .NET to prove that.
+
 // Global usings for the s&box in-engine compiler.
 //
-// The plain net8.0 dev harness gets these automatically via <ImplicitUsings>,
+// Plain .NET builds (worker, tests) get these automatically via <ImplicitUsings>,
 // but s&box's compiler injects no BCL usings at all - without this file the
 // library fails to compile inside the editor (CS0246 on List<>, IEnumerable<>,
 // FormatException, ...). Duplicating the SDK's implicit set is harmless there
