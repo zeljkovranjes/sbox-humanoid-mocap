@@ -27,6 +27,12 @@ public static class CaptureSeat
     public const float RestingHandCm = 15;
     /// <summary>Below RestingHandCm a hand is held more the closer it is to the floor, fully this many centimetres lower.</summary>
     public const float RestingBlendCm = 7;
+    /// <summary>Hips this high, as a fraction of the standing hip height, are lowered fully; from here to <see cref="NotSeatedFraction"/>
+    /// less and less. A sit marked while the hips stood 85-140 cm up (a kip-up read as a floor sit) pulled them down over a metre,
+    /// folded the legs through themselves and snapped them; real floor sits have the hips 19-27 cm up before lowering.</summary>
+    public const float SeatedFraction = .45f, NotSeatedFraction = .6f;
+    /// <summary>The shortest time, in seconds, over which the hips are lowered onto or lifted off the floor.</summary>
+    public const float EaseSeconds = .3f;
 
     /// <returns>The number of frames lowered.</returns>
     public static int Apply( List<XForm[]> frames, SourceScene source, MappingResult mapping, TargetRig target, TargetUpAxis axis )
@@ -38,7 +44,28 @@ public static class CaptureSeat
         var rig = target.Skeleton; var up = axis == TargetUpAxis.YUpCm ? Vector3.UnitY : Vector3.UnitZ;
         var cm = axis == TargetUpAxis.ZUpEngine ? 1 / 2.54f : 1f;
         if ( target.BoneForRole( BoneRole.Hips ) is not int hips ) return 0;
-        var seat = Vector3.Dot( rig.RestWorld[hips].Pos, up ) * SeatFraction;
+        var standing = Vector3.Dot( rig.RestWorld[hips].Pos, up ); var seat = standing * SeatFraction;
+        // Only hips that are already low are seated (see SeatedFraction).
+        var world0 = new XForm[rig.Count]; weights = weights.ToArray();
+        for ( var f = 0; f < frames.Count; f++ )
+        {
+            if ( weights[f] <= 0 ) continue;
+            FkUtil.ToWorld( frames[f], rig, world0 );
+            var height = Vector3.Dot( world0[hips].Pos, up ) / standing;
+            weights[f] *= Math.Clamp( (NotSeatedFraction - height) / (NotSeatedFraction - SeatedFraction), 0, 1 );
+        }
+        if ( weights.All( w => w <= 0 ) ) return 0;
+        // Sitting down and getting up take time: the seated weight eases in and out over at least EaseSeconds. Rising in four
+        // frames, it dropped the hips 40 cm almost at once and twisted the hip joints 40 degrees a frame.
+        var fps = source.Clips[0].Fps; var radius = Math.Max( 1, (int)MathF.Round( EaseSeconds * fps / 2 ) );
+        var eased = new float[weights.Length];
+        for ( var f = 0; f < weights.Length; f++ )
+        {
+            float total = 0; var n = 0;
+            for ( var k = f - radius; k <= f + radius; k++ ) { total += weights[Math.Clamp( k, 0, weights.Length - 1 )]; n++; }
+            eased[f] = total / n;
+        }
+        weights = eased;
         (int A, int B, int C)? Chain( BoneRole a, BoneRole b, BoneRole c )
             => target.BoneForRole( a ) is int x && target.BoneForRole( b ) is int y && target.BoneForRole( c ) is int z ? (x, y, z) : null;
         var legs = new[] { Chain( BoneRole.UpperLegL, BoneRole.LowerLegL, BoneRole.FootL ), Chain( BoneRole.UpperLegR, BoneRole.LowerLegR, BoneRole.FootR ) }

@@ -19,6 +19,8 @@ public static class CaptureFootLock
 {
     public sealed record Result(int ConstrainedSamples,float MaximumReachResidual,float MaximumRootShift,float MaximumFloorDrift=0);
     readonly record struct Anchor(Vector3 Position,float Weight);
+    /// <summary>Fastest a contact's correction may fade in or out, metres per second, and the longest fade.</summary>
+    const float CorrectionSpeed=.4f,MaximumEaseSeconds=.4f;
     sealed record Leg(int Hip,int Knee,int Ankle,int Toe,Anchor[] AnkleAnchors,Anchor[] ToeAnchors);
     readonly record struct Goal(Leg Leg,Vector3 Position,Quaternion Rotation,float Weight);
 
@@ -195,11 +197,19 @@ public static class CaptureFootLock
             // Reject large excursions even when predicted static; protect fast steps
             // and obvious false-positive intervals rather than flattening them.
             if(points.Any(p=>Vector3.Distance(p,anchor)>.12f*scale))continue;
-            for(var i=Math.Max(0,interval.Start-blend);i<=Math.Min(positions.Length-1,interval.End+blend);i++)
+            // Into and out of the contact the foot follows its own captured path, shifted by the contact's correction
+            // there, and that shift fades no faster than CorrectionSpeed. Easing toward the contact's spot over a fixed
+            // 0.08 s instead pulled a still-swinging foot sideways and let a planted one jump back on release: the leg snapped.
+            int Ease(Vector3 shift)=>Math.Clamp((int)MathF.Ceiling(1.5f*shift.Length()*fps/(CorrectionSpeed*scale)),blend,(int)MathF.Ceiling(fps*MaximumEaseSeconds));
+            Vector3 shiftIn=anchor-positions[interval.Start],shiftOut=anchor-positions[interval.End];
+            int easeIn=Ease(shiftIn),easeOut=Ease(shiftOut);
+            for(var i=Math.Max(0,interval.Start-easeIn);i<=Math.Min(positions.Length-1,interval.End+easeOut);i++)
             {
-                float weight=i<interval.Start?1-(interval.Start-i)/(float)(blend+1):i>interval.End?1-(i-interval.End)/(float)(blend+1):1;
+                var before=i<interval.Start;var after=i>interval.End;
+                float weight=before?1-(interval.Start-i)/(float)(easeIn+1):after?1-(i-interval.End)/(float)(easeOut+1):1;
                 weight=weight*weight*(3-2*weight);
-                if(weight>anchors[i].Weight)anchors[i]=new(anchor,weight);
+                var target=before?positions[i]+shiftIn:after?positions[i]+shiftOut:anchor;
+                if(weight>anchors[i].Weight)anchors[i]=new(target,weight);
             }
         }
         return anchors;

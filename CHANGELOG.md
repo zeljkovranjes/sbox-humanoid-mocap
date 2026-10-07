@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-07
+### Fixed
+- Legs no longer snap in body captures: a thigh, shin or foot that jumped in one frame (legs crossing, a kick, getting up off the floor) now moves smoothly over the frames around it. Planted feet stay where they were while the leg is smoothed.
+- Feet no longer jump back into place when a planted foot lifts off or lands; the foot lock fades in and out along the captured path.
+- Kip-ups and similar moves are no longer read as sitting on the floor, which pulled the hips down and folded the legs through themselves.
+- Sitting down and getting up are eased over a third of a second instead of switching in a few frames.
+
 ## 2026-10-06
 ### Breaking
 - Code namespaces moved under `HumanoidMocap.Core`: `HumanoidMocap.Cleanup`, `.Dl`, `.Formats` (and `.Formats.Ant/Bvh/Dmx/Fbx/Gltf/Renderware`), `.Inference`, `.Mapping`, `.Maths`, `.Motion`, `.Skeleton`, `.Solve` and `.Target` are now `HumanoidMocap.Core.<same>`. Update your `using` lines.

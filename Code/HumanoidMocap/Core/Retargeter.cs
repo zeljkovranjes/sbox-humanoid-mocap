@@ -904,6 +904,9 @@ public static class Retargeter
                 if(handsHeld>0)AddNote(report,$"Hands on the floor held in place in {handsHeld} hand samples: palms resting on the floor no longer slide or hover.");
             }
         }
+        // Last of the leg work: no thigh, shin or foot turns far more in one frame than around it.
+        if(scene.CaptureSpace is not null&&!handCapture&&Motion.CaptureLegSnaps.Apply(frames,target.Rig,solved.Fps,target.UpAxis==TargetUpAxis.ZUpEngine?39.3700787f:100f,PlantedFeet(scene,map,frames.Count)) is var snaps&&snaps>0)
+            AddNote(report,$"Leg snaps smoothed: in {snaps} leg samples a thigh, shin or foot turned far more in one frame than in the frames around it; the turn was spread over its neighbouring frames, planted feet kept in place.");
         ApplyRootMotion(request.RootMotion, frames, context, report);
 
         if (request.MocapCorrections is { } corrections)
@@ -938,6 +941,17 @@ public static class Retargeter
         var looping = request.LoopingOverride ?? solved.Looping;
         return new Clip(clipName, solved.Fps, looping, frames);
     }
+
+    /// <summary>Frames where the capture marks each joint planted (stationary probability at least one half): left ankle, left
+    /// toe, right ankle, right toe.</summary>
+    static bool[][] PlantedFeet(SourceScene scene,MappingResult map,int count)
+        =>new[]{BoneRole.FootL,BoneRole.ToeL,BoneRole.FootR,BoneRole.ToeR}.Select(role=>
+        {
+            var result=new bool[count];
+            if(map.RoleToBone.TryGetValue(role,out var bone)&&scene.CaptureStationaryJoints?.TryGetValue(scene.Skeleton[bone].Name,out var p)==true&&p.Length==count)
+                for(var f=0;f<count;f++)result[f]=p[f]>=.5f;
+            return result;
+        }).ToArray();
 
     /// <summary>
     /// Unmapped bone subtrees OUTSIDE the mapped skeleton (no mapped ancestor — cloth and
