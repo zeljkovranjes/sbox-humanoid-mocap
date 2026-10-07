@@ -10,3 +10,5 @@
 - The package follows the workspace layout: retargeting core in `Code/HumanoidMocap/Core`, editor code directly in `Editor/`, the inference worker in `worker/InferenceWorker`, tests in `tests/`. Behaviour is unchanged.
 - A source checkout now keeps its downloaded models in `dev/data/models` (previously `models/`). Installed libraries still use `%LOCALAPPDATA%\sbox-humanoid-mocap\models`.
 - The worker is rebuilt once after updating a source checkout, because its source files moved.
+### Fixed
+- Reconstruct with AI finds the restructured Humanoid Retargeter again (it looks its types up under their new `HumanoidRetargeter.Core` names).

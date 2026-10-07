@@ -80,18 +80,18 @@ public sealed class RetargeterLibrary
                     return null;
                 }
             }
-            var retargeter = Get( "HumanoidRetargeter.Retargeter" );
+            var retargeter = Get( "HumanoidRetargeter.Core.Retargeter" );
             if ( retargeter is null )
                 continue;
             sawRetargeter = true;
-            var runtime = Get( "HumanoidRetargeter.Solve.RuntimePoseRetargeter" );
-            var xform = Get( "HumanoidRetargeter.Maths.XForm" );
-            var definition = Get( "HumanoidRetargeter.Skeleton.BoneDefinition" );
-            var skeleton = Get( "HumanoidRetargeter.Skeleton.Skeleton" );
-            var mapping = Get( "HumanoidRetargeter.Mapping.MappingResult" );
-            var source = Get( "HumanoidRetargeter.Mapping.MappingSource" );
-            var role = Get( "HumanoidRetargeter.Mapping.BoneRole" );
-            var rig = Get( "HumanoidRetargeter.Target.TargetRig" );
+            var runtime = Get( "HumanoidRetargeter.Core.Solve.RuntimePoseRetargeter" );
+            var xform = Get( "HumanoidRetargeter.Core.Maths.XForm" );
+            var definition = Get( "HumanoidRetargeter.Core.Skeleton.BoneDefinition" );
+            var skeleton = Get( "HumanoidRetargeter.Core.Skeleton.Skeleton" );
+            var mapping = Get( "HumanoidRetargeter.Core.Mapping.MappingResult" );
+            var source = Get( "HumanoidRetargeter.Core.Mapping.MappingSource" );
+            var role = Get( "HumanoidRetargeter.Core.Mapping.BoneRole" );
+            var rig = Get( "HumanoidRetargeter.Core.Target.TargetRig" );
             if ( runtime is null || xform is null || definition is null || skeleton is null || mapping is null || source is null || role is null || rig is null )
                 continue;
             try

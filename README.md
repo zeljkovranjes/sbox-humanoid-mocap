@@ -63,7 +63,7 @@ Editor-only tool. Nothing runs in a game session or is networked; exported anima
 - `sbox-check` (structure, docs, and `dev\HumanoidMocap.Core.csproj`, which compiles `Code/HumanoidMocap/Core` as plain .NET).
 - Code and Editor against the engine DLLs: `dotnet build dev\editor-rig\EditorUiCompileCheck.csproj` (it also builds `CodeCompileCheck.csproj`). The s&box whitelist is only checked by the editor itself.
 - Worker: `dotnet build worker\InferenceWorker`.
-- Tests: `dotnet test tests\PosedLocomotion` and `dotnet test tests\Mocap.Worker.Tests`. The worker tests need the local data in `dev\data` (models, samples) and `dev\verification`; run `dev\Setup-WorkerTestRoot.ps1` once so the HOT3D tests find it.
+- Tests: `dotnet test tests\PosedLocomotion` and `dotnet test tests\Mocap.Worker.Tests`. The worker tests need the local data in `dev\data\samples` and `dev\verification`.
 - Local tools and benchmarks are in `dev\` (see `dev\README.md`); large data lives in `dev\data`, research notes in `docs\research`.
 
 ## License
