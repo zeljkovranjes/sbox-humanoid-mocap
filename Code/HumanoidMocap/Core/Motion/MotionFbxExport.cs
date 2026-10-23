@@ -11,6 +11,13 @@ public static class MotionFbxExport
     /// <summary>Export the reconstructed armature directly, without requiring a target rig
     /// or resampling the captured timestamps. The motion document retains observation evidence.</summary>
     public static byte[] Write(MotionDocument motion)
+        => WriteCore( motion, false );
+
+    /// <summary>Exports raw engine-unit translations so ModelDoc can import at scale one.</summary>
+    public static byte[] WriteForModelDoc( MotionDocument motion )
+        => WriteCore( motion, true );
+
+    static byte[] WriteCore( MotionDocument motion, bool modelDocUnits )
     {
         motion.Validate();
         if ((long)motion.Bones.Count * motion.Frames.Count > FbxAnimationWriter.MaximumTransformSamples)
@@ -25,6 +32,9 @@ public static class MotionFbxExport
         var times=motion.Frames.Select(f=>f.Time).ToArray();
         var combined=PropAnimation.Append(skeleton,frames,times,new PropContactMotion(motion),
             new CapturePlacement(100,System.Numerics.Quaternion.Identity,System.Numerics.Vector3.Zero));
+        if ( modelDocUnits )
+            return ModelDocFbxExport.Write( combined.Skeleton, motion.Name, combined.Frames, times,
+                motion.SourceFps, TargetUpAxis.YUpCm, motion.Space.ToString() );
         return FbxAnimationWriter.Write(combined.Skeleton, motion.Name, combined.Frames, times,
             motion.SourceFps, motionSpace: motion.Space.ToString());
     }

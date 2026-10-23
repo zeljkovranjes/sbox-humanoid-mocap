@@ -27,11 +27,6 @@ public static class MotionCleanup
         return (output,replaced);
     }
 
-    /// <summary>Speed-adaptive smoothing for body captures. Jitter shows where a joint is nearly still, and
-    /// smoothing a whole clip also softens flips and kicks; so every track is smoothed zero-phase at
-    /// <paramref name="strength"/> and each frame keeps the smoothed value where the joint moves slowly and
-    /// the original where it moves fast (<see cref="SlowDegrees"/> to <see cref="FastDegrees"/> degrees a
-    /// second for rotations, <see cref="SlowMetres"/> to <see cref="FastMetres"/> m/s for the root).</summary>
     /// <summary>Frames read from a blurred or doubtful picture (the root's recorded pose confidence below
     /// <see cref="DoubtfulConfidence"/>), in stretches of at most <see cref="MaximumBridgeSeconds"/> between confident
     /// frames, take every joint's rotation and the root's position from those two frames, blended across. In a
@@ -67,6 +62,12 @@ public static class MotionCleanup
         return (output,replaced);
     }
     public const float DoubtfulConfidence=.5f;public const double MaximumBridgeSeconds=.3;
+    /// <summary>Speed-adaptive smoothing for body captures. Jitter shows where a joint is nearly still, and
+    /// smoothing a whole clip also softens flips and kicks; so every track is smoothed zero-phase at
+    /// <paramref name="strength"/> and each frame keeps the smoothed value where the joint moves slowly and
+    /// the original where it moves fast (<see cref="SlowDegrees"/> to <see cref="FastDegrees"/> degrees a
+    /// second for rotations). Root translation is always filtered: steady fast travel already passes
+    /// through a zero-phase filter, while a speed bypass reintroduces monocular depth spikes.</summary>
     public static MotionDocument SmoothBody(MotionDocument raw,float strength=7)
     {
         raw.Validate();var output=raw.Copy();var count=output.Frames.Count;if(count<8||!(strength>0))return output;
@@ -87,12 +88,10 @@ public static class MotionCleanup
             }
             if(output.Bones[j].Parent>=0)continue;
             var positions=output.Frames.Select(f=>MotionDocument.V(f.Positions[j])).ToArray();
-            var smoothed=MocapSmooth.Positions(positions,cutoff,rate);
+            var smoothed=MocapSmooth.Positions(CaptureRootSpikes.Clean(positions,rate),cutoff,rate);
             for(var f=0;f<count;f++)
             {
-                var a=smoothed[Math.Max(0,f-1)];var b=smoothed[Math.Min(count-1,f+1)];var dt=output.Frames[Math.Min(count-1,f+1)].Time-output.Frames[Math.Max(0,f-1)].Time;
-                var speed=dt>0?(float)(Vector3.Distance(a,b)/dt):0;
-                output.Frames[f].Positions[j]=MotionDocument.A(Vector3.Lerp(smoothed[f],positions[f],Blend(speed,SlowMetres,FastMetres)));
+                output.Frames[f].Positions[j]=MotionDocument.A(smoothed[f]);
             }
         }
         return output;

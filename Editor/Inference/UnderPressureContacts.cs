@@ -29,7 +29,7 @@ public sealed class UnderPressureContacts
     public const string CheckpointUrl="https://raw.githubusercontent.com/InterDigitalInc/UnderPressure/e7ab73e7466444f262ec1c55f2f26afe51168796/pretrained.tar";
     const int Joints=23,Kernel=7,Cells=16;const double Rate=100;
     /// <summary>Highest a toe or ankle joint can be, in metres, and still bear weight.</summary>
-    const float ToeLimit=.13f,AnkleLimit=.2f;const double FloorWindowSeconds=1.5;
+    const float ToeLimit=.13f,AnkleLimit=.2f;
     static readonly int[] Channels={3*Joints,128,128,256,256};
     static readonly int[] FrontCells={8,9,10,11,12,13,14,15},BackCells={0,1,2,3};
     readonly float[][] convWeight=new float[4][],convBias=new float[4][];
@@ -71,7 +71,9 @@ public sealed class UnderPressureContacts
             joints[f]=p;
         }
         // Floor: ankles about 5 cm up where the feet are lowest.
-        var ankles=joints.Select(p=>Math.Min(p[17].Z,p[21].Z)).OrderBy(z=>z).ToArray();
+        var lowestFoot=joints.Select(p=>Math.Min(Math.Min(p[17].Z,p[18].Z),Math.Min(p[21].Z,p[22].Z))).ToArray();
+        var localFloor=UnderPressureFloor.Estimate(document,lowestFoot);
+        var ankles=joints.Select((p,f)=>Math.Min(p[17].Z,p[21].Z)-localFloor[f]).OrderBy(z=>z).ToArray();
         var lift=.05f-ankles[ankles.Length/20];
         var start=frames[0].Time;var duration=frames[^1].Time-start;var samples=Math.Max(2,(int)Math.Floor(duration*Rate)+1);
         var input=new float[Channels[0]*samples];var source=0;
@@ -83,7 +85,8 @@ public sealed class UnderPressureContacts
             for(var j=0;j<Joints;j++)
             {
                 var p=Vector3.Lerp(pa[j],pb[j],w);
-                input[(j*3)*samples+s]=p.X;input[(j*3+1)*samples+s]=p.Y;input[(j*3+2)*samples+s]=p.Z+lift;
+                var floor=localFloor[source]+(localFloor[Math.Min(count-1,source+1)]-localFloor[source])*w;
+                input[(j*3)*samples+s]=p.X;input[(j*3+1)*samples+s]=p.Y;input[(j*3+2)*samples+s]=p.Z-floor+lift;
             }
         }
         var forces=Forces(input,samples,cancellation);
@@ -95,18 +98,8 @@ public sealed class UnderPressureContacts
             [bones[Role(BoneRole.ToeR)].Name]=new float[count],[bones[Role(BoneRole.FootR)].Name]=new float[count],
         };
         // A foot well above the floor bears no weight, whatever the forces say: in slowed footage a foot in the
-        // air moves so little that it read as planted 80 cm up. A world-relative capture was refined against the
-        // floor and keeps one floor height; a camera-relative one can drift (a step-dance rose 48 cm), so its floor
-        // is where the feet are lowest within FloorWindowSeconds (a rolling minimum, then maximum).
-        var lowestFoot=joints.Select(p=>Math.Min(Math.Min(p[17].Z,p[18].Z),Math.Min(p[21].Z,p[22].Z))).ToArray();
-        var localFloor=new float[count];
-        if(document.Space==MotionSpace.WorldRelative){var sorted=lowestFoot.OrderBy(v=>v).ToArray();Array.Fill(localFloor,sorted[sorted.Length/20]);}
-        else
-        {
-            var radius=Math.Max(1,(int)Math.Round(FloorWindowSeconds*count/Math.Max(1e-3,duration)/2));var eroded=new float[count];
-            for(var f=0;f<count;f++){var m=float.PositiveInfinity;for(var k=Math.Max(0,f-radius);k<=Math.Min(count-1,f+radius);k++)m=Math.Min(m,lowestFoot[k]);eroded[f]=m;}
-            for(var f=0;f<count;f++){var m=float.NegativeInfinity;for(var k=Math.Max(0,f-radius);k<=Math.Min(count-1,f+radius);k++)m=Math.Max(m,eroded[k]);localFloor[f]=m;}
-        }
+        // air moves so little that it read as planted 80 cm up. Use the same floor as
+        // the network input; world-relative axes alone do not establish a fixed floor.
         bool Grounded(int f,int joint,float limit)=>joints[f][joint].Z-localFloor[f]<=limit;
         for(var f=0;f<count;f++)
         {

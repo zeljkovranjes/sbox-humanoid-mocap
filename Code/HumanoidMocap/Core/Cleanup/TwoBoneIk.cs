@@ -103,7 +103,11 @@ public static class TwoBoneIk
         var r1 = Quaternion.CreateFromAxisAngle(axis0, baBc1 - baBc0);
 
         // Swing the (now correctly extended) chain so the effector direction hits the target.
-        var r2 = MathQ.FromTo(ac, at);
+        // Near straight chains, the fallback hinge and float rounding can leave the
+        // bent endpoint slightly off ac. Align the endpoint we actually constructed;
+        // aligning the original ray left stationary ankles jittering after pelvis easing.
+        var bentEnd = Vector3.Transform(ab, r0) + Vector3.Transform(bc, r0 * r1);
+        var r2 = MathQ.FromTo(bentEnd, at);
 
         var upper = MathQ.Normalize(r2 * r0);
         var lower = MathQ.Normalize(r2 * r0 * r1);

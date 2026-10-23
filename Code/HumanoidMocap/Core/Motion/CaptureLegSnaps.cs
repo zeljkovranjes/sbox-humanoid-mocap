@@ -16,7 +16,7 @@ using Vector3 = System.Numerics.Vector3;
 /// for a frame. Each snap is spread over its neighbouring frames by interpolating across a window widened until it settles;
 /// planted feet are put back where they were by leg IK, so the leg moves smoothly and the foot does not slide. A quick move
 /// stays quick but no longer happens between two frames; sustained fast motion (a kick) turns fast in its neighbouring frames
-/// as well and is left alone. On the test clips: 449 snaps to none.</summary>
+/// as well and is left alone. Knee-position acceleration also catches small-angle releases from full extension.</summary>
 public static class CaptureLegSnaps
 {
 	/// <summary>A snap turns more than this (degrees per frame at 30 frames per second)...</summary>
@@ -28,6 +28,9 @@ public static class CaptureLegSnaps
 	/// <summary>A planted foot moving slower than this (metres per second) is held exactly where it was.</summary>
 	const float StillSpeed = .3f;
 	const int HoldEase = 3, MaximumRounds = 4;
+	// Rotation-only checks miss a knee releasing from full extension: a modest turn
+	// can move the knee several centimetres between otherwise smooth frames.
+	const float KneeAccelerationMetres = .04f, KneeAccelerationMarginMetres = .01f;
 
 	/// <returns>The number of leg-frame samples smoothed.</returns>
 	/// <param name="planted">Frames where the capture has each joint planted: left ankle, left toe, right ankle, right toe.</param>
@@ -47,17 +50,42 @@ public static class CaptureLegSnaps
 	static int Pass( List<XForm[]> frames, TargetRig target, float fps, float unitsPerMetre, bool[][] planted )
 	{
 		var count = frames.Count;
-		if ( count < 2 * Neighbours + 2 || !(fps > 0) ) return 0;
-		var rig = target.Skeleton; var scale = 30 / fps; var smoothed = 0;
+		if ( count < 2 || !float.IsFinite( fps ) || fps <= 0 ) return 0;
+		var rig = target.Skeleton; var scale = fps / 30; var smoothed = 0;
 		var legs = new[]
 		{
 			new[] { BoneRole.UpperLegL, BoneRole.LowerLegL, BoneRole.FootL, BoneRole.ToeL },
 			new[] { BoneRole.UpperLegR, BoneRole.LowerLegR, BoneRole.FootR, BoneRole.ToeR },
-		}.Select( roles => roles.Select( target.BoneForRole ).Where( b => b is not null ).Select( b => b!.Value ).ToArray() ).Where( c => c.Length >= 3 ).ToArray();
+		}.Select( roles => roles.Select( target.BoneForRole ).ToArray() ).ToArray();
 		var world = frames.Select( f => { var w = new XForm[rig.Count]; FkUtil.ToWorld( f, rig, w ); return w; } ).ToArray();
 		for ( var l = 0; l < legs.Length; l++ )
 		{
-			var chain = legs[l];
+			var indices = legs[l];
+			// Keep the side index even on a partial rig: the right foot uses contact channels 2 and 3.
+			if ( indices[0] is null || indices[1] is null || indices[2] is null ) continue;
+			var chain = indices.Where( b => b is not null ).Select( b => b!.Value ).ToArray();
+			if ( count == 2 )
+			{
+				// With no surrounding samples there is no reliable endpoint. Split the correction
+				// evenly so a trimmed two-frame clip cannot retain an arbitrary one-frame jump.
+				foreach ( var bone in chain )
+				{
+					var first = world[0][bone].Rot;
+					var last = world[1][bone].Rot;
+					var turn = Angle( first, last ) * scale;
+					if ( turn <= MinimumDegrees ) continue;
+					var inset = (1 - (MinimumDegrees - .01f) / turn) / 2;
+					for ( var f = 0; f < 2; f++ )
+					{
+						var goal = Quaternion.Slerp( first, last, f == 0 ? inset : 1 - inset );
+						var parent = rig[bone].ParentIndex;
+						frames[f][bone].Rot = MathQ.Normalize( Quaternion.Inverse( parent < 0 ? Quaternion.Identity : world[f][parent].Rot ) * goal );
+						FkUtil.ToWorld( frames[f], rig, world[f] );
+					}
+					smoothed += 2;
+				}
+				continue;
+			}
 			// A planted joint is held where it was when it is still: its steps to the planted frames beside it are slow.
 			// A planted joint that moves keeps its smoothed path, or its jump would stay.
 			bool[] Held( int which, int bone )
@@ -89,6 +117,25 @@ public static class CaptureLegSnaps
 				if ( j + 1 < chain.Length ) { var child = chain[j + 1]; measures.Add( ( a, b ) => Direction( a[child].Pos - a[bone].Pos, b[child].Pos - b[bone].Pos ) ); }
 			}
 			float Turn( Func<XForm[], XForm[], float> measure, int f ) => measure( world[f - 1], world[f] ) * scale;
+			float KneeAcceleration( int f )
+			{
+				Vector3 Relative( int k ) => world[k][chain[1]].Pos - world[k][chain[0]].Pos;
+				return (Relative( f + 1 ) - 2 * Relative( f ) + Relative( f - 1 )).Length() * scale * scale;
+			}
+			bool SustainedTurn( int start )
+			{
+				if ( start < 1 || start + 2 >= count ) return false;
+				var minimum = float.PositiveInfinity;
+				var maximum = 0f;
+				for ( var k = start; k < start + 3; k++ )
+				{
+					var turn = Direction( world[k - 1][chain[1]].Pos - world[k - 1][chain[0]].Pos,
+						world[k][chain[1]].Pos - world[k][chain[0]].Pos ) * scale;
+					minimum = Math.Min( minimum, turn );
+					maximum = Math.Max( maximum, turn );
+				}
+				return minimum >= MinimumDegrees && minimum >= maximum * .8f;
+			}
 			bool IsSnap( int f )
 			{
 				if ( f < 1 || f >= count ) return false;
@@ -100,7 +147,18 @@ public static class CaptureLegSnaps
 					around.Sort(); var median = around.Count == 0 ? 0 : around.Count % 2 == 1 ? around[around.Count / 2] : (around[around.Count / 2 - 1] + around[around.Count / 2]) / 2;
 					if ( turn > NeighbourRatio * median + MarginDegrees ) return true;
 				}
-				return false;
+				if ( f + 1 >= count ) return false;
+				// Preserve the onset and stop of a sustained fast kick. Its acceleration
+				// differs from its steady middle even when the motion is intentional.
+				if ( SustainedTurn( f - 2 ) || SustainedTurn( f + 1 ) ) return false;
+				var acceleration = KneeAcceleration( f );
+				if ( acceleration <= KneeAccelerationMetres * unitsPerMetre ) return false;
+				var neighbours = new List<float>();
+				for ( var k = Math.Max( 1, f - Neighbours ); k <= Math.Min( count - 2, f + Neighbours ); k++ )
+					if ( k != f ) neighbours.Add( KneeAcceleration( k ) );
+				neighbours.Sort();
+				var typical = neighbours.Count == 0 ? 0 : neighbours[neighbours.Count / 2];
+				return acceleration > NeighbourRatio * typical + KneeAccelerationMarginMetres * unitsPerMetre;
 			}
 			// One snap at a time: the frames around it are interpolated (world rotations, down the leg) between the two
 			// frames just outside, over a window widened until no snap is left in or next to it. A widening window always
@@ -116,6 +174,13 @@ public static class CaptureLegSnaps
 				// that only needed to roll.
 				for ( var attempt = 0; attempt < 4 * (MaximumHalfWindow - 1) && !fixedIt; attempt++ )
 				{
+					// A failed large window must be fully undone before trying a smaller one
+					// with different contact constraints, including its cached world transforms.
+					foreach ( var (f, original) in saved )
+					{
+						frames[f] = original.ToArray();
+						FkUtil.ToWorld( frames[f], rig, world[f] );
+					}
 					var hold = attempt / (MaximumHalfWindow - 1); var half = 2 + attempt % (MaximumHalfWindow - 1);
 					int a = Math.Max( 0, t - half ), b = Math.Min( count - 1, t + half - 1 );
 					for ( var f = a + 1; f < b; f++ )

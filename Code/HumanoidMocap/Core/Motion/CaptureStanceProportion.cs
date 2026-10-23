@@ -44,12 +44,11 @@ public static class CaptureStanceProportion
                 lateral=Vector3.Normalize(lateral);
                 var hip=world[leg.Hip];var knee=world[leg.Knee];var ankle=world[leg.Ankle];var footRotation=ankle.Rot;
                 var goal=ankle.Pos-lateral*correction;
-                // Never ask for more than the leg can reach; the foot keeps its direction from the hip.
-                var reach=(Vector3.Distance(hip.Pos,knee.Pos)+Vector3.Distance(knee.Pos,ankle.Pos))*.9995f;
-                var fromHip=goal-hip.Pos;if(fromHip.Length()>reach)goal=hip.Pos+Vector3.Normalize(fromHip)*reach;
                 var bend=Vector3.Cross(knee.Pos-hip.Pos,ankle.Pos-knee.Pos);
                 if(bend.LengthSquared()<1e-8f)bend=Vector3.Transform(Vector3.UnitX,hip.Rot);
-                var ik=TwoBoneIk.Solve(hip.Pos,knee.Pos,ankle.Pos,goal,soften:0,stableBendAxis:bend);
+                // A hard reach clamp locks the knee straight, then releases several centimetres
+                // in one frame. Soft reach keeps knee flexion continuous through that boundary.
+                var ik=TwoBoneIk.Solve(hip.Pos,knee.Pos,ankle.Pos,goal,soften:.02f,stableBendAxis:bend);
                 EffectorIk.ApplyWorldDeltas(frame,rig,leg.Hip,leg.Knee,leg.Ankle,ik.UpperWorldDelta,ik.LowerWorldDelta,world);
                 FkUtil.ToWorld(frame,rig,world);
                 var parent=rig[leg.Ankle].ParentIndex;

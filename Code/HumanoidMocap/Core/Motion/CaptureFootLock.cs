@@ -78,7 +78,17 @@ public static class CaptureFootLock
             if(goals.Count==0)continue;
             // Minimal shared root displacement when target proportions cannot reach
             // both anchors. Bounded to 3 cm; never stretch a bone to match a prediction.
-            var shift=Vector3.Zero;
+            var lowerPelvis = 0f;
+            foreach ( var goal in goals )
+            {
+                var leg = goal.Leg;
+                var hip = world[leg.Hip].Pos;
+                var length = Vector3.Distance( hip, world[leg.Knee].Pos )
+                    + Vector3.Distance( world[leg.Knee].Pos, world[leg.Ankle].Pos );
+                lowerPelvis = Math.Max( lowerPelvis,
+                    CaptureLegReach.Lowering( hip - goal.Position, up, length ) );
+            }
+            var shift = -up * Math.Min( lowerPelvis, .03f * scale );
             for(var iteration=0;iteration<6;iteration++)foreach(var goal in goals)
             {
                 var leg=goal.Leg;var hip=world[leg.Hip].Pos;

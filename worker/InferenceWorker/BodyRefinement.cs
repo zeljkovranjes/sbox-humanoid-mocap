@@ -18,7 +18,7 @@ public sealed record BodyRefinementRequest(string Motion,string Models,string Ou
 public static class BodyRefinement
 {
     public const string Version="gvhmr-stationary-contact-ccd-v20";
-    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v10";
+    public const string MovingVersion="gvhmr-followed-rotation-contact-ccd-v11";
     /// <summary>Per-frame GVHMR camera angular velocity, and whether the camera only turned in place.</summary>
     public sealed record CameraRotation(float[] AngularVelocity6d,bool RotationOnly);
     public const string CameraRotationFile="camera-rotation.json";
@@ -72,8 +72,12 @@ public static class BodyRefinement
     static float[] GroundedStaticLogits(MotionDocument source,float[] logits)
     {
         var result=logits.ToArray();
-        if(source.Cameras.FirstOrDefault(c=>c.Id=="video")?.Up is not {Length:3} upValues)return result;
-        var up=Vector3.Normalize(MotionDocument.V(upValues));
+        var up = Vector3.UnitY;
+        if ( source.Space != MotionSpace.WorldRelative )
+        {
+            if ( source.Cameras.FirstOrDefault( c => c.Id == "video" )?.Up is not { Length: 3 } upValues ) return result;
+            up = Vector3.Normalize( MotionDocument.V( upValues ) );
+        }
         int Role(HumanoidMocap.Core.Mapping.BoneRole role)=>source.Bones.FindIndex(b=>b.Role==role);
         var joints=new[]{Role(HumanoidMocap.Core.Mapping.BoneRole.FootL),Role(HumanoidMocap.Core.Mapping.BoneRole.ToeL),Role(HumanoidMocap.Core.Mapping.BoneRole.FootR),Role(HumanoidMocap.Core.Mapping.BoneRole.ToeR)};
         if(joints.Any(j=>j<0)||result.Length!=source.Frames.Count*6)return result;
@@ -153,7 +157,9 @@ public static class BodyRefinement
         progress?.Invoke("Correcting stationary-camera root and contact targets");
         // Camera-space pelvis positions only anchor the root when the camera itself stood still.
         var anchored=!moving||followed is {RotationOnly:true};
-        var staticLogits=GroundedStaticLogits(source,prediction.StaticConfidenceLogits);
+        // A travelling camera has no fixed camera-space floor. Test elevation in the
+        // gravity-aligned rollout, or real toe contacts are rejected as the camera moves.
+        var staticLogits=GroundedStaticLogits(moving?raw:source,prediction.StaticConfidenceLogits);
         var (depthNote,inPlace)=moving?(null,0f):HoldDistance(source,request.Motion,pose,staticLogits,cameraTranslation);
         var correction=GvhmrContactProcessing.CorrectRoot(skeleton,pose,root,staticLogits,anchored?cameraTranslation:null,cancellation,inPlace);
         progress?.Invoke("Refining source limb contacts");

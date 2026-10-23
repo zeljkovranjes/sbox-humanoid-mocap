@@ -80,7 +80,7 @@ public sealed partial class RetargetWindow
         {
             var bytes = await Task.Run(() =>
             {
-                if (!retarget) return MotionFbxExport.Write(ClipSpeed.Retimed(motion,speed));
+                if (!retarget) return MotionFbxExport.WriteForModelDoc(ClipSpeed.Retimed(motion,speed));
                 // Export the exact baked transforms shown in the viewport. Unapplied
                 // edits in Advanced must not silently change the exported animation.
                 var clip=preview.Clip;var target=preview.Target;
@@ -89,9 +89,9 @@ public sealed partial class RetargetWindow
                 var sourceTimes=Enumerable.Range(0,clip.SolvedFrames.Count).Select(i=>Math.Min(preview.Props.StartTime+i/(double)clip.Fps,preview.Props.EndTime)).ToArray();
                 var combined=PropAnimation.Append(target.Rig.Skeleton,clip.SolvedFrames,sourceTimes,preview.Props,preview.Placement);
                 var fps=clip.Fps*speed;
-                return FbxAnimationWriter.Write(combined.Skeleton, clip.ClipName, combined.Frames,
+                return ModelDocFbxExport.Write(combined.Skeleton, clip.ClipName, combined.Frames,
                     Enumerable.Range(0, clip.SolvedFrames.Count).Select(i => i / (double)fps).ToArray(), fps,
-                    target.UpAxis == TargetUpAxis.YUpCm ? 1 : 2, target.UpAxis == TargetUpAxis.ZUpEngine ? 2.54 : 1,
+                    target.UpAxis,
                     preview.Space + "; retargeted");
             });
             // Stage next to the destination. A failed write leaves any existing export intact.

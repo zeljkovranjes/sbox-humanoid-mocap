@@ -906,7 +906,7 @@ public static class Retargeter
         }
         // Last of the leg work: no thigh, shin or foot turns far more in one frame than around it.
         if(scene.CaptureSpace is not null&&!handCapture&&Motion.CaptureLegSnaps.Apply(frames,target.Rig,solved.Fps,target.UpAxis==TargetUpAxis.ZUpEngine?39.3700787f:100f,PlantedFeet(scene,map,frames.Count)) is var snaps&&snaps>0)
-            AddNote(report,$"Leg snaps smoothed: in {snaps} leg samples a thigh, shin or foot turned far more in one frame than in the frames around it; the turn was spread over its neighbouring frames, planted feet kept in place.");
+            AddNote(report,$"Leg continuity corrected in {snaps} samples: isolated rotation or knee-position jolts were spread over neighbouring frames, preserving foot anchors where the constraints allowed.");
         ApplyRootMotion(request.RootMotion, frames, context, report);
 
         if (request.MocapCorrections is { } corrections)
@@ -1198,6 +1198,11 @@ public static class Retargeter
                 var reach = Vector3.Distance(world[chain.Hip].Pos, world[chain.Knee].Pos)
                     + Vector3.Distance(world[chain.Knee].Pos, world[chain.Ankle].Pos);
                 var toHip = world[chain.Hip].Pos - goals[f];
+                if (scene.CaptureSpace is not null)
+                {
+                    lowerPelvis[f] = MathF.Max(lowerPelvis[f], Motion.CaptureLegReach.Lowering(toHip, up, reach));
+                    continue;
+                }
                 var vertical = Vector3.Dot(toHip, up);
                 var horizontal = toHip - up * vertical;
                 if (horizontal.LengthSquared() < reach * reach)

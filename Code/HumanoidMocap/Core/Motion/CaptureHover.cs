@@ -38,9 +38,10 @@ public static class CaptureHover
     /// measured 45 to 53, a tucked jump 86 to 116), and how level
     /// the ankles must be, for the standing test.</summary>
     public const float StraightKneeCosine = .5f, LevelAnklesCm = 12;
+    const float ContactProjectionCm = 12;
 
     /// <returns>The number of frames moved.</returns>
-    /// <param name="contact">Per frame, whether the capture's contact tracks put a foot on the floor, when known (unused).</param>
+    /// <param name="contact">Per frame, whether contact tracks support correcting a small floor gap without waiting for a hover interval.</param>
     public static int Apply( List<XForm[]> frames, TargetRig target, TargetUpAxis axis, float fps, bool[] contact = null )
     {
         if ( frames.Count < 3 || !(fps > 0) ) return 0;
@@ -118,6 +119,15 @@ public static class CaptureHover
         }
         for ( var f = 0; f < frames.Count; f++ )
             if ( lowest[f] < 0 && !inFlight[f] ) { wanted[f] = -lowest[f]; fixedFrame[f] = true; }
+        // A detected support does not need a quarter-second hover to be grounded.
+        // Bound this to small errors: stationary predictions alone cannot erase a jump.
+        if ( contact is not null && contact.Length == frames.Count )
+            for ( var f = 0; f < frames.Count; f++ )
+                if ( contact[f] && !inFlight[f] && MathF.Abs( lowest[f] ) <= ContactProjectionCm )
+                {
+                    wanted[f] = -lowest[f];
+                    fixedFrame[f] = true;
+                }
         if ( !fixedFrame.Any( x => x ) && !lift.Any( x => x != 0 ) ) return 0;
         // Ease each correction in and out over neighbouring uncorrected frames.
         var ramp = Math.Max( 1, (int)Math.Round( RampSeconds * fps ) );
@@ -144,7 +154,12 @@ public static class CaptureHover
         {
             double sum = 0, weights = 0;
             for ( var k = Math.Max( 0, f - radius ); k <= Math.Min( frames.Count - 1, f + radius ); k++ ) { var w = Math.Exp( -.5 * (k - f) * (k - f) / (sigma * sigma) ); sum += w * shift[k]; weights += w; }
-            smooth[f] = (float)Math.Max( sum / weights, -lowest[f] );
+            // Filtering may blend the surrounding flight/hover correction into an established
+            // support frame. Project that frame back onto its floor constraint; otherwise a
+            // grounded foot can hover again immediately after this pass claims to ground it.
+            var nearContact = MathF.Abs( lowest[f] ) <= ContactProjectionCm
+                && (contact is null || contact.Length != frames.Count || contact[f]);
+            smooth[f] = fixedFrame[f] && nearContact ? wanted[f] : (float)Math.Max( sum / weights, -lowest[f] );
         }
         shift = smooth;
         var moved = 0;

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-23
+Title: Leg Continuity and ModelDoc Scale
+### Fixed
+# Capture
+Body depth - rejects brief large depth excursions before smoothing, preventing estimated high speed from bypassing cleanup
+Knee movement - softens full-extension transitions and catches isolated knee-position jolts that rotation checks missed, while retaining sustained fast kicks
+Short clips - applies leg continuity correction to trimmed clips, including two-frame takes, with consistent limits at different frame rates
+Foot contacts - accounts for moving-camera floor drift before estimating pressure, and removes brief supported gaps above the floor
+# Export
+FBX scale - applies Humanoid Retargeter's source-to-engine conversion to bind positions, animation and props for direct ModelDoc import at scale one; engine-unit targets retain their scale
+### Known Issues
+# Capture
+Reconstruction - contact predictions and single-video depth remain estimates; validation on recorded clips cannot guarantee artifact-free motion from every future video
+
 ## 2026-10-07
 ### Fixed
 - Legs no longer snap in body captures: a thigh, shin or foot that jumped in one frame (legs crossing, a kick, getting up off the floor) now moves smoothly over the frames around it. Planted feet stay where they were while the leg is smoothed.
